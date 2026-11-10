@@ -373,6 +373,16 @@ test('legal-processing', () => {
   assert.match(forms[0]?.detail ?? '', /forms, server/);
 });
 
+test('legal-statement: a statement that says the site does not conform needs no audit', () => {
+  const ids = [...IDS, 'accessibility'];
+  for (const [lang, text] of [
+    ['de-CH', 'Diese Website ist nicht konform mit WCAG 2.2 AA.'],
+    ['fr-CH', 'Ce site n’est pas conforme au RGAA.'],
+    ['en', 'This website is not compliant with WCAG 2.2 AA.'],
+  ])
+    expectRules({ ids, edits: [inMain('/barrierefreiheit/', `<p lang="${lang}">${text}</p>`)] }, []);
+});
+
 test('legal-statement', () => {
   const claim = inMain('/barrierefreiheit/', '<p>Diese Website ist konform mit WCAG 2.2 AA.</p>');
   const ids = [...IDS, 'accessibility'];

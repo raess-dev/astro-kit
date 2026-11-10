@@ -363,7 +363,11 @@ function checkLegal(ctx: BuildContext, byPath: Map<string, BuiltPage>): void {
   }
   for (const rec of Object.values(byId.accessibility ?? {})) {
     const page = byPath.get(rec.path);
-    const claim = page && /konform|conforme|conformant|compliant/.exec(textOf(mainOf(page)).toLowerCase());
+    const text = page ? textOf(mainOf(page)).toLowerCase() : '';
+    // "not compliant", "nicht konform" and "n'est pas conforme" disclose, they do not claim.
+    const negated = (at: number) =>
+      /\b(not|non|nicht|pas|kein|keine)\b[^.;:!?]{0,24}$/.test(text.slice(Math.max(0, at - 40), at));
+    const claim = [...text.matchAll(/konform|conforme|conformant|compliant/g)].find((m) => !negated(m.index));
     if (claim && !ctx.site?.accessibilityAudit)
       ctx.report.add('legal-statement', rec.path, `"${claim[0]}" without accessibilityAudit in site.json`);
   }
