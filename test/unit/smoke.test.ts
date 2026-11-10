@@ -15,7 +15,7 @@ const PAGE_404 =
 const ROBOTS = 'User-agent: *\nAllow: /\n';
 
 /** A project root with astro-kit.json (forms on) and the dist files smoke compares with. */
-function project(): string {
+function project(forms = true): string {
   const root = mkdtempSync(join(tmpdir(), 'kit-smoke-'));
   const options = {
     site: 'https://example.ch',
@@ -24,8 +24,8 @@ function project(): string {
       { code: 'fr', tag: 'fr-CH', name: 'Français' },
     ],
     defaultLocale: 'de',
-    features: { forms: true },
-    contact: { to: 'info@example.ch', from: 'form@example.ch' },
+    features: { forms },
+    ...(forms ? { contact: { to: 'info@example.ch', from: 'form@example.ch' } } : {}),
     securityContact: 'mailto:security@example.ch',
   };
   writeFileSync(join(root, 'astro-kit.json'), JSON.stringify(options));
@@ -129,6 +129,24 @@ test('a production site that matches the kit passes every smoke check', async ()
   assert.deepEqual(report.findings, []);
   assert.ok(calls.includes('POST https://example.ch/api/contact/'));
   assert.ok(calls.includes('GET https://example.acct.workers.dev/'));
+});
+
+test('the weekly probe skips a site without forms: no post, no finding', async () => {
+  const calls: string[] = [];
+  const report = await runSmoke('https://example.ch', {
+    root: project(false),
+    expectedSha: SHA,
+    workersDev: 'example.acct.workers.dev',
+    probe: true,
+    env: {},
+    fetch: fakeFetch(routes(), calls),
+    now: NOW,
+  });
+  assert.deepEqual(
+    report.findings.filter((f) => f.rule === 'smoke-probe'),
+    [],
+  );
+  assert.ok(!calls.some((c) => c.startsWith('POST ')), calls.join(' | '));
 });
 
 /** [case, the one rule it must fail, the routes it replaces, the env]. */

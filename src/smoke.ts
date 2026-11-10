@@ -236,8 +236,9 @@ export async function runSmoke(url: string, opts: SmokeOptions = {}): Promise<Re
       report.add('smoke-mail-dns', `_dmarc.${domain}`, 'no v=DMARC1 record');
   }
 
-  // smoke-probe: one real submission with the probe secret.
-  if (opts.probe) {
+  // smoke-probe: one real submission with the probe secret. A site without forms has no endpoint to probe.
+  if (opts.probe && !options?.features.forms) console.log('astro-kit smoke: probe skipped: features.forms is off');
+  else if (opts.probe) {
     const secret = env.KIT_PROBE_SECRET;
     if (!secret) report.add('smoke-probe', `${origin}${CONTACT_ACTION}`, 'KIT_PROBE_SECRET is not set');
     else {
