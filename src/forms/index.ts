@@ -31,6 +31,8 @@ export interface ContactEnv {
 }
 
 export interface ContactConfig {
+  /** The site host from astro-kit.json. It scopes the rate-limit keys, so sites in one account never share counters. */
+  site: string;
   locales: readonly string[];
   defaultLocale: string;
   contact: { to: string; from: string; probe?: string | undefined };
@@ -176,8 +178,8 @@ export async function handleContact(request: Request, env: ContactEnv, config: C
   if (!env.FORM_RATE_LIMIT || !env.FORM_RATE_LIMIT_ALL || !env.EMAIL) return answer('not-sent', 'no_binding');
   const ip = request.headers.get('cf-connecting-ip') ?? 'unknown';
   const limits = await Promise.all([
-    env.FORM_RATE_LIMIT.limit({ key: `ip:${ip}` }),
-    env.FORM_RATE_LIMIT_ALL.limit({ key: 'form' }),
+    env.FORM_RATE_LIMIT.limit({ key: `${config.site}:ip:${ip}` }),
+    env.FORM_RATE_LIMIT_ALL.limit({ key: `${config.site}:form` }),
   ]);
   if (!limits.every((l) => l.success)) return answer('not-sent', 'rate_limited');
 
@@ -204,6 +206,7 @@ export function contactConfig(options: KitOptions, manifest: Manifest): ContactC
   const paths: Record<string, string> = {};
   for (const [code, page] of Object.entries(manifest.byId.contact ?? {})) paths[code] = page.path;
   return {
+    site: new URL(options.site).host,
     locales: options.locales.map((l) => l.code),
     defaultLocale: options.defaultLocale,
     contact: options.contact,

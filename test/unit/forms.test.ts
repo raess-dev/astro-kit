@@ -17,6 +17,7 @@ import type { Manifest, PageRecord } from '../../src/manifest.ts';
 import type { KitOptions } from '../../src/options.ts';
 
 const config: ContactConfig = {
+  site: 'example.ch',
   locales: ['de', 'fr'],
   defaultLocale: 'de',
   contact: { to: 'client@example.ch', from: 'form@example.ch', probe: 'probe@example.ch' },
@@ -177,6 +178,16 @@ test('the rate limits cover the IP and the form', async () => {
   assert.equal(perIp.sent.length + whole.sent.length, 3);
 });
 
+test('the rate limits are per site, so sites that share a namespace do not share counters', async () => {
+  // Two sites in one account get the same namespace ids from the template, so one limiter serves both here.
+  const { env, sent } = fakeEnv({ allow: 1, allowAll: 1 });
+  const other = { ...config, site: 'other.ch' };
+  assert.equal((await handleContact(post(good), env, config)).headers.get('location'), '/kontakt/#sent');
+  assert.equal((await handleContact(post(good), env, other)).headers.get('location'), '/kontakt/#sent');
+  assert.equal((await handleContact(post(good), env, config)).headers.get('location'), '/kontakt/#not-sent');
+  assert.equal(sent.length, 2);
+});
+
 test('missing bindings and a failed send land on #not-sent', async () => {
   assert.equal((await run(post(good), {})).location, '/kontakt/#not-sent');
   const { env } = fakeEnv({ fail: true });
@@ -207,6 +218,7 @@ test('contactConfig reads locales, addresses and contact paths', () => {
       { code: 'fr', tag: 'fr-CH', name: 'Français' },
     ],
     defaultLocale: 'de',
+    site: 'https://example.ch',
     contact: config.contact,
   } as KitOptions;
   assert.deepEqual(contactConfig(options, manifest), config);
