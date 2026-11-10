@@ -4,9 +4,10 @@ import type { AstroIntegration } from 'astro';
 import { runAudits } from './audit/index.ts';
 import { loadBuild } from './build.ts';
 import { cspConfig, prefetchGateScript } from './csp.ts';
+import { loadMessages } from './facts.ts';
 import { writeEdgeFiles } from './hosts/cloudflare.ts';
 import { solidHydrationHash } from './islands.ts';
-import type { Manifest } from './manifest.ts';
+import { buildManifest, type Manifest } from './manifest.ts';
 import type { KitOptions } from './options.ts';
 import { preflight } from './preflight.ts';
 import { loadRedirects } from './redirects.ts';
@@ -110,7 +111,13 @@ export default function astroKit(): AstroIntegration {
           integrations: adapter ? [...integrations, adapter] : integrations,
           vite: {
             plugins: [
-              virtualModulePlugin({ root, options: kit, site, schedule, messages, manifest, kitVersion: KIT_VERSION }),
+              virtualModulePlugin(
+                { root, options: kit, site, schedule, messages, manifest, kitVersion: KIT_VERSION },
+                () => {
+                  const scratch = new Report();
+                  return { manifest: buildManifest(root, kit, scratch), messages: loadMessages(root, kit, scratch) };
+                },
+              ),
             ],
             build: { cssTarget: CSS_TARGET },
             ssr: { noExternal: ['@raess/astro-kit'] },

@@ -3,7 +3,7 @@
  * Variants must pass. Each bad site must report exactly its expected rule ids. The scale site records sizes.
  */
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -165,6 +165,42 @@ test('check: a config finding fails the fast check, not only the build', () => {
   const r = run(dir, ['check']);
   assert.notEqual(r.status, 0);
   assert.deepEqual(r.ids, ['config-suppression'], r.out);
+});
+
+test('dev: a changed title and a new page appear without a manual restart', async () => {
+  const dir = site('dev');
+  const port = 43210 + Math.floor(Math.random() * 1000);
+  const dev = spawn(join(KIT, 'node_modules/.bin/astro'), ['dev', '--port', String(port), '--host', '127.0.0.1'], {
+    cwd: dir,
+    env: { ...process.env, ASTRO_TELEMETRY_DISABLED: '1' },
+    stdio: 'ignore',
+  });
+  const page = async (path: string) => {
+    const r = await fetch(`http://127.0.0.1:${port}${path}`).catch(() => undefined);
+    return r ? { status: r.status, html: await r.text() } : { status: 0, html: '' };
+  };
+  const until = async (ok: () => Promise<boolean>, what: string) => {
+    for (let i = 0; i < 120; i++) {
+      if (await ok()) return;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    assert.fail(`dev never showed ${what}`);
+  };
+  try {
+    await until(async () => (await page('/leistungen/')).status === 200, 'the services page');
+    write(dir, 'src/content/pages/de/services.md', (old) =>
+      old.replace('title: "Leistungen von Example für KMU"', 'title: "Neue Leistungen von Example für KMU"'),
+    );
+    await until(async () => (await page('/leistungen/')).html.includes('Neue Leistungen von Example'), 'the new title');
+    write(
+      dir,
+      'src/content/pages/de/team.md',
+      '---\nslug: team\ntitle: "Das Team von Example in Zürich"\ndescription: "Wer bei Example arbeitet, was jede Person tut und wie Sie das Team direkt erreichen."\nbrief:\n  intent: "Introduce the team and how to reach it."\n  audience: "Prospective clients"\n  message: "A small team you can reach directly."\n  cta: "Contact us"\nmissing: [fr]\n---\n\n# Das Team\n\nWir sind ein kleines Team.\n',
+    );
+    await until(async () => (await page('/team/')).status === 200, 'the new page');
+  } finally {
+    dev.kill();
+  }
 });
 
 // ── bad sites: exactly these rule ids ─────────────────────────────────────
