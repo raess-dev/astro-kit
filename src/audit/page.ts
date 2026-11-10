@@ -199,6 +199,16 @@ function hoursOf(spec: unknown): string {
     .join(', ');
 }
 
+/** Date ranges with their hours, e.g. "2026-12-24..2026-12-26 00:00-00:00", from specialOpeningHoursSpecification. */
+function specialOf(spec: unknown): string {
+  return [spec]
+    .flat()
+    .filter(isJson)
+    .map((s) => `${String(s.validFrom)}..${String(s.validThrough)} ${String(s.opens)}-${String(s.closes)}`)
+    .sort()
+    .join(', ');
+}
+
 function organisation(node: Json, ctx: BuildContext, add: Add, state: State): void {
   const id = typeof node['@id'] === 'string' ? node['@id'] : '';
   if (!id) add('head-jsonld', 'the organisation has no @id');
@@ -223,6 +233,15 @@ function organisation(node: Json, ctx: BuildContext, add: Add, state: State): vo
       hoursOf(node.openingHoursSpecification),
       ctx.schedule.openingHours
         .flatMap((h) => h.days.map((d) => `${d} ${h.opens}-${h.closes}`))
+        .sort()
+        .join(', '),
+    ],
+    [
+      // A closure is a day range that opens and closes at 00:00.
+      'specialOpeningHoursSpecification',
+      specialOf(node.specialOpeningHoursSpecification),
+      ctx.schedule.closures
+        .map((c) => `${c.from}..${c.to} 00:00-00:00`)
         .sort()
         .join(', '),
     ],

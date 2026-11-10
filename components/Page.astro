@@ -108,6 +108,16 @@ if (site) {
           closes: h.closes,
         }))
       : undefined,
+    // schema.org marks a closed day range with opens and closes both 00:00.
+    specialOpeningHoursSpecification: schedule.closures.length
+      ? schedule.closures.map((c) => ({
+          '@type': 'OpeningHoursSpecification',
+          validFrom: c.from,
+          validThrough: c.to,
+          opens: '00:00',
+          closes: '00:00',
+        }))
+      : undefined,
   });
 }
 if (url) {

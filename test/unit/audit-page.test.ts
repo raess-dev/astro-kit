@@ -91,6 +91,14 @@ const ORG = {
     },
   ],
 };
+/** A holiday closure: schema.org marks a closed day with opens and closes both 00:00. */
+const CLOSED: BuildContext['schedule'] = {
+  openingHours: [{ days: ['Mo', 'Tu'], opens: '08:00', closes: '17:00' }],
+  closures: [{ from: '2026-12-24', to: '2026-12-26' }],
+};
+const HOURS_END = '"closes":"17:00"}]';
+const SPECIAL =
+  ',"specialOpeningHoursSpecification":[{"@type":"OpeningHoursSpecification","validFrom":"2026-12-24","validThrough":"2026-12-26","opens":"00:00","closes":"00:00"}]';
 const ld = (...nodes: object[]) =>
   JSON.stringify({
     '@context': 'https://schema.org',
@@ -131,6 +139,8 @@ const record = (id: string, path: string, extra: Partial<PageRecord> = {}): Page
 interface Case {
   /** Applied to the home page before the CSP meta is computed. */
   pre?: (html: string) => string;
+  /** Applied to every page before the CSP meta is computed. */
+  every?: (html: string) => string;
   /** Applied to the home page after the CSP meta is computed. */
   post?: (html: string) => string;
   options?: KitOptions;
@@ -140,6 +150,7 @@ interface Case {
   serviceRecord?: Partial<PageRecord>;
   drafts?: boolean;
   css?: BuildContext['css'];
+  schedule?: BuildContext['schedule'];
 }
 
 const HOME = template(
@@ -166,11 +177,12 @@ function run(c: Case = {}): string[] {
     record('services', '/leistungen/', c.serviceRecord),
     record('privacy', '/datenschutz/'),
   ];
-  const home = (c.post ?? ((s) => s))(finish((c.pre ?? ((s) => s))(HOME)));
+  const every = c.every ?? ((s: string) => s);
+  const home = (c.post ?? ((s) => s))(finish((c.pre ?? ((s) => s))(every(HOME))));
   const pages = [
     ['/', home],
-    ['/leistungen/', finish(c.services ?? SERVICES)],
-    ['/404.html', finish(c.notFound ?? NOT_FOUND)],
+    ['/leistungen/', finish(every(c.services ?? SERVICES))],
+    ['/404.html', finish(every(c.notFound ?? NOT_FOUND))],
   ] as const;
   const built = pages.map(([path, html]): BuiltPage => {
     const page: BuiltPage = {
@@ -196,7 +208,10 @@ function run(c: Case = {}): string[] {
       drafts: c.drafts ?? false,
     },
     site: FACTS,
-    schedule: { openingHours: [{ days: ['Mo', 'Tu'], opens: '08:00', closes: '17:00' }], closures: [] },
+    schedule: c.schedule ?? {
+      openingHours: [{ days: ['Mo', 'Tu'], opens: '08:00', closes: '17:00' }],
+      closures: [],
+    },
     messages: { de: KIT_MESSAGES.de ?? {} },
     pages: built,
     css: c.css ?? [],
@@ -336,6 +351,13 @@ const CASES: [string, Case, string[]][] = [
   ['telephone differs', { pre: (h) => h.replace('"+41440000000"', '"+41449999999"') }, ['head-jsonld']],
   ['address differs', { pre: (h) => h.replace('"8000"', '"8001"') }, ['head-jsonld']],
   ['opening hours differ', { pre: (h) => h.replace('"closes":"17:00"', '"closes":"18:00"') }, ['head-jsonld']],
+  ['a closure in schedule.json that the JSON-LD omits', { schedule: CLOSED }, ['head-jsonld']],
+  [
+    'a closure in the JSON-LD that schedule.json lacks',
+    { pre: (h) => h.replace(HOURS_END, `${HOURS_END}${SPECIAL}`) },
+    ['head-jsonld'],
+  ],
+  ['a closure in both', { schedule: CLOSED, every: (h) => h.replace(HOURS_END, `${HOURS_END}${SPECIAL}`) }, []],
   [
     'vatID not in site.json',
     { pre: (h) => h.replace('"name":"Muster"', '"name":"Muster","vatID":"CHE-123.456.789 MWST"') },
