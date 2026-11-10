@@ -15,7 +15,7 @@ const PAGE_404 =
 const ROBOTS = 'User-agent: *\nAllow: /\n';
 
 /** A project root with astro-kit.json (forms on) and the dist files smoke compares with. */
-function project(forms = true): string {
+function project(forms = true, from = 'form@example.ch'): string {
   const root = mkdtempSync(join(tmpdir(), 'kit-smoke-'));
   const options = {
     site: 'https://example.ch',
@@ -25,7 +25,7 @@ function project(forms = true): string {
     ],
     defaultLocale: 'de',
     features: { forms },
-    ...(forms ? { contact: { to: 'info@example.ch', from: 'form@example.ch' } } : {}),
+    ...(forms ? { contact: { to: 'info@example.ch', from } } : {}),
     securityContact: 'mailto:security@example.ch',
   };
   writeFileSync(join(root, 'astro-kit.json'), JSON.stringify(options));
@@ -146,6 +146,31 @@ test('without a local build, robots.txt is compared with the one the kit writes 
   const ids = async (robots: string) => [...(await run(robots)).ids()].filter((id) => id === 'smoke-robots');
   assert.deepEqual(await ids(robotsTxt('https://example.ch')), []);
   assert.deepEqual(await ids('User-agent: *\nDisallow: /\n'), ['smoke-robots']);
+});
+
+test('smoke-mail-dns finds the DMARC policy of a parent domain, as DMARC discovery does', async () => {
+  const root = project(true, 'form@mail.example.ch');
+  const run = (parent: boolean) =>
+    runSmoke('https://example.ch', {
+      root,
+      expectedSha: SHA,
+      workersDev: 'example.acct.workers.dev',
+      env: {},
+      fetch: fakeFetch({
+        ...routes(),
+        'GET https://cloudflare-dns.com/dns-query?name=mail.example.ch&type=TXT': dns(
+          '"v=spf1 include:_spf.mx.cloudflare.net -all"',
+        ),
+        'GET https://cloudflare-dns.com/dns-query?name=_dmarc.mail.example.ch&type=TXT': dns(),
+        'GET https://cloudflare-dns.com/dns-query?name=_dmarc.example.ch&type=TXT': parent
+          ? dns('"v=DMARC1; p=reject"')
+          : dns(),
+      }),
+      now: NOW,
+    });
+  const mail = async (parent: boolean) => [...(await run(parent)).ids()].filter((id) => id === 'smoke-mail-dns');
+  assert.deepEqual(await mail(true), []);
+  assert.deepEqual(await mail(false), ['smoke-mail-dns']);
 });
 
 test('the weekly probe skips a site without forms: no post, no finding', async () => {

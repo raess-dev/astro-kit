@@ -240,13 +240,21 @@ export async function runSmoke(url: string, opts: SmokeOptions = {}): Promise<Re
       }
     };
     const spf = await txt(domain);
-    const dmarc = await txt(`_dmarc.${domain}`);
     if (typeof spf === 'string') report.add('smoke-mail-dns', domain, spf);
     else if (spf.filter((t) => /^v=spf1\b/i.test(t)).length !== 1)
       report.add('smoke-mail-dns', domain, `${spf.filter((t) => /^v=spf1\b/i.test(t)).length} SPF records, expected 1`);
-    if (typeof dmarc === 'string') report.add('smoke-mail-dns', `_dmarc.${domain}`, dmarc);
-    else if (!dmarc.some((t) => /^v=DMARC1\b/i.test(t)))
-      report.add('smoke-mail-dns', `_dmarc.${domain}`, 'no v=DMARC1 record');
+    // DMARC discovery walks up the tree: a policy at a parent domain covers a sender subdomain.
+    const labels = domain.split('.');
+    let found = false;
+    for (let i = 0; i + 2 <= labels.length && !found; i++) {
+      const name = `_dmarc.${labels.slice(i).join('.')}`;
+      const dmarc = await txt(name);
+      if (typeof dmarc === 'string') {
+        report.add('smoke-mail-dns', name, dmarc);
+        found = true;
+      } else found = dmarc.some((t) => /^v=DMARC1\b/i.test(t));
+    }
+    if (!found) report.add('smoke-mail-dns', `_dmarc.${domain}`, 'no v=DMARC1 record here or at a parent domain');
   }
 
   // smoke-probe: one real submission with the probe secret. A site without forms has no endpoint to probe.
