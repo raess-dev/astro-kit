@@ -400,6 +400,19 @@ test('content-copied', () => {
   );
 });
 
+test('content-stale ignores links to a page that is declared missing in the other locale', () => {
+  // A German-only page: only the German home can link to it, so the link sets differ by design.
+  const germanOnly = (recs: PageRecord[]) => {
+    recs.splice(
+      recs.findIndex((r) => r.id === 'services' && r.locale === 'fr'),
+      1,
+    );
+    const de = recs.find((r) => r.id === 'services' && r.locale === 'de');
+    if (de) de.missing = ['fr'];
+  };
+  expectRules({ records: germanOnly, edits: [inMain('/', '<p><a href="/leistungen/">Unsere Leistungen</a></p>')] }, []);
+});
+
 test('content-stale structural parity', () => {
   expectRules({ edits: [inMain('/leistungen/', '<h2>Ablauf</h2>')] }, ['content-stale']);
   expectRules({ edits: [inMain('/leistungen/', '<p><a href="/kontakt/">Kontakt aufnehmen</a></p>')] }, [

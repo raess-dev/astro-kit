@@ -418,8 +418,14 @@ function checkTranslations(ctx: BuildContext, byPath: Map<string, BuiltPage>): v
       const shape = shapeOf(ctx, page, byPath);
       if (shape.h2 !== baseShape.h2)
         ctx.report.add('content-stale', page.path, `${shape.h2} h2 sections; ${def} has ${baseShape.h2}`);
+      // A link to a page that exists in only one of the two locales (declared missing) cannot match.
+      const both = (id: string) => Boolean(ctx.manifest.byId[id]?.[rec.locale] && ctx.manifest.byId[id]?.[def]);
+      const comparable = {
+        facts: [shape.facts, baseShape.facts],
+        links: [new Set([...shape.links].filter(both)), new Set([...baseShape.links].filter(both))],
+      } as const;
       for (const key of ['facts', 'links'] as const) {
-        const diff = difference(shape[key], baseShape[key]);
+        const diff = difference(...comparable[key]);
         if (diff)
           ctx.report.add(
             'content-stale',
