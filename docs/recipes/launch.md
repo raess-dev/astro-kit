@@ -21,7 +21,8 @@ every step marked (owner); the agent does the rest.
    with the old provider before going on.
 5. DNSSEC, in this order: remove the DS record at the registrar, wait for its TTL, switch the nameservers to
    Cloudflare, wait until the zone is active, enable DNSSEC in Cloudflare, then add its DS record at the registrar.
-6. Attach the canonical host to the Worker as a custom domain; `workers_dev` stays false.
+6. Attach the canonical host to the Worker as a custom domain; `workers_dev` stays false. Set the repository
+   variable `KIT_WORKERS_DEV` to `<worker>.<account>.workers.dev`, so smoke proves that host does not answer.
 7. The other host (www or apex): a proxied `AAAA` record to `100::`, plus one Single Redirect rule with a 301 to the
    canonical host that keeps the path and the query.
 8. Zone settings: `npx --no astro-kit provision zone --apply` with a one-day Zone Settings edit token in

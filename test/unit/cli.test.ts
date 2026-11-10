@@ -256,6 +256,11 @@ test('site.yml pins every action by SHA, grants nothing at the top and names the
   }
   for (const line of text.split('\n').filter((l) => /uses: /.test(l)))
     assert.match(line, /@[0-9a-f]{40} # v\d+\.\d+\.\d+$/);
+  // Smoke proves production serves main's commit, and that workers.dev does not answer.
+  const smoke = (flow.jobs.smoke?.steps ?? []) as { name?: string; env?: Record<string, string> }[];
+  const env = smoke.find((s) => s.name === 'Smoke production')?.env ?? {};
+  assert.equal(env.KIT_RELEASE_SHA, '${{ github.sha }}');
+  assert.equal(env.KIT_WORKERS_DEV, '${{ vars.KIT_WORKERS_DEV }}');
   const rulesets = JSON.parse(
     readFileSync(new URL('../../templates/github-org-rulesets.json', import.meta.url), 'utf8'),
   ) as {

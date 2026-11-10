@@ -220,6 +220,8 @@ jobs:
         env:
           PROBE: ${{ github.event.schedule == '47 3 * * 1' && '--probe' || '' }}
           KIT_PROBE_SECRET: ${{ secrets.KIT_PROBE_SECRET }}
+          KIT_RELEASE_SHA: ${{ github.sha }} # production must serve main's commit
+          KIT_WORKERS_DEV: ${{ vars.KIT_WORKERS_DEV }} # <worker>.<account>.workers.dev, which must not answer
         run: npx --no astro-kit smoke "$(jq -r .site astro-kit.json)" $PROBE
       - name: 'Open or update the issue "smoke: production"'
         if: failure()
