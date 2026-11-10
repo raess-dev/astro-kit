@@ -276,3 +276,21 @@ test('edge-redirects: Cloudflare limits and line shape', () => {
   assert.equal(edge({ ...ok, _redirects: '/a/ /b/ 200' }).length, 1);
   assert.equal(edge({ ...ok, _redirects: 'https://old.example.ch/ /' }).length, 1);
 });
+
+test('routes-redirects: every redirect target is built, so no old URL lands on a 404', () => {
+  const html = page('');
+  const ctx = context({ '/': html, '/neu/': html }, { _headers: HEADERS(), 'brochure.pdf': '%PDF' });
+  ctx.redirects = [
+    { from: '/alt/', to: '/neu/' },
+    { from: '/alt-ohne-slash/', to: '/neu' },
+    { from: '/prospekt/', to: '/brochure.pdf' },
+    { from: '/blog/*', to: '/news/:splat' },
+    { from: '/weg/', gone: true },
+    { from: '/vertippt/', to: '/nue/' },
+  ];
+  auditEdge(ctx);
+  assert.deepEqual(
+    ctx.report.findings.map((f) => `${f.rule} ${f.where}: ${f.detail}`),
+    ['routes-redirects src/content/redirects.json: /vertippt/ → /nue/, which is not built'],
+  );
+});

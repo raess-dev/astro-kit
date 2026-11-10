@@ -62,7 +62,7 @@ If a check looks wrong, add an entry to `KIT-FEEDBACK.md` and keep the check.
 - <a id="routes-slug"></a>**routes-slug** — Slugs use a–z, 0–9 and -, are unique per locale, and avoid reserved segments. Fix: Rename the slug. Reserved: locale codes and system paths such as _astro, _actions, api and 404.
 - <a id="routes-duplicate"></a>**routes-duplicate** — No two pages emit the same path. Fix: Change one slug.
 - <a id="routes-translation"></a>**routes-translation** — Every page has a default-locale entry, and other locales either have it or declare it missing. Fix: Transcreate the page, or add the locale to the default entry's `missing` list.
-- <a id="routes-redirects"></a>**routes-redirects** — redirects.json has no chains, no target that is itself a source, and fits Cloudflare limits. Fix: Point every from directly at its final target; mark removed pages `gone`.
+- <a id="routes-redirects"></a>**routes-redirects** — redirects.json has no chains, no target that is itself a source, every target is built, and it fits Cloudflare limits. Fix: Point every from directly at its final target; mark removed pages `gone`.
 - <a id="routes-removed"></a>**routes-removed** — A from on the base branch is never dropped, and every URL in the live sitemap is built or redirected. Fix: Add a redirects.json row: {from, to} for a move, {from, gone: true} for a removal.
 
 ## js

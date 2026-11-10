@@ -179,7 +179,7 @@ export const RULES: readonly Rule[] = [
     'routes-redirects',
     'routes',
     'build',
-    'redirects.json has no chains, no target that is itself a source, and fits Cloudflare limits.',
+    'redirects.json has no chains, no target that is itself a source, every target is built, and it fits Cloudflare limits.',
     'redirects.json is invalid.',
     'Point every from directly at its final target; mark removed pages `gone`.',
   ),

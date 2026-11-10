@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import type { Audit, BuildContext } from '../context.ts';
 import { headerCsp } from '../csp.ts';
 import { IMMUTABLE, PREFETCH_HTML } from '../hosts/cloudflare.ts';
-import { REDIRECT_LIMITS } from '../redirects.ts';
+import { REDIRECT_LIMITS, REDIRECTS_FILE } from '../redirects.ts';
 
 /** Cloudflare Workers static assets limits for _headers. */
 export const HEADER_LIMITS = { rules: 100, lineLength: 2000 } as const;
@@ -144,4 +144,18 @@ export const auditEdge: Audit = (ctx: BuildContext) => {
   if (headers === undefined) ctx.report.add('edge-headers', '_headers', 'missing from dist');
   else checkHeadersFile(ctx, headers);
   checkRedirectsFile(ctx, read('_redirects') ?? '');
+  checkRedirectTargets(ctx);
 };
+
+/** routes-redirects: a redirect whose target was not built sends the old URL to a 404. */
+export function checkRedirectTargets(ctx: BuildContext): void {
+  const files = ctx.files.map((f) => `/${f.endsWith('index.html') ? f.slice(0, -'index.html'.length) : f}`);
+  const built = new Set([...ctx.pages.map((p) => p.path), ...files]);
+  for (const { from, to } of ctx.redirects) {
+    // A splat or placeholder target is a pattern; /api/* is on-demand with features.forms.
+    if (!to || /[*:]/.test(to) || (ctx.options.features.forms && to.startsWith('/api/'))) continue;
+    const path = to.split(/[?#]/)[0] ?? to;
+    if (built.has(path) || built.has(`${path}/`)) continue;
+    ctx.report.add('routes-redirects', REDIRECTS_FILE, `${from} → ${to}, which is not built`);
+  }
+}
