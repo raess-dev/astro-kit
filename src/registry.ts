@@ -129,7 +129,7 @@ export const RULES: readonly Rule[] = [
     'config-wrangler',
     'config',
     'config',
-    'wrangler.jsonc serves dist as assets, keeps workers.dev and preview URLs off in production, and isolates env.preview.',
+    'wrangler.jsonc serves dist as assets, keeps workers.dev and preview URLs off in production, isolates env.preview, and uses only full-line // comments and no trailing commas, so the deploy job can read it.',
     'wrangler.jsonc does not match the kit shape.',
     'Compare with templates/wrangler.jsonc; routes must be a custom_domain and env.preview must set routes to [].',
   ),

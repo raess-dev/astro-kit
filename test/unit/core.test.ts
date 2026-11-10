@@ -1,6 +1,6 @@
 /** The integration's hooks and the project checks that run before a build. */
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -118,5 +118,30 @@ test('media-pdf: a PDF in public/ needs an HTML page', () => {
   const report = new Report();
   checkPublic(dir, report);
   assert.deepEqual(ids(report), ['media-pdf']);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('config-wrangler: wrangler.jsonc stays readable by the deploy step (full-line comments, no trailing commas)', () => {
+  const dir = copy();
+  const options = loadOptions(dir, new Report()) as KitOptions;
+  const wrangler = (edit: (text: string) => string) => {
+    const file = join(dir, 'wrangler.jsonc');
+    writeFileSync(file, edit(readFileSync(join(GOOD, 'wrangler.jsonc'), 'utf8')));
+    const report = new Report();
+    checkWrangler(dir, options, report);
+    return ids(report);
+  };
+  assert.deepEqual(
+    wrangler((t) => t),
+    [],
+  );
+  assert.deepEqual(
+    wrangler((t) => t.replace('"workers_dev": false,', '"workers_dev": false, // off in production')),
+    ['config-wrangler'],
+  );
+  assert.deepEqual(
+    wrangler((t) => t.replace(/"preview_urls": true\n/, '"preview_urls": true,\n')),
+    ['config-wrangler'],
+  );
   rmSync(dir, { recursive: true, force: true });
 });

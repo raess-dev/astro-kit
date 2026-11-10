@@ -186,12 +186,19 @@ export function checkWrangler(root: string, options: KitOptions, report: Report)
     report.add('config-wrangler', 'wrangler.jsonc', 'missing');
     return undefined;
   }
+  const text = readFileSync(file, 'utf8');
   let config: Record<string, unknown>;
   try {
-    config = parseJsonc(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    config = parseJsonc(text) as Record<string, unknown>;
   } catch (error) {
     report.add('config-wrangler', 'wrangler.jsonc', (error as Error).message);
     return undefined;
+  }
+  // The deploy job reads this file with no packages installed: it drops full-line // comments, then JSON.parse.
+  try {
+    JSON.parse(text.replace(/^\s*\/\/.*$/gm, ''));
+  } catch {
+    report.add('config-wrangler', 'wrangler.jsonc', 'use full-line // comments only, and no trailing commas');
   }
   const assets = (config.assets ?? {}) as Record<string, unknown>;
   const expect = (cond: boolean, detail: string) => {
