@@ -712,7 +712,7 @@ export const RULES: readonly Rule[] = [
     'build',
     'A PDF ships only with an HTML page that has the same content.',
     'A PDF has no HTML equivalent.',
-    'Publish the content as a page and map it in site.json.',
+    'Publish the content as a page, then map the file to its page id in site.json documents, e.g. {"brochure.pdf": "services"}.',
   ),
   r(
     'svg-name',

@@ -208,7 +208,7 @@ Sizes are compressed: the larger of zstd level 3 and brotli level 5.
 
 - <a id="media-animated"></a>**media-animated** — No animated GIF, APNG, animated WebP or animated AVIF ships. Fix: Use a still image or a `<video>` with controls.
 - <a id="media-captions"></a>**media-captions** — Every video has captions in the page language, and every audio links a transcript. Fix: Add a `<track kind="captions" srclang>` or a transcript link.
-- <a id="media-pdf"></a>**media-pdf** — A PDF ships only with an HTML page that has the same content. Fix: Publish the content as a page and map it in site.json.
+- <a id="media-pdf"></a>**media-pdf** — A PDF ships only with an HTML page that has the same content. Fix: Publish the content as a page, then map the file to its page id in site.json documents, e.g. {"brochure.pdf": "services"}.
 
 ## svg
 

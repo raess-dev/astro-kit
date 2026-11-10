@@ -94,7 +94,13 @@ export function checkSources(root: string, options: KitOptions, report: Report):
   }
 }
 
-export function checkPublic(root: string, report: Report): void {
+/** documents maps a PDF in public/ to the page id that has the same content (site.json); pages are the page ids. */
+export function checkPublic(
+  root: string,
+  report: Report,
+  documents: Readonly<Record<string, string>> = {},
+  pages?: ReadonlySet<string>,
+): void {
   const pub = join(root, 'public');
   for (const name of GENERATED_PUBLIC) {
     if (existsSync(join(pub, name))) report.add('config-public-shadow', `public/${name}`);
@@ -104,8 +110,12 @@ export function checkPublic(root: string, report: Report): void {
     if (/^sitemap.*\.xml$/.test(rel)) report.add('config-public-shadow', `public/${rel}`);
     if (RASTER.has(extname(file).toLowerCase()) && !PUBLIC_RASTER_ALLOW.includes(rel))
       report.add('images-public', `public/${rel}`);
-    if (extname(file).toLowerCase() === '.pdf')
-      report.add('media-pdf', `public/${rel}`, 'map it to an HTML page in site.json');
+    if (extname(file).toLowerCase() === '.pdf') {
+      const page = documents[rel];
+      if (!page)
+        report.add('media-pdf', `public/${rel}`, `map it to the page id with the same content in site.json documents`);
+      else if (pages && !pages.has(page)) report.add('media-pdf', `public/${rel}`, `"${page}" is not a page id`);
+    }
   }
 }
 

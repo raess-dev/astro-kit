@@ -48,6 +48,8 @@ export const siteSchema = z
       .array(z.object({ id: z.string(), amount: minor, currency: z.string().length(3).default('CHF') }))
       .default([]),
     sameAs: z.array(z.string().url()).default([]),
+    /** PDFs in public/ and the page id with the same content, e.g. { "brochure.pdf": "services" } (media-pdf). */
+    documents: z.record(z.string(), z.string()).default({}),
     /** Needed before an accessibility statement may claim conformance. */
     accessibilityAudit: z.object({ date: z.string(), by: z.string(), scope: z.string() }).optional(),
   })

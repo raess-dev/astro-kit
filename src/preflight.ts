@@ -25,16 +25,18 @@ export function preflight(root: string, report = new Report(), env = process.env
   checkShims(root, report);
   checkPackage(root, options, report);
   checkSources(root, options, report);
-  checkPublic(root, report);
   checkAssets(root, report, effectiveLimits(options));
   checkWrangler(root, options, report);
   loadRedirects(root, report);
+  const site = loadSite(root, report);
+  const manifest = buildManifest(root, options, report, env);
+  checkPublic(root, report, site?.documents, new Set(Object.keys(manifest.byId)));
   return {
     report,
     options,
-    site: loadSite(root, report),
+    site,
     schedule: loadSchedule(root, report),
     messages: loadMessages(root, options, report),
-    manifest: buildManifest(root, options, report, env),
+    manifest,
   };
 }

@@ -112,12 +112,18 @@ test('forms-binding: features.forms needs the mail binding and both rate limits'
   assert.ok(forms.some((d) => d.includes('FORM_RATE_LIMIT_ALL')));
 });
 
-test('media-pdf: a PDF in public/ needs an HTML page', () => {
+test('media-pdf: a PDF in public/ needs a page with the same content, mapped in site.json documents', () => {
   const dir = copy();
   writeFileSync(join(dir, 'public/brochure.pdf'), '%PDF-1.7\n');
-  const report = new Report();
-  checkPublic(dir, report);
-  assert.deepEqual(ids(report), ['media-pdf']);
+  const pdf = (documents?: Record<string, string>) => {
+    const report = new Report();
+    checkPublic(dir, report, documents, new Set(['home', 'services']));
+    return report.findings.map((f) => `${f.rule}: ${f.detail}`);
+  };
+  assert.equal(pdf().length, 1);
+  assert.match(pdf()[0] ?? '', /^media-pdf: map it/);
+  assert.deepEqual(pdf({ 'brochure.pdf': 'services' }), []);
+  assert.deepEqual(pdf({ 'brochure.pdf': 'prices' }), ['media-pdf: "prices" is not a page id']);
   rmSync(dir, { recursive: true, force: true });
 });
 

@@ -40,6 +40,7 @@ const FACTS: SiteFacts = {
   iban: 'CH93 0076 2011 6238 5295 7',
   prices: [{ id: 'first', amount: 12900, currency: 'CHF' }],
   sameAs: [],
+  documents: {},
 };
 const PAGES: Record<string, Record<Locale, [string, string]>> = {
   home: { de: ['', 'Startseite'], fr: ['', 'Accueil'] },
