@@ -27,7 +27,8 @@ every step marked (owner); the agent does the rest.
    canonical host that keeps the path and the query.
 8. Zone settings: `npx --no astro-kit provision zone --apply` with a one-day Zone Settings edit token in
    `CLOUDFLARE_API_TOKEN`, then `provision zone --check` with the read-only token, then
-   `npx --no astro-kit smoke https://example.ch`.
+   `npx --no astro-kit smoke https://example.ch`. In a Claude cloud session, smoke needs the site host on the
+   environment's allowed hosts.
 
 ## After the switch
 

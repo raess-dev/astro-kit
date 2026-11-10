@@ -3,6 +3,7 @@
  * The astro-kit command line, run in the project root as `npx --no astro-kit <command>`.
  * Heavy modules load per command, so `feedback send` runs with node built-ins only.
  */
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -179,7 +180,30 @@ async function main(argv: string[]): Promise<number> {
   return 2;
 }
 
-main(process.argv.slice(2)).then(
+/**
+ * Commands that call remote hosts. Not ci: inside a session, its live-sitemap check skips a host that does not
+ * resolve, while the proxy would refuse a site host that is not allowed, which is not a broken URL. GitHub runs it
+ * in full.
+ */
+const NETWORK = new Set(['smoke', 'provision', 'feedback']);
+
+/**
+ * Node's fetch ignores HTTPS_PROXY unless NODE_USE_ENV_PROXY=1 is set when Node starts. Behind a proxy (a Claude
+ * cloud session), a network command therefore runs again in a child process with it on. NO_PROXY still applies.
+ */
+function rerunBehindProxy(command: string | undefined, env = process.env): number | undefined {
+  if (!command || !NETWORK.has(command) || !(env.HTTPS_PROXY || env.https_proxy) || env.NODE_USE_ENV_PROXY) return;
+  const child = spawnSync(process.execPath, [...process.execArgv, ...process.argv.slice(1)], {
+    stdio: 'inherit',
+    // NODE_NO_WARNINGS hides Node's notice that the proxy agent is experimental.
+    env: { ...env, NODE_USE_ENV_PROXY: '1', NODE_NO_WARNINGS: env.NODE_NO_WARNINGS ?? '1' },
+  });
+  return child.status ?? 1;
+}
+
+const rerun = rerunBehindProxy(process.argv[2]);
+const run = rerun === undefined ? main(process.argv.slice(2)) : Promise.resolve(rerun);
+run.then(
   (code) => {
     process.exitCode = code;
   },

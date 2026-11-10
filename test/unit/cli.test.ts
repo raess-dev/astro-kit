@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer, type IncomingMessage } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import type { Duplex } from 'node:stream';
 import { test } from 'node:test';
 import { inflateSync } from 'node:zlib';
 import { parse as parseYaml } from 'yaml';
@@ -551,4 +554,33 @@ test('the CLI prints usage for an unknown command', () => {
   assert.equal(run.status, 2);
   assert.match(run.stderr, /astro-kit <command>/);
   assert.equal(cli(temp(), 'routes', 'export').status, 2);
+});
+
+test('behind a proxy, a network command reruns with NODE_USE_ENV_PROXY, so its requests use the proxy', async () => {
+  // A proxy that records each CONNECT target, then refuses it.
+  const targets: string[] = [];
+  const proxy = createServer();
+  proxy.on('connect', (req: IncomingMessage, socket: Duplex) => {
+    targets.push(req.url ?? '');
+    socket.end('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+  });
+  await new Promise<void>((done) => proxy.listen(0, '127.0.0.1', done));
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    HTTPS_PROXY: `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`,
+    NO_PROXY: 'localhost,127.0.0.1',
+  };
+  for (const name of ['https_proxy', 'no_proxy', 'NODE_USE_ENV_PROXY']) delete env[name];
+  const child = spawn(process.execPath, [CLI, 'smoke', 'https://example.ch'], {
+    cwd: temp(),
+    env,
+    stdio: 'ignore',
+  });
+  const code = await new Promise<number | null>((done) => child.on('exit', done));
+  proxy.close();
+  assert.ok(
+    targets.some((t) => t.startsWith('example.ch:443')),
+    `no CONNECT through the proxy: ${targets.join(' ')}`,
+  );
+  assert.equal(code, 1);
 });
