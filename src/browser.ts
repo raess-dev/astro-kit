@@ -271,13 +271,25 @@ export async function checkFocus(page: Page, where: string, report: Report): Pro
 }
 
 /** a11y-keyboard: Tab reaches every visible control, and each focused control is visible and on top. */
-async function sweep(run: Run, page: Page, where: string): Promise<void> {
+export async function sweep(run: Pick<Run, 'report'>, page: Page, where: string): Promise<void> {
   const total = await page.evaluate(() => {
     let n = 0;
+    const groups = new Set<string>();
     for (const e of document.querySelectorAll<HTMLElement>(
       'a[href], button, input, select, textarea, summary, [tabindex], [contenteditable]',
     )) {
-      if (e.tabIndex < 0 || e.matches(':disabled, [type=hidden], [type=radio]') || !window.__kit.shown(e)) continue;
+      if (e.tabIndex < 0 || e.matches(':disabled, [type=hidden]') || !window.__kit.shown(e)) continue;
+      // A named radio group is one Tab stop: its checked radio, or its first one.
+      if (e instanceof HTMLInputElement && e.type === 'radio' && e.name) {
+        const key = `${e.form ? [...document.forms].indexOf(e.form) : -1}:${e.name}`;
+        if (groups.has(key)) continue;
+        groups.add(key);
+        const group = [...document.querySelectorAll<HTMLInputElement>('input[type=radio]')].filter(
+          (r) => r.name === e.name && r.form === e.form && !r.disabled && window.__kit.shown(r),
+        );
+        (group.find((r) => r.checked) ?? e).setAttribute('data-kit-stop', String(n++));
+        continue;
+      }
       e.setAttribute('data-kit-stop', String(n++));
     }
     return n;
@@ -528,6 +540,40 @@ async function contrastPairs(run: Run, page: Page, path: string): Promise<void> 
   await page.emulateMedia({ colorScheme: null, contrast: null });
 }
 
+/**
+ * perf-image-oversize, run in the page: images whose delivered pixels exceed 1.5 × their rendered width × DPR,
+ * unless they are already the smallest srcset candidate. For a `w` candidate, naturalWidth is scaled to the sizes
+ * width, so the resource width comes from the descriptor.
+ */
+export function oversizedImages(): string[] {
+  const oversized: string[] = [];
+  for (const img of document.images) {
+    if (!img.naturalWidth || !img.clientWidth) continue;
+    const sets = [
+      img,
+      ...(img.parentElement?.tagName === 'PICTURE' ? img.parentElement.querySelectorAll('source') : []),
+    ].map((s) =>
+      (s.getAttribute('srcset') ?? '')
+        .split(',')
+        .map((c) => c.trim().split(/\s+/))
+        .filter((c) => c[0])
+        .map(([u = '', d = '1x']) => ({
+          url: new URL(u, location.href).href,
+          size: Number.parseFloat(d),
+          unit: d.endsWith('w') ? 'w' : 'x',
+        })),
+    );
+    const set = sets.find((s) => s.some((c) => c.url === img.currentSrc));
+    const mine = set?.find((c) => c.url === img.currentSrc);
+    const pixels = !mine ? img.naturalWidth : mine.unit === 'w' ? mine.size : img.naturalWidth * mine.size;
+    if (pixels <= 1.5 * img.clientWidth * devicePixelRatio) continue;
+    // The smallest candidate of the srcset that delivered currentSrc is as small as it gets.
+    if (set && mine && mine.size <= Math.min(...set.map((c) => c.size))) continue;
+    oversized.push(`${img.currentSrc.split('/').pop()} ${pixels}px for ${img.clientWidth}px at ${devicePixelRatio}x`);
+  }
+  return oversized;
+}
+
 /** perf-lcp-priority, perf-cls and perf-image-oversize under CDP throttling, at both viewports. */
 async function perf(run: Run, pages: readonly DistPage[]): Promise<void> {
   for (const v of PERF_VIEWPORTS) {
@@ -580,31 +626,10 @@ async function perf(run: Run, pages: readonly DistPage[]): Promise<void> {
           ]);
           await wait(500);
         });
-        const result = await page.evaluate(() => {
-          const oversized: string[] = [];
-          for (const img of document.images) {
-            if (!img.naturalWidth || !img.clientWidth || img.naturalWidth <= 1.5 * img.clientWidth * devicePixelRatio)
-              continue;
-            // The smallest candidate of the srcset that delivered currentSrc is as small as it gets.
-            const sets = [
-              img,
-              ...(img.parentElement?.tagName === 'PICTURE' ? img.parentElement.querySelectorAll('source') : []),
-            ].map((s) =>
-              (s.getAttribute('srcset') ?? '')
-                .split(',')
-                .map((c) => c.trim().split(/\s+/))
-                .filter((c) => c[0])
-                .map(([u = '', d = '1x']) => ({ url: new URL(u, location.href).href, size: Number.parseFloat(d) })),
-            );
-            const set = sets.find((s) => s.some((c) => c.url === img.currentSrc));
-            const mine = set?.find((c) => c.url === img.currentSrc);
-            if (set && mine && mine.size <= Math.min(...set.map((c) => c.size))) continue;
-            oversized.push(
-              `${img.currentSrc.split('/').pop()} ${img.naturalWidth}px for ${img.clientWidth}px at ${devicePixelRatio}x`,
-            );
-          }
-          return { cls: window.__kitPerf.cls, oversized };
-        });
+        const result = {
+          cls: await page.evaluate(() => window.__kitPerf.cls),
+          oversized: await page.evaluate(oversizedImages),
+        };
         if (result.cls > 0.05) run.report.add('perf-cls', where, `CLS ${result.cls.toFixed(3)}`);
         for (const o of result.oversized) run.report.add('perf-image-oversize', where, o);
       });

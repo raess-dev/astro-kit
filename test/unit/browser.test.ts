@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { crc32, deflateSync } from 'node:zlib';
 import { type Browser, chromium } from 'playwright-core';
 import {
   axeFailures,
@@ -13,14 +14,16 @@ import {
   contrastRatio,
   distPages,
   over,
+  oversizedImages,
   PAGE_HELPERS,
   pickPages,
+  sweep,
 } from '../../src/browser.ts';
 import type { KitOptions } from '../../src/options.ts';
 import { Report } from '../../src/registry.ts';
 import { DEFAULT_CACHE, headerRules, headersFor, serveDist } from '../../src/serve.ts';
 
-function dist(files: Record<string, string>): string {
+function dist(files: Record<string, string | Buffer>): string {
   const dir = mkdtempSync(join(tmpdir(), 'kit-browser-'));
   for (const [name, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, name)), { recursive: true });
@@ -215,4 +218,91 @@ test('astro-kit test exits with an error when Chromium cannot start, and does no
   rmSync(root, { recursive: true, force: true });
   assert.equal(run.signal, null, 'the run hung until the timeout killed it');
   assert.equal(run.status, 1, run.stderr);
+});
+
+/** A grey PNG of the given size. */
+function png(width: number, height: number): Buffer {
+  const chunk = (type: string, data: Buffer) => {
+    const head = Buffer.alloc(4);
+    head.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([head, body, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr.set([8, 0, 0, 0, 0], 8);
+  const rows = Buffer.alloc((width + 1) * height, 128);
+  for (let y = 0; y < height; y++) rows[y * (width + 1)] = 0;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(rows)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+test('perf-image-oversize measures the delivered pixels, not the sizes-scaled naturalWidth', async (t) => {
+  const browser = await launch();
+  if (!browser) {
+    t.skip('no Chrome found; set CHROME_PATH');
+    return;
+  }
+  // Rendered 200px wide at 3x: 900px is the most it may deliver. sizes="390px" picks the 1280w file.
+  const img = (sizes: string) =>
+    `<img src="/a640.png" srcset="/a640.png 640w, /a1280.png 1280w" sizes="${sizes}" style="width:200px" alt="">`;
+  const dir = dist({
+    'wide/index.html': `<!doctype html><html lang="en"><title>Wide</title>${img('390px')}</html>`,
+    'right/index.html': `<!doctype html><html lang="en"><title>Right</title>${img('200px')}</html>`,
+    'a640.png': png(640, 10),
+    'a1280.png': png(1280, 20),
+  });
+  const server = await serveDist(dir);
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 600 }, deviceScaleFactor: 3 });
+    const check = async (path: string) => {
+      await page.goto(`${server.origin}${path}`);
+      await page.waitForFunction(() => [...document.images].every((i) => i.complete));
+      return page.evaluate(oversizedImages);
+    };
+    assert.deepEqual(await check('/wide/'), ['a1280.png 1280px for 200px at 3x']);
+    assert.deepEqual(await check('/right/'), []);
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
+test('a11y-keyboard counts each radio group as one Tab stop', async (t) => {
+  const browser = await launch();
+  if (!browser) {
+    t.skip('no Chrome found; set CHROME_PATH');
+    return;
+  }
+  const groups = Array.from(
+    { length: 8 },
+    (_, g) =>
+      `<fieldset><legend>Q${g}</legend>${[1, 2, 3].map((v) => `<label><input type="radio" name="q${g}" value="${v}">${v}</label>`).join('')}</fieldset>`,
+  ).join('');
+  const dir = dist({
+    'form/index.html': `<!doctype html><html lang="en"><title>Form</title><form>${groups}<a href="/next/">Next</a><button type="submit">Send</button></form></html>`,
+  });
+  const server = await serveDist(dir);
+  try {
+    const context = await browser.newContext();
+    await context.addInitScript(PAGE_HELPERS);
+    const page = await context.newPage();
+    await page.goto(`${server.origin}/form/`);
+    const report = new Report();
+    await sweep({ report }, page, '/form/');
+    assert.deepEqual(
+      report.findings.filter((f) => f.rule === 'a11y-keyboard'),
+      [],
+    );
+  } finally {
+    await browser.close();
+    await server.close();
+  }
 });
