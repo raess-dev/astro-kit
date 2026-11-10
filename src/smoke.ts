@@ -5,7 +5,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CONTACT_ACTION } from './forms/limits.ts';
-import { IMMUTABLE, PREFETCH_HTML, securityHeaders } from './hosts/cloudflare.ts';
+import { IMMUTABLE, PREFETCH_HTML, robotsTxt, securityHeaders } from './hosts/cloudflare.ts';
 import { type KitOptions, loadOptions } from './options.ts';
 import { Report } from './registry.ts';
 
@@ -107,8 +107,16 @@ export async function runSmoke(url: string, opts: SmokeOptions = {}): Promise<Re
   const assetPath = html?.text.match(/(?:https?:\/\/[^/"'\s]+)?(\/_astro\/[^"'\s)<>,?#]+)/)?.[1];
   const asset = assetPath ? await get(assetPath) : undefined;
   if (!assetPath) console.log('astro-kit smoke: the home page names no /_astro/ asset; the asset checks are skipped');
+  else if (asset && (!ok(asset) || asset.status !== 200))
+    report.add(
+      'smoke-status',
+      `${origin}${assetPath}`,
+      `${state(asset)}, expected 200 for an asset the home page uses`,
+    );
   const kit = securityHeaders(options ?? ({ features: {} } as KitOptions));
-  for (const got of [html, asset, ok(missing) ? missing : undefined]) {
+  // A missing asset is already a smoke-status finding; the 404 page's own headers are checked as `missing`.
+  const assetOk = asset && ok(asset) && asset.status === 200 ? asset : undefined;
+  for (const got of [html, assetOk, ok(missing) ? missing : undefined]) {
     if (!got || !ok(got)) continue;
     const wrong = kit.flatMap(([name, value]) => {
       const actual = got.headers.get(name);
@@ -160,12 +168,17 @@ export async function runSmoke(url: string, opts: SmokeOptions = {}): Promise<Re
       report.add('smoke-redirects', dev.path, 'the workers.dev URL answers 200; set workers_dev false');
   }
 
-  // smoke-robots: byte-equal to the build.
+  // smoke-robots: byte-equal to the build, or, without a local build (the smoke job), to what the kit writes.
   const robots = await get('/robots.txt');
   const robotsBuilt = built('robots.txt');
+  const robotsWanted = robotsBuilt ?? (options ? robotsTxt(options.site) : undefined);
   if (!ok(robots) || robots.status !== 200) report.add('smoke-robots', `${origin}/robots.txt`, state(robots));
-  else if (robotsBuilt !== undefined && robots.text !== robotsBuilt)
-    report.add('smoke-robots', `${origin}/robots.txt`, 'differs from dist/robots.txt');
+  else if (robotsWanted !== undefined && robots.text !== robotsWanted)
+    report.add(
+      'smoke-robots',
+      `${origin}/robots.txt`,
+      robotsBuilt !== undefined ? 'differs from dist/robots.txt' : 'differs from the robots.txt the kit writes',
+    );
 
   // smoke-release: release.txt names the expected commit, or at least a commit.
   const release = await get('/_kit/release.txt');

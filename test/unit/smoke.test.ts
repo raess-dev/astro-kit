@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { IMMUTABLE, securityHeaders } from '../../src/hosts/cloudflare.ts';
+import { IMMUTABLE, robotsTxt, securityHeaders } from '../../src/hosts/cloudflare.ts';
 import { loadOptions } from '../../src/options.ts';
 import { Report } from '../../src/registry.ts';
 import { HTML_CACHE, runSmoke, txtValue } from '../../src/smoke.ts';
@@ -131,6 +131,23 @@ test('a production site that matches the kit passes every smoke check', async ()
   assert.ok(calls.includes('GET https://example.acct.workers.dev/'));
 });
 
+test('without a local build, robots.txt is compared with the one the kit writes for the site', async () => {
+  const root = project();
+  rmSync(join(root, 'dist'), { recursive: true, force: true });
+  const run = (robots: string) =>
+    runSmoke('https://example.ch', {
+      root,
+      expectedSha: SHA,
+      workersDev: 'example.acct.workers.dev',
+      env: {},
+      fetch: fakeFetch({ ...routes(), 'GET https://example.ch/robots.txt': () => new Response(robots) }),
+      now: NOW,
+    });
+  const ids = async (robots: string) => [...(await run(robots)).ids()].filter((id) => id === 'smoke-robots');
+  assert.deepEqual(await ids(robotsTxt('https://example.ch')), []);
+  assert.deepEqual(await ids('User-agent: *\nDisallow: /\n'), ['smoke-robots']);
+});
+
 test('the weekly probe skips a site without forms: no post, no finding', async () => {
   const calls: string[] = [];
   const report = await runSmoke('https://example.ch', {
@@ -198,6 +215,11 @@ const cases: [string, string, Record<string, Route>, Record<string, string>?][] 
     'a cookie on the home page',
     'smoke-injection',
     { 'GET https://example.ch/': () => html(HOME, { 'set-cookie': '__cf_bm=1; path=/' }) },
+  ],
+  [
+    'a home page asset that is missing',
+    'smoke-status',
+    { 'GET https://example.ch/_astro/og.abc.jpg': () => new Response('not found', { status: 404 }) },
   ],
   ['NEL on an asset', 'smoke-injection', { 'GET https://example.ch/_astro/og.abc.jpg': asset({ nel: '{}' }) }],
   [
