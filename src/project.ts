@@ -39,7 +39,8 @@ export function checkShims(root: string, report: Report): void {
       report.add('config-shim', file, 'missing');
       continue;
     }
-    if (normalize(readFileSync(path, 'utf8')) !== normalize(expected)) report.add('config-shim', file, 'content differs');
+    if (normalize(readFileSync(path, 'utf8')) !== normalize(expected))
+      report.add('config-shim', file, 'content differs');
   }
 }
 
@@ -76,12 +77,17 @@ export function checkSources(root: string, options: KitOptions, report: Report):
     }
     if (file.endsWith('.astro')) {
       if (/\bis:global\b|:global\(/.test(text)) report.add('css-banned', rel, 'is:global or :global()');
-      if (/\sstyle=(["'{])/.test(text.replace(/<style[\s\S]*?<\/style>/g, ''))) report.add('css-banned', rel, 'style attribute');
+      if (/\sstyle=(["'{])/.test(text.replace(/<style[\s\S]*?<\/style>/g, '')))
+        report.add('css-banned', rel, 'style attribute');
       if (/\bdefine:vars\b/.test(text)) report.add('csp-hash', rel, 'define:vars creates an unhashed inline style');
       if (/\bis:inline\b/.test(text)) report.add('csp-hash', rel, 'is:inline scripts are not hashed');
       if (/data-astro-prefetch/.test(text)) report.add('js-prefetch-attr', rel);
       if (/client:(load|only)\b/.test(text)) report.add('js-directive', rel, text.match(/client:(load|only)/)?.[0]);
-      if (!options.features.scripts && !options.features.islands && /<script(?![^>]*type=["']application\/ld\+json)[\s>]/.test(text)) {
+      if (
+        !options.features.scripts &&
+        !options.features.islands &&
+        /<script(?![^>]*type=["']application\/ld\+json)[\s>]/.test(text)
+      ) {
         report.add('js-script', rel, 'enable features.scripts to ship a <script>');
       }
     }
@@ -96,15 +102,19 @@ export function checkPublic(root: string, report: Report): void {
   for (const file of walk(pub)) {
     const rel = relative(pub, file);
     if (/^sitemap.*\.xml$/.test(rel)) report.add('config-public-shadow', `public/${rel}`);
-    if (RASTER.has(extname(file).toLowerCase()) && !PUBLIC_RASTER_ALLOW.includes(rel)) report.add('images-public', `public/${rel}`);
-    if (extname(file).toLowerCase() === '.pdf') report.add('media-pdf', `public/${rel}`, 'map it to an HTML page in site.json');
+    if (RASTER.has(extname(file).toLowerCase()) && !PUBLIC_RASTER_ALLOW.includes(rel))
+      report.add('images-public', `public/${rel}`);
+    if (extname(file).toLowerCase() === '.pdf')
+      report.add('media-pdf', `public/${rel}`, 'map it to an HTML page in site.json');
   }
 }
 
 /** Reads width and height from PNG, JPEG, GIF and WebP headers without decoding. */
 export function imageSize(buf: Buffer): { width: number; height: number } | undefined {
-  if (buf.length > 24 && buf.readUInt32BE(0) === 0x89504e47) return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
-  if (buf.length > 10 && buf.toString('ascii', 0, 3) === 'GIF') return { width: buf.readUInt16LE(6), height: buf.readUInt16LE(8) };
+  if (buf.length > 24 && buf.readUInt32BE(0) === 0x89504e47)
+    return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+  if (buf.length > 10 && buf.toString('ascii', 0, 3) === 'GIF')
+    return { width: buf.readUInt16LE(6), height: buf.readUInt16LE(8) };
   if (buf.length > 30 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') {
     const chunk = buf.toString('ascii', 12, 16);
     if (chunk === 'VP8X') return { width: 1 + buf.readUIntLE(24, 3), height: 1 + buf.readUIntLE(27, 3) };
@@ -136,7 +146,8 @@ export function checkAssets(root: string, report: Report, limits: { imageMaxPx: 
     const bytes = statSync(file).size;
     if (bytes > limits.imageMaxBytes) report.add('images-original', rel, `${Math.round(bytes / 1024)} KB`);
     const size = imageSize(readFileSync(file));
-    if (size && Math.max(size.width, size.height) > limits.imageMaxPx) report.add('images-original', rel, `${size.width}×${size.height}`);
+    if (size && Math.max(size.width, size.height) > limits.imageMaxPx)
+      report.add('images-original', rel, `${size.width}×${size.height}`);
   }
 }
 
@@ -186,7 +197,10 @@ export function checkWrangler(root: string, options: KitOptions, report: Report)
   const expect = (cond: boolean, detail: string) => {
     if (!cond) report.add('config-wrangler', 'wrangler.jsonc', detail);
   };
-  expect(assets.directory === './dist' || assets.directory === 'dist' || assets.directory === './dist/client', 'assets.directory must point at the build output');
+  expect(
+    assets.directory === './dist' || assets.directory === 'dist' || assets.directory === './dist/client',
+    'assets.directory must point at the build output',
+  );
   expect(assets.not_found_handling === '404-page', 'assets.not_found_handling must be "404-page"');
   expect(assets.html_handling === 'auto-trailing-slash', 'assets.html_handling must be "auto-trailing-slash"');
   expect(config.workers_dev === false, 'workers_dev must be false');
@@ -206,10 +220,19 @@ export function checkWrangler(root: string, options: KitOptions, report: Report)
       report.add('forms-binding', 'wrangler.jsonc', 'send_email EMAIL with allowed_destination_addresses');
     } else {
       const allowed = binding.allowed_destination_addresses as string[];
-      if (options.contact && !allowed.includes(options.contact.to)) report.add('forms-binding', 'wrangler.jsonc', `${options.contact.to} is not an allowed destination`);
+      if (options.contact && !allowed.includes(options.contact.to))
+        report.add('forms-binding', 'wrangler.jsonc', `${options.contact.to} is not an allowed destination`);
     }
     const rl = (config.ratelimits ?? []) as Record<string, unknown>[];
-    if (!rl.some((x) => x.name === 'FORM_RATE_LIMIT')) report.add('forms-binding', 'wrangler.jsonc', 'ratelimits FORM_RATE_LIMIT is missing');
+    for (const [name, limit] of [
+      ['FORM_RATE_LIMIT', 3],
+      ['FORM_RATE_LIMIT_ALL', 20],
+    ] as const) {
+      const entry = rl.find((x) => x.name === name);
+      const simple = entry?.simple as { limit?: unknown; period?: unknown } | undefined;
+      if (simple?.limit !== limit || simple.period !== 60)
+        report.add('forms-binding', 'wrangler.jsonc', `ratelimits ${name} must allow ${limit} per 60 s`);
+    }
   }
   return config;
 }

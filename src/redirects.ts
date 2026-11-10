@@ -32,7 +32,12 @@ export function loadRedirects(root: string, report: Report): RedirectRow[] {
       report.add('routes-redirects', where, `from "${from}" must be a path`);
       continue;
     }
-    if (from.includes('?')) report.add('routes-redirects', where, 'query strings cannot be matched; mark it gone or add a zone Single Redirect');
+    if (from.includes('?'))
+      report.add(
+        'routes-redirects',
+        where,
+        'query strings cannot be matched; mark it gone or add a zone Single Redirect',
+      );
     if (sources.has(from)) report.add('routes-redirects', where, `duplicate from ${from}`);
     sources.add(from);
     if (r.gone === true) out.push({ from, gone: true });
@@ -40,19 +45,15 @@ export function loadRedirects(root: string, report: Report): RedirectRow[] {
     else report.add('routes-redirects', where, 'needs a to path or gone: true');
   }
   for (const row of out) {
-    if (row.to && sources.has(row.to)) report.add('routes-redirects', REDIRECTS_FILE, `chain: ${row.from} → ${row.to} is itself a source`);
+    if (row.to && sources.has(row.to))
+      report.add('routes-redirects', REDIRECTS_FILE, `chain: ${row.from} → ${row.to} is itself a source`);
   }
   return out;
 }
 
-/** _redirects lines: static rows first (Cloudflare requires it), then splat rows. */
-export function redirectLines(rows: RedirectRow[], report: Report): string[] {
+/** _redirects lines: static rows first (Cloudflare requires it), then splat rows. auditEdge checks the limits. */
+export function redirectLines(rows: RedirectRow[]): string[] {
   const moves = rows.filter((r) => r.to);
-  const statics = moves.filter((r) => !r.from.includes('*') && !r.from.includes(':'));
-  const dynamics = moves.filter((r) => r.from.includes('*') || r.from.includes(':'));
-  if (statics.length > REDIRECT_LIMITS.staticRules) report.add('edge-redirects', '_redirects', `${statics.length} static rules`);
-  if (dynamics.length > REDIRECT_LIMITS.dynamicRules) report.add('edge-redirects', '_redirects', `${dynamics.length} dynamic rules`);
-  const lines = [...statics, ...dynamics].map((r) => `${r.from} ${r.to} 301`);
-  for (const line of lines) if (line.length > REDIRECT_LIMITS.lineLength) report.add('edge-redirects', '_redirects', line.slice(0, 60));
-  return lines;
+  const dynamic = (r: RedirectRow) => r.from.includes('*') || r.from.includes(':');
+  return [...moves.filter((r) => !dynamic(r)), ...moves.filter(dynamic)].map((r) => `${r.from} ${r.to} 301`);
 }

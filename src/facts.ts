@@ -14,11 +14,17 @@ const minor = z.number().int().nonnegative();
 export const siteSchema = z
   .object({
     /** schema.org type: Organization, or one LocalBusiness subtype such as ProfessionalService. */
-    type: z.string().regex(/^[A-Z][A-Za-z]+$/).default('Organization'),
+    type: z
+      .string()
+      .regex(/^[A-Z][A-Za-z]+$/)
+      .default('Organization'),
     name: z.string().min(1),
     legalName: z.string().min(1),
     email: z.string().regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/),
-    phone: z.string().regex(/^\+[1-9]\d{6,14}$/).optional(),
+    phone: z
+      .string()
+      .regex(/^\+[1-9]\d{6,14}$/)
+      .optional(),
     address: z
       .object({
         street: z.string(),
@@ -28,11 +34,19 @@ export const siteSchema = z
         country: z.string().regex(/^[A-Z]{2}$/),
       })
       .optional(),
-    uid: z.string().regex(/^CHE-\d{3}\.\d{3}\.\d{3}$/).optional(),
+    uid: z
+      .string()
+      .regex(/^CHE-\d{3}\.\d{3}\.\d{3}$/)
+      .optional(),
     vatId: z.string().optional(),
-    iban: z.string().regex(/^[A-Z]{2}\d{2}[A-Z0-9 ]{10,30}$/).optional(),
+    iban: z
+      .string()
+      .regex(/^[A-Z]{2}\d{2}[A-Z0-9 ]{10,30}$/)
+      .optional(),
     /** Prices as integer minor units, rendered with formatMoney(). */
-    prices: z.array(z.object({ id: z.string(), amount: minor, currency: z.string().length(3).default('CHF') })).default([]),
+    prices: z
+      .array(z.object({ id: z.string(), amount: minor, currency: z.string().length(3).default('CHF') }))
+      .default([]),
     sameAs: z.array(z.string().url()).default([]),
     /** Needed before an accessibility statement may claim conformance. */
     accessibilityAudit: z.object({ date: z.string(), by: z.string(), scope: z.string() }).optional(),
@@ -49,7 +63,13 @@ export const scheduleSchema = z
   .object({
     openingHours: z.array(z.object({ days: z.array(day).min(1), opens: time, closes: time })).default([]),
     closures: z
-      .array(z.object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), note: z.string().max(80).optional() }))
+      .array(
+        z.object({
+          from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          note: z.string().max(80).optional(),
+        }),
+      )
       .default([]),
   })
   .strict();
@@ -68,7 +88,8 @@ export function loadSite(root: string, report: Report): SiteFacts | undefined {
   }
   const parsed = siteSchema.safeParse(readJson(file));
   if (!parsed.success) {
-    for (const issue of parsed.error.issues) report.add('config-options', SITE_FILE, `${issue.path.join('.')}: ${issue.message}`);
+    for (const issue of parsed.error.issues)
+      report.add('config-options', SITE_FILE, `${issue.path.join('.')}: ${issue.message}`);
     return undefined;
   }
   return parsed.data;
@@ -79,7 +100,8 @@ export function loadSchedule(root: string, report: Report): Schedule {
   if (!existsSync(file)) return { openingHours: [], closures: [] };
   const parsed = scheduleSchema.safeParse(readJson(file));
   if (!parsed.success) {
-    for (const issue of parsed.error.issues) report.add('facts-schedule', SCHEDULE_FILE, `${issue.path.join('.')}: ${issue.message}`);
+    for (const issue of parsed.error.issues)
+      report.add('facts-schedule', SCHEDULE_FILE, `${issue.path.join('.')}: ${issue.message}`);
     return { openingHours: [], closures: [] };
   }
   return parsed.data;
@@ -177,7 +199,11 @@ export const KIT_MESSAGES: Record<string, Record<string, string>> = {
   },
 };
 
-export function loadMessages(root: string, options: KitOptions, report: Report): Record<string, Record<string, string>> {
+export function loadMessages(
+  root: string,
+  options: KitOptions,
+  report: Report,
+): Record<string, Record<string, string>> {
   const out: Record<string, Record<string, string>> = {};
   const projectKeys: Record<string, string[]> = {};
   for (const { code } of options.locales) {
@@ -195,15 +221,31 @@ export function loadMessages(root: string, options: KitOptions, report: Report):
     }
     projectKeys[code] = Object.keys(project).sort();
     out[code] = { ...base, ...project };
+    // The kit has UI text in de, fr, it and en only; another language brings every key itself.
+    if (!KIT_MESSAGES[code]) {
+      const absent = Object.keys(KIT_MESSAGES.en ?? {}).filter((k) => !(k in project));
+      if (absent.length)
+        report.add(
+          'content-messages',
+          `${MESSAGES_DIR}/${code}.json`,
+          `the kit has no ${code} UI text; add [${absent.join(', ')}]`,
+        );
+    }
   }
+  // Parity covers the project's own keys; a kit key may be reworded in one locale only.
+  const own = (keys: string[] = []) => keys.filter((k) => !(k in (KIT_MESSAGES.en ?? {})));
   const codes = Object.keys(projectKeys);
-  const reference = projectKeys[options.defaultLocale] ?? [];
+  const reference = own(projectKeys[options.defaultLocale]);
   for (const code of codes) {
-    const keys = projectKeys[code] ?? [];
+    const keys = own(projectKeys[code]);
     const missing = reference.filter((k) => !keys.includes(k));
     const extra = keys.filter((k) => !reference.includes(k));
     if (missing.length || extra.length) {
-      report.add('content-messages', `${MESSAGES_DIR}/${code}.json`, `missing [${missing.join(', ')}] extra [${extra.join(', ')}]`);
+      report.add(
+        'content-messages',
+        `${MESSAGES_DIR}/${code}.json`,
+        `missing [${missing.join(', ')}] extra [${extra.join(', ')}]`,
+      );
     }
   }
   return out;

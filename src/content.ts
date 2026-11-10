@@ -1,10 +1,11 @@
 /**
  * Runtime helpers for pages and content.config.ts. Runs inside Astro (Vite), so it may import virtual modules.
  */
-import { glob } from 'astro/loaders';
-import { z } from 'astro/zod';
+
 import { defineCollection } from 'astro:content';
 import * as kit from 'virtual:astro-kit';
+import { glob } from 'astro/loaders';
+import { z } from 'astro/zod';
 import type { Schedule, SiteFacts } from './facts.ts';
 import type { Manifest, PageRecord } from './manifest.ts';
 import type { KitOptions } from './options.ts';
@@ -33,7 +34,10 @@ export function pageSchema(image: () => z.ZodTypeAny) {
       description: z.string(),
       draft: z.boolean().default(false),
       brief: brief.optional(),
-      transcreatedFrom: z.string().regex(/^[0-9a-f]{12}$/).optional(),
+      transcreatedFrom: z
+        .string()
+        .regex(/^[0-9a-f]{12}$/)
+        .optional(),
       missing: z.array(z.string()).default([]),
       parent: z.string().optional(),
       date: z.coerce.date().optional(),
@@ -49,11 +53,17 @@ export function pageSchema(image: () => z.ZodTypeAny) {
 
 type PageSchema = ReturnType<typeof pageSchema>;
 
-export function defineKitCollections(ext: { pages?: (schema: PageSchema) => z.ZodTypeAny; extra?: Record<string, unknown> } = {}) {
+export function defineKitCollections(
+  ext: { pages?: (schema: PageSchema) => z.ZodTypeAny; extra?: Record<string, unknown> } = {},
+) {
   return {
     pages: defineCollection({
       // The id is always <locale>/<file>; glob() would otherwise use the slug field as id.
-      loader: glob({ pattern: '**/*.{md,mdx}', base: './src/content/pages', generateId: ({ entry }) => entry.replace(/\.mdx?$/, '') }),
+      loader: glob({
+        pattern: '**/*.{md,mdx}',
+        base: './src/content/pages',
+        generateId: ({ entry }) => entry.replace(/\.mdx?$/, ''),
+      }),
       schema: ({ image }: { image: () => z.ZodTypeAny }) => {
         const base = pageSchema(image);
         return ext.pages ? ext.pages(base) : base;
@@ -68,9 +78,9 @@ const byId = manifest.byId;
 
 /** getStaticPaths for src/pages/[...path].astro: one path per published page and locale. */
 export function pagePaths() {
-  return pages.map((page) => ({
-    params: { path: page.path === '/' ? undefined : page.path.slice(1, -1) },
-    props: { page },
+  return pages.map((record) => ({
+    params: { path: record.path === '/' ? undefined : record.path.slice(1, -1) },
+    props: { page: record },
   }));
 }
 
@@ -119,7 +129,9 @@ export function t(locale: string, key: string): string {
 export function formatDate(locale: string, iso: string | Date, style: 'long' | 'numeric' = 'long'): string {
   const date = typeof iso === 'string' ? new Date(iso) : iso;
   const opts: Intl.DateTimeFormatOptions =
-    style === 'long' ? { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' } : { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' };
+    style === 'long'
+      ? { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }
+      : { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' };
   return new Intl.DateTimeFormat(localeTag(locale), opts).format(date);
 }
 

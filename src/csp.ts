@@ -19,7 +19,16 @@ export const META_DIRECTIVES = [
 ] as const;
 
 /** Sources the audit rejects anywhere in a CSP. */
-export const FORBIDDEN_SOURCES = ["'unsafe-inline'", "'unsafe-eval'", "'unsafe-hashes'", "'strict-dynamic'", 'data:', 'blob:', 'http:', '*'];
+export const FORBIDDEN_SOURCES = [
+  "'unsafe-inline'",
+  "'unsafe-eval'",
+  "'unsafe-hashes'",
+  "'strict-dynamic'",
+  'data:',
+  'blob:',
+  'http:',
+  '*',
+];
 
 /** One static speculation-rules block: prerender same-origin documents at moderate eagerness. */
 export const SPECULATION_RULES = {

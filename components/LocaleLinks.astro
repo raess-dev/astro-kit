@@ -1,0 +1,30 @@
+---
+/**
+ * One link per configured locale: the endonym, with lang and hreflang set to the locale tag.
+ * With a page id, each link goes to that page's translation; a missing one goes to that locale's home.
+ */
+import { options, page } from '../dist/content.js';
+
+interface Props {
+  locale: string;
+  id?: string | undefined;
+}
+
+const { locale, id } = Astro.props;
+const home = (code: string) => page('home', code)?.path ?? (code === options.defaultLocale ? '/' : `/${code}/`);
+const links = options.locales.map((l) => {
+  const target = id ? page(id, l.code) : undefined;
+  const current = l.code === locale ? (target ? 'page' : 'true') : undefined;
+  return { ...l, href: target?.path ?? home(l.code), current };
+});
+---
+
+<ul>
+  {links.map((l) => (
+    <li>
+      <a href={l.href} lang={l.tag} hreflang={l.tag} aria-current={l.current}>
+        {l.name}
+      </a>
+    </li>
+  ))}
+</ul>

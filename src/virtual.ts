@@ -1,10 +1,9 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Plugin } from 'vite';
 import type { Schedule, SiteFacts } from './facts.ts';
 import type { Manifest } from './manifest.ts';
 import type { KitOptions } from './options.ts';
-
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 
 export const VIRTUAL_ID = 'virtual:astro-kit';
 /** The project's src/styles/theme.css, or an empty stylesheet when the project has none. */

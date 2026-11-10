@@ -11,3 +11,8 @@ declare module 'virtual:astro-kit' {
 }
 
 declare module 'virtual:astro-kit/theme.css';
+
+/** Provided by workerd; the contact endpoint narrows env to its bindings. */
+declare module 'cloudflare:workers' {
+  export const env: unknown;
+}

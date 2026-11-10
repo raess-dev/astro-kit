@@ -1,8 +1,8 @@
 /** Files a project must keep byte-identical to these. `astro-kit init --shims` restores them. */
 export const SHIMS: Record<string, string> = {
   'astro.config.mjs': `// Managed by @raess/astro-kit. Every option lives in astro-kit.json.
-import { defineConfig } from 'astro/config';
 import astroKit from '@raess/astro-kit';
+import { defineConfig } from 'astro/config';
 
 export default defineConfig({ integrations: [astroKit()] });
 `,

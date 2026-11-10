@@ -4,20 +4,21 @@ import type { AstroIntegration } from 'astro';
 import { runAudits } from './audit/index.ts';
 import { loadBuild } from './build.ts';
 import { cspConfig, prefetchGateScript } from './csp.ts';
-import { loadMessages, loadSchedule, loadSite } from './facts.ts';
 import { writeEdgeFiles } from './hosts/cloudflare.ts';
 import { solidHydrationHash } from './islands.ts';
-import { buildManifest, type Manifest } from './manifest.ts';
-import { effectiveLimits, type KitOptions, loadOptions } from './options.ts';
-import { checkAssets, checkPackage, checkPublic, checkShims, checkSources, checkWrangler } from './project.ts';
+import type { Manifest } from './manifest.ts';
+import type { KitOptions } from './options.ts';
+import { preflight } from './preflight.ts';
 import { loadRedirects } from './redirects.ts';
-import { FindingError, Report } from './registry.ts';
+import { FindingError, formatFindings, Report } from './registry.ts';
 import { virtualModulePlugin } from './virtual.ts';
 
 export type { KitOptions } from './options.ts';
 export { RULES } from './registry.ts';
 
-const KIT_VERSION = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
+const KIT_VERSION = (
+  JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
+).version;
 
 /** Values the kit locks; config:done fails when anything changed them. */
 const LOCKED = {
@@ -45,62 +46,72 @@ export default function astroKit(): AstroIntegration {
   return {
     name: '@raess/astro-kit',
     hooks: {
-      'astro:config:setup': async ({ config, updateConfig, addWatchFile, injectScript, command }) => {
+      'astro:config:setup': async ({ config, updateConfig, addWatchFile, injectScript, command, logger }) => {
         root = fileURLToPath(config.root);
         const report = new Report();
-        options = loadOptions(root, report);
-        if (!options) fail(report);
-
-        checkShims(root, report);
-        checkPackage(root, options, report);
-        checkSources(root, options, report);
-        checkPublic(root, report);
-        checkAssets(root, report, effectiveLimits(options));
-        checkWrangler(root, options, report);
+        const checked = preflight(root, report);
+        if (!checked) fail(report);
+        const { options: kit, site, schedule, messages } = checked;
+        options = kit;
+        manifest = checked.manifest;
         if (config.adapter) report.add('config-adapter', 'astro.config.mjs', config.adapter.name);
         if (config.i18n) report.add('config-i18n', 'astro.config.mjs');
         for (const [flag, value] of Object.entries(config.experimental ?? {})) {
-          if (value && value !== EXPERIMENTAL_DEFAULTS[flag]) report.add('config-experimental', 'astro.config.mjs', flag);
+          if (value && value !== EXPERIMENTAL_DEFAULTS[flag])
+            report.add('config-experimental', 'astro.config.mjs', flag);
         }
-        const site = loadSite(root, report);
-        const schedule = loadSchedule(root, report);
-        const messages = loadMessages(root, options, report);
-        manifest = buildManifest(root, options, report);
-        // Pre-build findings stop here in a build; dev keeps running so the agent can see the page.
-        if (!report.ok && command === 'build') fail(report);
+        // Pre-build findings stop a build. Dev and check print them and keep running, so the page stays visible.
+        if (!report.ok) {
+          if (command === 'build') fail(report);
+          logger.warn(formatFindings(report.findings));
+        }
 
-        for (const file of ['astro-kit.json', 'src/content/site.json', 'src/content/schedule.json', 'src/content/redirects.json']) {
+        for (const file of [
+          'astro-kit.json',
+          'src/content/site.json',
+          'src/content/schedule.json',
+          'src/content/redirects.json',
+        ]) {
           addWatchFile(new URL(file, config.root));
         }
 
         const scriptHashes: string[] = [];
         const integrations: AstroIntegration[] = [];
-        if (options.features.islands) {
+        if (kit.features.islands) {
           const solid = (await import('@astrojs/solid-js')).default;
           integrations.push(solid());
           scriptHashes.push(await solidHydrationHash(root));
         }
         let adapter: AstroIntegration | undefined;
-        if (options.features.forms) {
+        if (kit.features.forms) {
           const cloudflare = (await import('@astrojs/cloudflare')).default;
           adapter = cloudflare({ imageService: 'compile', prerenderEnvironment: 'node' });
         }
-        if (options.prefetch.astroPrefetch) injectScript('page', prefetchGateScript(options));
+        if (kit.prefetch.astroPrefetch) injectScript('page', prefetchGateScript(kit));
 
         updateConfig({
-          site: options.site,
+          site: kit.site,
           output: LOCKED.output,
           trailingSlash: LOCKED.trailingSlash,
           compressHTML: LOCKED.compressHTML,
           build: { format: LOCKED.buildFormat, inlineStylesheets: LOCKED.inlineStylesheets },
-          image: { layout: 'constrained', responsiveStyles: true, breakpoints: [640, 960, 1280, 1920], domains: [], remotePatterns: [] },
-          security: { checkOrigin: true, csp: cspConfig(options, scriptHashes) },
-          prefetch: options.prefetch.astroPrefetch ? { prefetchAll: false } : false,
+          image: {
+            layout: 'constrained',
+            responsiveStyles: true,
+            breakpoints: [640, 960, 1280, 1920],
+            domains: [],
+            remotePatterns: [],
+          },
+          security: { checkOrigin: true, csp: cspConfig(kit, scriptHashes) },
+          prefetch: kit.prefetch.astroPrefetch ? { prefetchAll: false } : false,
           markdown: { syntaxHighlight: false },
           ...(adapter ? { adapter } : {}),
-          integrations,
+          // Astro only registers an adapter from the user's config; one added here must also be an integration.
+          integrations: adapter ? [...integrations, adapter] : integrations,
           vite: {
-            plugins: [virtualModulePlugin({ root, options, site, schedule, messages, manifest, kitVersion: KIT_VERSION })],
+            plugins: [
+              virtualModulePlugin({ root, options: kit, site, schedule, messages, manifest, kitVersion: KIT_VERSION }),
+            ],
             build: { cssTarget: CSS_TARGET },
             ssr: { noExternal: ['@raess/astro-kit'] },
           },
@@ -121,8 +132,10 @@ export default function astroKit(): AstroIntegration {
           if (actual !== expected) report.add('config-locked', key, `${String(actual)} instead of ${String(expected)}`);
         }
         if (config.i18n) report.add('config-i18n', 'astro config');
-        if (!config.security.csp || typeof config.security.csp !== 'object') report.add('config-locked', 'security.csp', 'CSP disabled');
-        if (options && !options.features.forms && config.adapter) report.add('config-adapter', 'astro config', config.adapter.name);
+        if (!config.security.csp || typeof config.security.csp !== 'object')
+          report.add('config-locked', 'security.csp', 'CSP disabled');
+        if (options && !options.features.forms && config.adapter)
+          report.add('config-adapter', 'astro config', config.adapter.name);
         report.throwIfFailed();
       },
 

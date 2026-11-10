@@ -8,7 +8,17 @@ import type { Report } from './registry.ts';
 export const PAGES_DIR = 'src/content/pages';
 
 /** Segments a default-locale URL may never start with, plus every locale code. */
-export const RESERVED_SEGMENTS = ['_astro', '_actions', '_server-islands', '_image', '_kit', 'api', '404', '500', '.well-known'];
+export const RESERVED_SEGMENTS = [
+  '_astro',
+  '_actions',
+  '_server-islands',
+  '_image',
+  '_kit',
+  'api',
+  '404',
+  '500',
+  '.well-known',
+];
 
 export interface Brief {
   intent: string;
@@ -85,7 +95,11 @@ export function buildManifest(root: string, options: KitOptions, report: Report,
   for (const dir of readdirSync(base, { withFileTypes: true })) {
     if (!dir.isDirectory()) continue;
     if (!codes.includes(dir.name)) {
-      report.add('routes-translation', `${PAGES_DIR}/${dir.name}`, `folder is not a configured locale (${codes.join(', ')})`);
+      report.add(
+        'routes-translation',
+        `${PAGES_DIR}/${dir.name}`,
+        `folder is not a configured locale (${codes.join(', ')})`,
+      );
       continue;
     }
     for (const f of readdirSync(join(base, dir.name), { withFileTypes: true })) {
@@ -114,7 +128,8 @@ export function buildManifest(root: string, options: KitOptions, report: Report,
         const text = value instanceof Date ? value.toISOString().slice(0, 10) : str(value);
         if (text) record[key] = text;
       }
-      if (Array.isArray(fm.processing)) record.processing = fm.processing.filter((x): x is string => typeof x === 'string');
+      if (Array.isArray(fm.processing))
+        record.processing = fm.processing.filter((x): x is string => typeof x === 'string');
       const brief = fm.brief as Partial<Brief> | undefined;
       if (brief && typeof brief === 'object') {
         const b: Brief = {
@@ -190,7 +205,11 @@ export function buildManifest(root: string, options: KitOptions, report: Report,
       if (code === options.defaultLocale) continue;
       const translated = locales[code];
       if (!translated && !primary.missing.includes(code)) {
-        report.add('routes-translation', primary.file, `"${id}" has no ${code} page and does not list ${code} in missing`);
+        report.add(
+          'routes-translation',
+          primary.file,
+          `"${id}" has no ${code} page and does not list ${code} in missing`,
+        );
       }
       if (translated && primary.briefHash && translated.transcreatedFrom !== primary.briefHash) {
         report.add(
