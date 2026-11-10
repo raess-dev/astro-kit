@@ -1,11 +1,25 @@
 ---
+// Every content page: one route per page and locale from src/content/pages/<locale>/<id>.md.
 import { getEntry, render } from 'astro:content';
-import { pagePaths, alternates } from '@raess/astro-kit/content';
+import Page from '@raess/astro-kit/components/Page.astro';
+import { pagePaths, siteIndex } from '@raess/astro-kit/content';
 
 export const getStaticPaths = pagePaths;
 const { page } = Astro.props;
 const entry = await getEntry('pages', page.entryId);
-const { Content } = await render(entry!);
-const alt = alternates(page.id);
+if (!entry) throw new Error(`no content entry ${page.entryId}`);
+const { Content } = await render(entry);
 ---
-<html lang={page.locale}><head><meta charset="utf-8"><title>{page.title}</title>{Object.entries(alt).map(([l, href]) => <link rel="alternate" hreflang={l} href={href} />)}</head><body><main id="main"><h1>{page.title}</h1><Content /></main></body></html>
+
+<Page page={page}>
+  <Content />
+  {page.id === 'sitemap' && (
+    <ul>
+      {siteIndex(page.locale).map((p) => (
+        <li>
+          <a href={p.path}>{p.title}</a>
+        </li>
+      ))}
+    </ul>
+  )}
+</Page>

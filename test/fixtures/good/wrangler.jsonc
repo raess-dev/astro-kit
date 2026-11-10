@@ -1,7 +1,7 @@
 // Managed by @raess/astro-kit. Protected path: the owner changes it.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "fixture-good",
+  "name": "example-ch",
   "compatibility_date": "2026-11-01",
   "assets": {
     "directory": "./dist",
@@ -13,7 +13,7 @@
   "routes": [{ "pattern": "example.ch", "custom_domain": true }],
   "env": {
     "preview": {
-      "name": "fixture-good-preview",
+      "name": "example-ch-preview",
       "routes": [],
       "workers_dev": true,
       "preview_urls": true
