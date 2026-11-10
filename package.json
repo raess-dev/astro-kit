@@ -56,7 +56,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "check": "biome ci . && tsc -p tsconfig.json --noEmit",
+    "check": "biome ci --error-on-warnings . && tsc -p tsconfig.json --noEmit",
     "test": "node --test 'test/unit/**/*.test.ts'",
     "test:fixtures": "node --test 'test/fixtures/**/*.test.ts'",
     "docs": "node src/docs.ts --write"
