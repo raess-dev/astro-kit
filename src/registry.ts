@@ -137,7 +137,7 @@ export const RULES: readonly Rule[] = [
     'config-kit-identity',
     'config',
     'ci',
-    'The kit in package-lock.json resolves from registry.npmjs.org with an integrity hash, .npmrc sets ignore-scripts=true, and the kit is not older than on the base branch.',
+    'The kit in package-lock.json resolves from its exact registry.npmjs.org tarball URL with an integrity hash, no npm-shrinkwrap.json exists, .npmrc sets ignore-scripts=true, and the kit is not older than on the base branch.',
     'The install source of the kit cannot be trusted.',
     'Install @raess/astro-kit from npm with an exact version. Never downgrade it.',
   ),

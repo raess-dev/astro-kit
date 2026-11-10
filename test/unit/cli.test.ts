@@ -362,6 +362,25 @@ test('the kit identity step fails on a non-registry, unhashed or downgraded kit'
   assert.match(identity().stdout, /\[config-kit-identity\] the kit must resolve from/);
   write(root, 'package-lock.json', lock('0.2.0', registry('0.2.0'), ''));
   assert.equal(identity().status, 1);
+  // A registry prefix that walks to another package, through the URL or through the version.
+  write(
+    root,
+    'package-lock.json',
+    lock('0.2.0', 'https://registry.npmjs.org/@raess/astro-kit/-/../../../other/-/other-0.2.0.tgz'),
+  );
+  assert.match(identity().stdout, /the kit must resolve from/);
+  write(
+    root,
+    'package-lock.json',
+    lock('0.2.0/../../../other/-/other-0.2.0', registry('0.2.0/../../../other/-/other-0.2.0')),
+  );
+  assert.match(identity().stdout, /is not a plain version/);
+  // npm-shrinkwrap.json wins over package-lock.json, so it would bypass this check.
+  write(root, 'package-lock.json', lock('0.2.0', registry('0.2.0')));
+  write(root, 'npm-shrinkwrap.json', lock('0.2.0', 'file:../evil.tgz'));
+  assert.match(identity().stdout, /npm-shrinkwrap\.json/);
+  rmSync(join(root, 'npm-shrinkwrap.json'));
+  assert.equal(identity().status, 0);
   write(root, 'package-lock.json', lock('0.2.0', registry('0.2.0')));
   writeFileSync(join(root, '.npmrc'), 'save-exact=true\n');
   assert.match(identity().stdout, /ignore-scripts=true/);

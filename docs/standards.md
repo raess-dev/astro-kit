@@ -39,7 +39,7 @@ If a check looks wrong, add an entry to `KIT-FEEDBACK.md` and keep the check.
 - <a id="config-dep-allowlist"></a>**config-dep-allowlist** — Dependencies are limited to astro, the kit, enabled feature packages and astro-kit.json dependencies. Fix: Remove it, or ask the owner to add it to astro-kit.json dependencies.
 - <a id="config-public-shadow"></a>**config-public-shadow** — public/ holds no file the kit generates. Fix: Delete it. The kit writes robots.txt, sitemap.xml, _headers, _redirects and security.txt.
 - <a id="config-wrangler"></a>**config-wrangler** — wrangler.jsonc serves dist as assets, keeps workers.dev and preview URLs off in production, isolates env.preview, and uses only full-line // comments and no trailing commas, so the deploy job can read it. Fix: Compare with templates/wrangler.jsonc; routes must be a custom_domain and env.preview must set routes to [].
-- <a id="config-kit-identity"></a>**config-kit-identity** — The kit in package-lock.json resolves from registry.npmjs.org with an integrity hash, .npmrc sets ignore-scripts=true, and the kit is not older than on the base branch. Fix: Install @raess/astro-kit from npm with an exact version. Never downgrade it.
+- <a id="config-kit-identity"></a>**config-kit-identity** — The kit in package-lock.json resolves from its exact registry.npmjs.org tarball URL with an integrity hash, no npm-shrinkwrap.json exists, .npmrc sets ignore-scripts=true, and the kit is not older than on the base branch. Fix: Install @raess/astro-kit from npm with an exact version. Never downgrade it.
 
 ### astro-kit.json
 
