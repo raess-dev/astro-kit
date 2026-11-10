@@ -1,0 +1,1 @@
+{ "name": "fixture-good", "private": true, "type": "module", "dependencies": { "astro": "7.4.8", "@raess/astro-kit": "0.1.0" } }

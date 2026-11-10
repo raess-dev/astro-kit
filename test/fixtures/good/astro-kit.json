@@ -1,0 +1,7 @@
+{
+  "site": "https://example.ch",
+  "locales": [{ "code": "de", "tag": "de-CH", "name": "Deutsch" }, { "code": "fr", "tag": "fr-CH", "name": "Français" }],
+  "defaultLocale": "de",
+  "nav": ["services"],
+  "securityContact": "mailto:security@example.ch"
+}

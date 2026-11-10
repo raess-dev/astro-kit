@@ -1,0 +1,2 @@
+{ "type": "ProfessionalService", "name": "Muster", "legalName": "Muster AG", "email": "hallo@example.ch", "phone": "+41440000000",
+  "address": { "street": "Musterstrasse 1", "postalCode": "8000", "locality": "Zürich", "country": "CH" }, "uid": "CHE-123.456.789" }

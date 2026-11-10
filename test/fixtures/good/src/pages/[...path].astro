@@ -1,0 +1,11 @@
+---
+import { getEntry, render } from 'astro:content';
+import { pagePaths, alternates } from '@raess/astro-kit/content';
+
+export const getStaticPaths = pagePaths;
+const { page } = Astro.props;
+const entry = await getEntry('pages', page.entryId);
+const { Content } = await render(entry!);
+const alt = alternates(page.id);
+---
+<html lang={page.locale}><head><meta charset="utf-8"><title>{page.title}</title>{Object.entries(alt).map(([l, href]) => <link rel="alternate" hreflang={l} href={href} />)}</head><body><main id="main"><h1>{page.title}</h1><Content /></main></body></html>
