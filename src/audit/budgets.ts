@@ -64,6 +64,8 @@ export function domStats(root: HTMLElement): { elements: number; depth: number }
 
 const FONT_URL = /\/[^"'()\s,]+\.(?:woff2?|ttf|otf)(?=[?#"'()\s,]|$)/gi;
 /** Static imports in an ES module chunk; dynamic import() is loaded later and not counted. */
+/** The chunk Astro emits for scripts injected at the page stage: the kit's prefetch gate and Astro's runtime. */
+const PREFETCH_CHUNK = /^\/_astro\/page(\.[\w-]+)?\.js$/;
 const STATIC_IMPORT = /(?:\bimport|\bfrom)\s*["']([^"']+\.js)["']/g;
 
 const sameOrigin = (url: string, site: string): string | undefined => {
@@ -152,20 +154,19 @@ export const auditBudgets: Audit = (ctx: BuildContext) => {
       );
     }
     if (options.prefetch.astroPrefetch) {
-      // The prefetch chunk is the page script that carries the kit gate (it names speculationrules).
-      const entries: string[] = [];
-      let inline = 0;
-      for (const script of doc.querySelectorAll('script[type=module]')) {
-        const src = sameOrigin(script.getAttribute('src') ?? '', site);
-        const code = src ? read(src) : script.textContent;
-        if (!code?.includes('speculationrules')) continue;
-        if (src) entries.push(src);
-        else {
-          inline += compressedSize(code);
-          for (const m of code.matchAll(STATIC_IMPORT)) entries.push(m[1] ?? '');
-        }
-      }
-      jsBudget(page, 'prefetch JS', closure(entries.filter((e) => e.startsWith('/'))), inline, limits.prefetchJsBytes);
+      // Astro bundles every injectScript('page') script into one /_astro/page.<hash>.js chunk, and the kit gate is
+      // the only one. The path identifies it: the gate's code changes with speculationRules and the minifier.
+      const entries = doc
+        .querySelectorAll('script[type=module][src]')
+        .map((script) => sameOrigin(script.getAttribute('src') ?? '', site))
+        .filter((src): src is string => src !== undefined && PREFETCH_CHUNK.test(src));
+      if (!entries.length)
+        report.add(
+          'js-budget',
+          page.path,
+          'astroPrefetch is on, but the page loads no /_astro/page.*.js chunk to measure',
+        );
+      else jsBudget(page, 'prefetch JS', closure(entries), 0, limits.prefetchJsBytes);
     }
   }
 

@@ -170,6 +170,23 @@ test('js-budget: the prefetch chunk stays within 2 KB with astroPrefetch', () =>
   assert.deepEqual(rules(ok), []);
 });
 
+test('js-budget: the prefetch chunk is found by its path, also when the minifier removed the speculationrules gate', () => {
+  // With speculationRules off, the gate is `false && …`, which the minifier drops with its string.
+  const html = page('<script type="module" src="/_astro/page.C7OqX83G.js"></script>');
+  const files = { '_astro/page.C7OqX83G.js': `document.addEventListener("pointerover",()=>"${noise(3_000)}");` };
+  const big = context({ '/': html }, files, { prefetch: { speculationRules: false, astroPrefetch: true } });
+  auditBudgets(big);
+  assert.deepEqual(rules(big), ['js-budget']);
+  assert.match(big.report.findings[0]?.detail ?? '', /^prefetch JS .* > 2\.0 KB/);
+});
+
+test('js-budget: astroPrefetch without a prefetch chunk on the page is a finding, never a silent skip', () => {
+  const missing = context({ '/': page('') }, {}, { prefetch: { astroPrefetch: true } });
+  auditBudgets(missing);
+  assert.deepEqual(rules(missing), ['js-budget']);
+  assert.match(missing.report.findings[0]?.detail ?? '', /no \/_astro\/page\.\*\.js/);
+});
+
 /** A valid _headers for the default options, written by hand. */
 const HEADERS = () =>
   [
