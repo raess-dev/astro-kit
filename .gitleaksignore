@@ -1,0 +1,2 @@
+# A fake HMAC key in a unit test, from before the test used a low-entropy value. Not a secret.
+c2a3edae5246c24ff275e07b40db086027b0d47b:test/unit/feedback.test.ts:generic-api-key:20

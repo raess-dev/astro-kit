@@ -17,7 +17,7 @@ import {
 } from '../../src/feedback.ts';
 
 const TEMPLATES = new URL('../../templates/', import.meta.url).pathname;
-const KEY = 'test-key-0123456789';
+const KEY = 'kit-test-key';
 
 const ENTRIES = `# Kit feedback
 
