@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { type Browser, chromium } from 'playwright-core';
 import {
   axeFailures,
@@ -196,4 +198,21 @@ test('a11y-focus: a CSS-free page fails, the kit focus style passes, a :focus ri
     await browser.close();
     await server.close();
   }
+});
+
+test('astro-kit test exits with an error when Chromium cannot start, and does not hang', () => {
+  const root = mkdtempSync(join(tmpdir(), 'kit-launch-'));
+  cpSync(new URL('../fixtures/good/astro-kit.json', import.meta.url), join(root, 'astro-kit.json'));
+  mkdirSync(join(root, 'dist'));
+  writeFileSync(join(root, 'dist/index.html'), '<!doctype html><html lang="de-CH"><title>x</title></html>');
+  const cli = fileURLToPath(new URL('../../src/cli.ts', import.meta.url));
+  const run = spawnSync(process.execPath, [cli, 'test'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, CHROME_PATH: '/bin/false' },
+    timeout: 90_000,
+  });
+  rmSync(root, { recursive: true, force: true });
+  assert.equal(run.signal, null, 'the run hung until the timeout killed it');
+  assert.equal(run.status, 1, run.stderr);
 });

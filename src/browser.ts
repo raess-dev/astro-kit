@@ -769,13 +769,15 @@ export async function runBrowserTests(opts: { root: string; all?: boolean; outli
   const contact = Object.fromEntries(all.filter((p) => p.contact).map((p) => [p.locale, p.path]));
   const server = external ? undefined : await serveDist(dist, options.features.forms ? { contact } : {});
   const executablePath = chromePath();
-  const browser = await chromium.launch({
-    ...(executablePath ? { executablePath } : {}),
-    // bfcache must be possible; Playwright disables it by default.
-    ignoreDefaultArgs: ['--disable-back-forward-cache'],
-    timeout: 60_000,
-  });
+  let browser: Browser | undefined;
   try {
+    // Inside the try: a failed launch must still close the server, or the process never exits.
+    browser = await chromium.launch({
+      ...(executablePath ? { executablePath } : {}),
+      // bfcache must be possible; Playwright disables it by default.
+      ignoreDefaultArgs: ['--disable-back-forward-cache'],
+      timeout: 60_000,
+    });
     if (opts.outline !== undefined) {
       const page = await browser.newPage();
       await page.goto(external ? opts.outline : new URL(opts.outline, server?.origin).href);
@@ -814,7 +816,7 @@ export async function runBrowserTests(opts: { root: string; all?: boolean; outli
     for (const w of run.warnings) console.warn(`astro-kit test: warning ${w}`);
     return report;
   } finally {
-    await browser.close();
+    await browser?.close();
     await server?.close();
   }
 }
