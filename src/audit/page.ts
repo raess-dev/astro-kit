@@ -425,7 +425,12 @@ function resources(ctx: BuildContext, page: BuiltPage, add: Add, state: State): 
     const urls = el.tagName === 'VIDEO' ? [attr(el, 'poster')] : [attr(el, 'src'), ...srcset(attr(el, 'srcset'))];
     for (const url of urls) {
       const path = localPath(url, site)?.split(/[?#]/)[0] ?? '';
-      if (!path.startsWith('/') || !state.files.has(path.slice(1))) continue;
+      if (!path.startsWith('/')) continue;
+      // A deleted or mistyped file would otherwise ship as a broken image.
+      if (!state.files.has(path.slice(1))) {
+        add('images-src', `${path} is not in the build`);
+        continue;
+      }
       if (!state.animated.has(path)) state.animated.set(path, animation(readFileSync(join(ctx.dist, path))));
       const kind = state.animated.get(path);
       if (kind) add('media-animated', `${path} is ${kind}`);

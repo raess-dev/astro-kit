@@ -64,6 +64,14 @@ const FILES: Record<string, Buffer> = {
   '_astro/anim.webp': webp('VP8X', 'ANIM', 'ANMF'),
   '_astro/still.avif': avif('avif'),
   '_astro/anim.avif': avif('avis'),
+  // The images the good page uses.
+  '_astro/team.avif': avif('avif'),
+  '_astro/team-2.avif': avif('avif'),
+  '_astro/team.webp': webp('VP8 '),
+  // Images that single-defect cases plant; they exist, so only the planted defect counts.
+  '_astro/a.webp': webp('VP8 '),
+  '_astro/b.webp': webp('VP8 '),
+  '_astro/team.jpg': Buffer.from([0xff, 0xd8, 0xff, 0xd9]),
 };
 for (const [file, bytes] of Object.entries(FILES)) {
   mkdirSync(dirname(join(DIST, file)), { recursive: true });
@@ -531,6 +539,11 @@ const CASES: [string, Case, string[]][] = [
   [
     'image outside the pipeline',
     { pre: body('<img src="/images/a.jpg" width="1" height="1" alt="">') },
+    ['images-src'],
+  ],
+  [
+    'an /_astro/ image that is not in the build',
+    { pre: body('<img src="/_astro/deleted.webp" width="1" height="1" alt="Gelöscht">') },
     ['images-src'],
   ],
   [
