@@ -19,4 +19,6 @@ First release.
 - `features.islands`: Solid 1.9 islands with the hydration hash in the CSP.
 - The CLI: `init`, `check`, `build`, `test`, `ci`, `smoke`, `routes import`, `provision zone` and `feedback send`.
 - `Page.astro`, `LocaleLinks.astro`, `ContactForm.astro` and `base.css`.
+- Photos in Markdown pages: the content column as `sizes`, and `priority` on the first photo of a page.
+- `site.json` `contacts` for a second email address or phone number.
 - The Biome and TypeScript presets, and the agent docs and recipes.
