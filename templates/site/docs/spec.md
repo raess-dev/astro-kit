@@ -45,6 +45,7 @@ transcreated from it, never translated line by line.
 ## Facts
 
 Every email address, phone number, UID, IBAN, address and price lives in `src/content/site.json` (owner only).
+A second address or number, such as jobs@ or a restaurant line, goes in its `contacts` list.
 Opening hours and closures live in `src/content/schedule.json`.
 
 ## Legal sources

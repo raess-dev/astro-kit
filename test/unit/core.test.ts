@@ -1,11 +1,13 @@
 /** The integration's hooks and the project checks that run before a build. */
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import astroKit from '../../src/index.ts';
+import { COLUMN_SIZES, LAZY_SIZES, markdownImageSizes } from '../../src/markdown.ts';
+import { NAV_LABEL_MAX } from '../../src/nav.ts';
 import type { KitOptions } from '../../src/options.ts';
 import { loadOptions } from '../../src/options.ts';
 import { preflight } from '../../src/preflight.ts';
@@ -40,6 +42,37 @@ test('preflight passes on the good fixture', () => {
   assert.deepEqual(ids(report), []);
 });
 
+test('links-nav-label: a nav label over 32 characters fails; a dash or a nav.<id> message shortens it', () => {
+  const dir = copy();
+  const de = join(dir, 'src/content/pages/de/services.md');
+  const title = (text: string) =>
+    writeFileSync(de, readFileSync(de, 'utf8').replace(/^title: .*$/m, `title: "${text}"`));
+  const labels = () => {
+    const report = new Report();
+    preflight(dir, report);
+    return report.findings
+      .filter((f) => f.rule === 'links-nav-label' && f.where.endsWith('de/services.md'))
+      .map((f) => f.detail);
+  };
+  title('Zimmer und Preise im Hotel Lärchenwald');
+  assert.deepEqual(labels(), ['"Zimmer und Preise im Hotel Lärchenwald" has 38 characters']);
+  // The limit is 32 characters: 32 pass, 33 fail.
+  assert.equal(NAV_LABEL_MAX, 32);
+  title(`${'Zimmer'.padEnd(32, '.')} – Hotel Lärchenwald`);
+  assert.deepEqual(labels(), []);
+  title(`${'Zimmer'.padEnd(33, '.')} – Hotel Lärchenwald`);
+  assert.deepEqual(labels(), [`"${'Zimmer'.padEnd(33, '.')}" has 33 characters`]);
+  title('Zimmer und Preise – Hotel Lärchenwald');
+  assert.deepEqual(labels(), []);
+  // A nav.<id> message wins over the title; every locale brings the project's own keys.
+  title('Zimmer und Preise im Hotel Lärchenwald');
+  mkdirSync(join(dir, 'src/content/messages'), { recursive: true });
+  writeFileSync(join(dir, 'src/content/messages/de.json'), '{ "nav.services": "Zimmer" }\n');
+  writeFileSync(join(dir, 'src/content/messages/fr.json'), '{ "nav.services": "Chambres" }\n');
+  assert.deepEqual(labels(), []);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('config-options: an invalid astro-kit.json stops before any other check', () => {
   const dir = copy();
   writeFileSync(join(dir, 'astro-kit.json'), '{ "site": "http://example.ch" }\n');
@@ -67,6 +100,45 @@ test('config-adapter and config-i18n: config:setup fails a build on a project-se
     logger: { warn: () => undefined },
   };
   assert.deepEqual(await thrown(() => hook(params as never)), ['config-adapter', 'config-i18n']);
+});
+
+test('Markdown photos: the first gets priority, every one gets the column sizes, explicit values stay', () => {
+  const run = (images: Record<string, unknown>[]) => {
+    const set: [string, string, unknown][] = [];
+    const plugin = markdownImageSizes();
+    for (const properties of images) {
+      const ctx = {
+        setProperty: (_: unknown, key: string, value: unknown) => set.push([String(properties.src), key, value]),
+      };
+      plugin.element.visit({ properties }, ctx);
+    }
+    return set;
+  };
+  assert.deepEqual(run([{ src: 'hero.jpg' }, { src: 'room.jpg' }, { src: 'own.jpg', sizes: '10rem' }]), [
+    ['hero.jpg', 'priority', true],
+    ['hero.jpg', 'sizes', COLUMN_SIZES],
+    ['room.jpg', 'sizes', LAZY_SIZES],
+  ]);
+  // A new document starts again: its first photo is the hero.
+  assert.deepEqual(run([{ src: 'next.jpg' }])[0], ['next.jpg', 'priority', true]);
+  assert.equal(LAZY_SIZES, `auto, ${COLUMN_SIZES}`);
+});
+
+test('config:setup adds the Markdown image sizes plugin to the Sätteri processor once', async () => {
+  const hook = astroKit().hooks['astro:config:setup'];
+  assert.ok(hook);
+  const processor = { name: 'satteri', options: { hastPlugins: [] as unknown[] } };
+  const params = {
+    config: { root: pathToFileURL(GOOD), experimental: {}, markdown: { processor } },
+    command: 'build',
+    updateConfig: () => ({}),
+    addWatchFile: () => undefined,
+    injectScript: () => undefined,
+    logger: { warn: () => undefined },
+  };
+  await hook(params as never);
+  await hook(params as never);
+  assert.deepEqual(processor.options.hastPlugins, [markdownImageSizes]);
 });
 
 test('config-locked: config:done fails when a locked value changed after the kit set it', async () => {

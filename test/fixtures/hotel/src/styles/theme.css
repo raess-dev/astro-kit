@@ -1,0 +1,11 @@
+/*
+ * Hotel Lärchenwald: forest green and larch amber. Every other token keeps the kit default.
+ */
+@layer theme {
+  :root {
+    --link: light-dark(oklch(45% 0.1 150), oklch(82% 0.1 150));
+    --primary: light-dark(oklch(42% 0.09 150), oklch(82% 0.1 150));
+    --primary-fg: light-dark(oklch(99% 0 0), oklch(18% 0.02 150));
+    --focus: light-dark(oklch(55% 0.15 60), oklch(75% 0.15 60));
+  }
+}

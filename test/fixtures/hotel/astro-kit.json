@@ -1,0 +1,43 @@
+{
+  "site": "https://laerchenwald.example",
+  "locales": [
+    {
+      "code": "de",
+      "tag": "de-CH",
+      "name": "Deutsch"
+    },
+    {
+      "code": "fr",
+      "tag": "fr-CH",
+      "name": "Français"
+    },
+    {
+      "code": "en",
+      "tag": "en",
+      "name": "English"
+    }
+  ],
+  "defaultLocale": "de",
+  "nav": [
+    "rooms",
+    "restaurant",
+    "arrival",
+    "contact"
+  ],
+  "features": {
+    "forms": true,
+    "islands": false,
+    "scripts": false
+  },
+  "prefetch": {
+    "speculationRules": true,
+    "astroPrefetch": false
+  },
+  "contact": {
+    "to": "info@laerchenwald.example",
+    "from": "form@laerchenwald.example"
+  },
+  "securityContact": "mailto:security@laerchenwald.example",
+  "dependencies": [],
+  "limits": {}
+}

@@ -101,7 +101,7 @@ function redirectMatches(from: string, path: string): boolean {
 export interface Fact {
   kind: 'email' | 'phone' | 'uid' | 'iban' | 'chf';
   raw: string;
-  /** Normalised: lower-case email, E.164 phone, CHE-123.456.789, IBAN without spaces, amount text as rendered. */
+  /** Normalised: lower-case email, E.164 phone, CHE-123.456.789, IBAN without spaces, CHF amount in minor units. */
   value: string;
 }
 
@@ -114,7 +114,7 @@ const FACT_PATTERNS: [Fact['kind'], RegExp, (m: RegExpMatchArray) => string][] =
     (m) => m[0].replace(/ /g, ''),
   ],
   ['uid', /CHE[- ]?(\d{3})\.?(\d{3})\.?(\d{3})/g, (m) => `CHE-${m[1]}.${m[2]}.${m[3]}`],
-  ['chf', new RegExp(String.raw`CHF ?${NUM}(?!\d)|(?<![\d'.,])${NUM} ?CHF(?![A-Za-z])`, 'g'), (m) => m[0]],
+  ['chf', new RegExp(String.raw`CHF ?${NUM}(?!\d)|(?<![\d'.,])${NUM} ?CHF(?![A-Za-z])`, 'g'), (m) => chfMinor(m[0])],
   [
     'phone',
     /(?<![\d+.,'])(?:(?:\+|00)41 ?(?:\(0\) ?)?|0)(\d{2}(?:[ ./-]?\d){7})(?!\d)/g,
@@ -123,6 +123,14 @@ const FACT_PATTERNS: [Fact['kind'], RegExp, (m: RegExpMatchArray) => string][] =
 ];
 
 const flat = (s: string): string => s.replace(/\s+/g, ' ').replace(/[’ʼ]/g, "'");
+
+/** A CHF amount as minor units: "CHF 1'290.50" → "129050"; "129.– CHF", "CHF 129" and "129.00 CHF" → "12900". */
+function chfMinor(raw: string): string {
+  const m = /(\d{1,3}(?:[' ]\d{3})+|\d+)(?:[.,](\d{2}|[-–—]{1,2}))?/.exec(flat(raw));
+  const whole = Number((m?.[1] ?? '0').replace(/[' ]/g, ''));
+  const cents = /^\d{2}$/.test(m?.[2] ?? '') ? Number(m?.[2]) : 0;
+  return String(whole * 100 + cents);
+}
 
 /** Emails, Swiss phone numbers, CHE-UIDs, IBANs and CHF amounts in a text. Each match is blanked before the next pattern runs. */
 export function extractFacts(input: string): Fact[] {
@@ -142,25 +150,44 @@ function e164(tel: string): string {
   return d.startsWith('0') ? `+41${d.slice(1)}` : d;
 }
 
-/** site.json prices as formatMoney() renders them for a locale: rendered text → price key. */
-function pricesFor(ctx: BuildContext, locale: string): Map<string, string> {
+/** site.json CHF prices by amount, as minor units → price key. The amount decides, not its format. */
+function pricesFor(ctx: BuildContext): Map<string, string> {
+  const chf = (ctx.site?.prices ?? []).filter((p) => p.currency === 'CHF');
+  return new Map(chf.map((p) => [String(p.amount), `price:${p.id}`]));
+}
+
+/** site.json prices as formatMoney() renders them for a locale, for messages. */
+function renderedPrices(ctx: BuildContext, locale: string): string {
   const tag = ctx.options.locales.find((l) => l.code === locale)?.tag ?? locale;
   const fmt = (amount: number, currency: string) =>
     flat(new Intl.NumberFormat(tag, { style: 'currency', currency }).format(amount / 100));
-  return new Map((ctx.site?.prices ?? []).map((p) => [fmt(p.amount, p.currency), `price:${p.id}`]));
+  return (ctx.site?.prices ?? []).map((p) => fmt(p.amount, p.currency)).join(', ');
+}
+
+/** The site's email addresses (lower case) and phone numbers: the main ones first, then contacts. */
+function contactValues(site: SiteFacts): { email: string[]; phone: string[] } {
+  const email = [site.email, ...site.contacts.map((c) => c.email)];
+  const phone = [site.phone, ...site.contacts.map((c) => c.phone)];
+  return {
+    email: email.filter((v): v is string => !!v).map((v) => v.toLowerCase()),
+    phone: phone.filter((v): v is string => !!v),
+  };
 }
 
 /** The site.json key a fact equals, or undefined. */
 function factKey(f: Fact, site: SiteFacts, prices: Map<string, string>): string | undefined {
+  const known = contactValues(site);
   const equal: Record<Fact['kind'], boolean> = {
-    email: f.value === site.email.toLowerCase(),
-    phone: f.value === site.phone,
+    email: known.email.includes(f.value),
+    phone: known.phone.includes(f.value),
     uid: f.value === site.uid || (site.vatId?.includes(f.value) ?? false),
     iban: f.value === site.iban?.replace(/ /g, ''),
-    chf: prices.has(flat(f.value)),
+    chf: prices.has(f.value),
   };
   if (!equal[f.kind]) return undefined;
-  return f.kind === 'chf' ? prices.get(flat(f.value)) : f.kind;
+  if (f.kind === 'chf') return prices.get(f.value);
+  // Several addresses and numbers can be valid, so the parity key names the value.
+  return f.kind === 'email' || f.kind === 'phone' ? `${f.kind} ${f.value}` : f.kind;
 }
 
 function checkFacts(ctx: BuildContext): void {
@@ -175,13 +202,14 @@ function checkFacts(ctx: BuildContext): void {
         facts.push({ kind: 'email', raw: href, value: safeDecode(href.slice(7).split('?')[0] ?? '').toLowerCase() });
       if (/^tel:/i.test(href)) facts.push({ kind: 'phone', raw: href, value: e164(href.slice(4)) });
     }
-    const prices = pricesFor(ctx, page.locale);
+    const prices = pricesFor(ctx);
+    const known = contactValues(site);
     const want = {
-      email: site.email,
-      phone: site.phone,
+      email: known.email.join(', '),
+      phone: known.phone.join(', '),
       uid: site.uid,
       iban: site.iban,
-      chf: [...prices.keys()].join(', '),
+      chf: renderedPrices(ctx, page.locale),
     };
     const seen = new Set<string>();
     for (const f of facts) {
@@ -378,7 +406,7 @@ function checkLegal(ctx: BuildContext, byPath: Map<string, BuiltPage>): void {
 /** What a translation must share with the default locale: h2 count, rendered facts, internal link targets by page id. */
 function shapeOf(ctx: BuildContext, page: BuiltPage, byPath: Map<string, BuiltPage>) {
   const main = mainOf(page);
-  const prices = pricesFor(ctx, page.locale);
+  const prices = pricesFor(ctx);
   const site = ctx.site;
   const facts = new Set(
     extractFacts(textOf(main)).map((f) => (site && factKey(f, site, prices)) || `${f.kind} ${f.raw}`),
@@ -400,10 +428,6 @@ function difference(own: Set<string>, base: Set<string>): string {
 
 function checkTranslations(ctx: BuildContext, byPath: Map<string, BuiltPage>): void {
   const def = ctx.options.defaultLocale;
-  const h1Of = (page: BuiltPage) => {
-    const h1 = page.doc.querySelector('h1');
-    return h1 ? norm(textOf(h1)) : '';
-  };
   for (const variants of Object.values(ctx.manifest.byId)) {
     const base = variants[def];
     if (!base) continue;
@@ -411,14 +435,12 @@ function checkTranslations(ctx: BuildContext, byPath: Map<string, BuiltPage>): v
     const baseShape = basePage && shapeOf(ctx, basePage, byPath);
     for (const rec of Object.values(variants)) {
       if (rec.locale === def) continue;
-      for (const field of ['title', 'description'] as const) {
-        if (rec[field] && rec[field] === base[field])
-          ctx.report.add('content-copied', rec.file, `${field} equals the ${def} ${field}`);
-      }
+      // Only the description: a title or h1 such as "Restaurant", "Jobs" or the brand name reads the same in
+      // several languages, while a 50–160 character sentence never does.
+      if (rec.description && rec.description === base.description)
+        ctx.report.add('content-copied', rec.file, `description equals the ${def} description`);
       const page = byPath.get(rec.path);
       if (!page || !basePage || !baseShape) continue;
-      const h1 = h1Of(page);
-      if (h1 && h1 === h1Of(basePage)) ctx.report.add('content-copied', page.path, `h1 equals the ${def} h1 "${h1}"`);
       const shape = shapeOf(ctx, page, byPath);
       if (shape.h2 !== baseShape.h2)
         ctx.report.add('content-stale', page.path, `${shape.h2} h2 sections; ${def} has ${baseShape.h2}`);

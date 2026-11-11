@@ -302,15 +302,35 @@ export async function sweep(run: Pick<Run, 'report'>, page: Page, where: string)
     const f = await page.evaluate(() => {
       const e = document.activeElement;
       if (!e || e === document.body) return null;
-      const r = e.getBoundingClientRect();
-      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      // WCAG 2.4.11: a focused element is not entirely hidden. So sample the on-screen part of each line box,
+      // its centre and then points just inside its corners: a wrapped link's box centre can fall between its
+      // lines, and a tall field's centre can sit below the fold while its top is on screen.
+      const hits = (x: number, y: number) => {
+        const top = document.elementFromPoint(x, y);
+        return top !== null && (top === e || e.contains(top));
+      };
+      const boxes = [...e.getClientRects()];
+      const onTop = (boxes.length ? boxes : [e.getBoundingClientRect()]).some((q) => {
+        const [l, t] = [Math.max(q.left, 0), Math.max(q.top, 0)];
+        const [r, b] = [Math.min(q.right, innerWidth), Math.min(q.bottom, innerHeight)];
+        if (r - l < 1 || b - t < 1) return false;
+        const inset = Math.min(2, (r - l) / 2, (b - t) / 2);
+        const points = [
+          [(l + r) / 2, (t + b) / 2],
+          [l + inset, t + inset],
+          [r - inset, t + inset],
+          [l + inset, b - inset],
+          [r - inset, b - inset],
+        ];
+        return points.some(([x = 0, y = 0]) => hits(x, y));
+      });
       const kit = window.__kit;
       const s = getComputedStyle(e);
       return {
         stop: e.getAttribute('data-kit-stop'),
         name: kit.name(e),
         shown: kit.shown(e),
-        onTop: top !== null && (top === e || e.contains(top)),
+        onTop,
         ring: s.outlineStyle !== 'none' && (Number.parseFloat(s.outlineWidth) || 0) >= 2,
       };
     });

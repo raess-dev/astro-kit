@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { parse as parseYaml } from 'yaml';
+import { NAV_LABEL_MAX, navLabel } from './nav.ts';
 import type { KitOptions } from './options.ts';
 import type { Report } from './registry.ts';
 
@@ -61,6 +62,23 @@ export interface Manifest {
 }
 
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/** links-nav-label: every page in options.nav has a short label in every locale it exists in. */
+export function checkNav(
+  manifest: Manifest,
+  options: KitOptions,
+  messages: Readonly<Record<string, Readonly<Record<string, string>>>>,
+  report: Report,
+): void {
+  for (const id of options.nav) {
+    for (const [locale, record] of Object.entries(manifest.byId[id] ?? {})) {
+      const key = `nav.${id}`;
+      const label = navLabel(record.title, messages[locale]?.[key] ?? messages[options.defaultLocale]?.[key]);
+      const length = [...label].length;
+      if (length > NAV_LABEL_MAX) report.add('links-nav-label', record.file, `"${label}" has ${length} characters`);
+    }
+  }
+}
 
 export function hashBrief(brief: Brief): string {
   const canonical = JSON.stringify([brief.intent, brief.audience, brief.message, brief.cta]);

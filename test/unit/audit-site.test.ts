@@ -41,6 +41,7 @@ const FACTS: SiteFacts = {
   prices: [{ id: 'first', amount: 12900, currency: 'CHF' }],
   sameAs: [],
   documents: {},
+  contacts: [],
 };
 const PAGES: Record<string, Record<Locale, [string, string]>> = {
   home: { de: ['', 'Startseite'], fr: ['', 'Accueil'] },
@@ -338,8 +339,8 @@ test('extractFacts normalises every kind', () => {
       ['email', 'info@example.ch'],
       ['iban', 'CH9300762011623852957'],
       ['uid', 'CHE-123.456.789'],
-      ['chf', "CHF 1'290.00"],
-      ['chf', '129.– CHF'],
+      ['chf', '129000'],
+      ['chf', '12900'],
       ['phone', '+41441234567'],
       ['phone', '+41311234567'],
     ],
@@ -350,11 +351,22 @@ test('facts-value', () => {
   expectRules({ edits: [on('/kontakt/', '044 000 00 00', '044 000 00 01')] }, ['facts-value']);
   expectRules({ edits: [on('/kontakt/', 'mailto:hallo@example.ch', 'mailto:info@example.ch')] }, ['facts-value']);
   expectRules({ edits: [footer('/', '<p>IBAN CH93 0076 2011 6238 5295 8</p>')] }, ['facts-value']);
-  // A price must be a site.json price formatted for the locale; the change also breaks parity with de.
-  expectRules({ edits: [on('/fr/prestations/', /129\.00\sCHF/, '129.– CHF')] }, ['content-stale', 'facts-value']);
+  // A price is compared by its amount: the Swiss "129.–" and a plain "CHF 129" are the site.json price.
+  for (const text of ['129.– CHF', 'CHF 129', '129 CHF', 'CHF 129.00'])
+    expectRules({ edits: [on('/fr/prestations/', /129\.00\sCHF/, text)] }, []);
+  // A different amount is not a site.json price, and it also breaks parity with de.
+  expectRules({ edits: [on('/fr/prestations/', /129\.00\sCHF/, '130.– CHF')] }, ['content-stale', 'facts-value']);
   const fine =
     '<p>CHE-123.456.789 MWST · IBAN CH93 0076 2011 6238 5295 7 · +41 44 000 00 00</p><script type="application/ld+json">{"telephone":"+41 44 999 99 99"}</script>';
   expectRules({ edits: [footer('*', fine)] }, []);
+});
+
+test('facts-value: a second email or phone is a fact once site.json lists it in contacts', () => {
+  const jobs = footer('*', '<p>Bewerbungen an jobs@example.ch oder +41 44 000 00 99</p>');
+  const findings = expectRules({ edits: [jobs] }, ['facts-value']);
+  assert.deepEqual([...new Set(findings.map((f) => f.detail?.split(' ')[0]))], ['email', 'phone']);
+  const contacts = [{ name: 'Jobs', email: 'jobs@example.ch', phone: '+41440000099' }];
+  expectRules({ edits: [jobs], site: { contacts } }, []);
 });
 
 test('legal-pages', () => {
@@ -397,16 +409,18 @@ test('legal-statement', () => {
   );
 });
 
-test('content-copied', () => {
-  const copyTitle = (rs: PageRecord[]) => {
+test('content-copied: a copied description fails; a shared title or h1 is a name, not a copy', () => {
+  const copy = (field: 'title' | 'description') => (rs: PageRecord[]) => {
     const de = rs.find((r) => r.entryId === 'de/services');
     const fr = rs.find((r) => r.entryId === 'fr/services');
-    if (de && fr) fr.title = de.title;
+    if (de && fr) fr[field] = de[field];
   };
-  const findings = expectRules({ records: copyTitle }, ['content-copied']);
+  // "Restaurant", "Jobs" or the brand name read the same in every locale; the h1 here follows the title.
+  expectRules({ records: copy('title') }, []);
+  const findings = expectRules({ records: copy('description') }, ['content-copied']);
   assert.deepEqual(
     findings.map((f) => f.detail?.split(' ')[0]),
-    ['title', 'h1'],
+    ['description'],
   );
 });
 

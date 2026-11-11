@@ -13,6 +13,7 @@ import 'virtual:astro-kit/theme.css';
 import {
   alternates as alternatesOf,
   localeTag,
+  navText,
   options,
   type PageRecord,
   page as pageOf,
@@ -54,7 +55,8 @@ const tag = localeTag(locale);
 const ogLocale = (code: string) => localeTag(code).replace('-', '_');
 const home = pageOf('home', locale)?.path ?? (locale === options.defaultLocale ? '/' : `/${locale}/`);
 
-// Open Graph image: the entry image, else src/assets/og.jpg, cropped to 1200×630.
+// Open Graph image: the entry image, else src/assets/og.jpg, cropped to 1200×630. Quality 70 keeps a detailed
+// photo under the 150 KB head-og limit; share previews are small.
 const fallback = Object.values(
   import.meta.glob<ImageMetadata>('/src/assets/og.{jpg,jpeg,png}', { eager: true, import: 'default' }),
 )[0];
@@ -63,7 +65,8 @@ const entryImage = record
   : undefined;
 const source = entryImage ?? fallback;
 const og =
-  source && (await getImage({ src: source, width: 1200, height: 630, fit: 'cover', format: 'jpg', layout: 'none' }));
+  source &&
+  (await getImage({ src: source, width: 1200, height: 630, fit: 'cover', format: 'jpg', quality: 70, layout: 'none' }));
 const ogAlt = (entryImage && record?.imageAlt) || site?.name || title;
 
 // JSON-LD: one organisation @id for every locale, built from site.json and schedule.json only.
@@ -160,20 +163,12 @@ if (url && record?.date) {
 // Escaping < keeps a title from closing the script element.
 const jsonld = JSON.stringify({ '@context': 'https://schema.org', '@graph': graph }).replace(/</g, '\\u003c');
 
-// Navigation labels: a nav.<id> message when the project defines one, else the title up to its first dash.
-const label = (r: PageRecord): string => {
-  try {
-    return t(locale, `nav.${r.id}`);
-  } catch {
-    return r.title.split(/ [–—|-] /)[0] ?? r.title;
-  }
-};
 const links = (ids: readonly string[], text: (r: PageRecord) => string) =>
   ids.flatMap((id) => {
     const r = pageOf(id, locale);
     return r ? [{ href: r.path, text: text(r), current: r.path === path ? 'page' : undefined }] : [];
   });
-const nav = links(options.nav, label);
+const nav = links(options.nav, (r) => navText(r, locale));
 const footer = links(['contact', 'imprint', 'privacy', 'sitemap'], (r) => t(locale, r.id));
 const index = record?.id === 'sitemap' ? siteIndex(locale).filter((r) => r.path !== path) : [];
 ---

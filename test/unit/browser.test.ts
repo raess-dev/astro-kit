@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { get as httpGet } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { crc32, deflateSync } from 'node:zlib';
+import { brotliDecompressSync, crc32, deflateSync, gunzipSync, zstdDecompressSync } from 'node:zlib';
 import { type Browser, chromium } from 'playwright-core';
 import {
   axeFailures,
@@ -73,6 +74,50 @@ test('serveDist answers like Workers static assets and applies _headers', async 
     const post = await get('/api/contact/', { method: 'POST', body: new URLSearchParams({ locale: 'fr', name: 'x' }) });
     assert.equal(post.status, 303);
     assert.equal(post.headers.get('location'), '/fr/contact/#sent');
+  } finally {
+    await server.close();
+  }
+});
+
+test('serveDist compresses text like Cloudflare (zstd, then br, then gzip) and leaves images alone', async () => {
+  const html = `<h1>${'Hotel Lärchenwald '.repeat(200)}</h1>`;
+  const dir = dist({ 'index.html': html, 'a.png': Buffer.alloc(2000, 7) });
+  const server = await serveDist(dir);
+  const raw = (path: string, accept: string) =>
+    new Promise<{ encoding: string | undefined; vary: string | undefined; body: Buffer }>((done, fail) => {
+      httpGet(`${server.origin}${path}`, { headers: { 'accept-encoding': accept } }, (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () =>
+          done({
+            encoding: res.headers['content-encoding'],
+            vary: res.headers.vary,
+            body: Buffer.concat(chunks),
+          }),
+        );
+      }).on('error', fail);
+    });
+  try {
+    const decode: Record<string, (b: Buffer) => Buffer> = {
+      zstd: zstdDecompressSync,
+      br: brotliDecompressSync,
+      gzip: gunzipSync,
+    };
+    for (const [accept, encoding] of [
+      ['gzip, deflate, br, zstd', 'zstd'],
+      ['gzip, br', 'br'],
+      ['gzip', 'gzip'],
+    ] as const) {
+      const r = await raw('/', accept);
+      assert.equal(r.encoding, encoding, accept);
+      assert.equal(r.vary, 'accept-encoding');
+      assert.ok(r.body.length < html.length / 4);
+      assert.equal(decode[encoding]?.(r.body).toString(), html);
+    }
+    const plain = await raw('/', 'identity');
+    assert.equal(plain.encoding, undefined);
+    assert.equal(plain.body.toString(), html);
+    assert.equal((await raw('/a.png', 'gzip, br, zstd')).encoding, undefined);
   } finally {
     await server.close();
   }
@@ -269,6 +314,38 @@ test('perf-image-oversize measures the delivered pixels, not the sizes-scaled na
     };
     assert.deepEqual(await check('/wide/'), ['a1280.png 1280px for 200px at 3x']);
     assert.deepEqual(await check('/right/'), []);
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
+test('a11y-keyboard: a wrapped link and a field partly below the fold are visible; a link under a fixed bar is covered', async (t) => {
+  const browser = await launch();
+  if (!browser) {
+    t.skip('no Chrome found; set CHROME_PATH');
+    return;
+  }
+  const bar = '<div style="position: fixed; inset: 0 0 auto 0; height: 4rem; background: #fff"></div>';
+  // Two lines with a gap between them: the box centre falls on the li, not on the link.
+  const wrapped =
+    '<ul style="inline-size: 12rem; line-height: 2"><li><a href="/a/">Datenschutzerklärung des Hotels Lärchenwald</a></li></ul>';
+  // Its top is on screen and its centre below the fold (844 px), so Chrome does not scroll it on focus.
+  const tall =
+    '<textarea aria-label="Message" style="position: absolute; inset-block-start: 760px; block-size: 250px"></textarea>';
+  const dir = dist({
+    'page/index.html': `<!doctype html><html lang="de"><title>Seite</title><body style="font-size: 18px; margin: 0">${bar}<p style="margin: 0"><a href="/b/">Unter dem Balken</a></p><div style="block-size: 5rem"></div>${wrapped}${tall}</body></html>`,
+  });
+  const server = await serveDist(dir);
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await context.addInitScript(PAGE_HELPERS);
+    const page = await context.newPage();
+    await page.goto(`${server.origin}/page/`);
+    const report = new Report();
+    await sweep({ report }, page, '/page/');
+    const keyboard = report.findings.filter((f) => f.rule === 'a11y-keyboard').map((f) => f.detail);
+    assert.deepEqual(keyboard, ['hidden when focused 1: a "Unter dem Balken" (covered)']);
   } finally {
     await browser.close();
     await server.close();

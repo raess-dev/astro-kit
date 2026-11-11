@@ -1,11 +1,13 @@
 /**
  * A small static server over dist for the browser checks. It answers like Workers static assets with
- * html_handling auto-trailing-slash and not_found_handling 404-page, and applies dist/_headers.
+ * html_handling auto-trailing-slash and not_found_handling 404-page, applies dist/_headers, and compresses
+ * text as Cloudflare does, so the throttled performance pass sees production-sized transfers.
  */
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { extname, join, resolve, sep } from 'node:path';
+import { brotliCompressSync, constants, gzipSync, zstdCompressSync } from 'node:zlib';
 import { CONTACT_ACTION } from './forms/limits.ts';
 import { parseHeaders } from './hosts/cloudflare.ts';
 
@@ -39,6 +41,26 @@ export const TYPES: Readonly<Record<string, string>> = {
 export const DEFAULT_CACHE = 'public, max-age=0, must-revalidate';
 
 type Rule = { pattern: RegExp; lines: string[] };
+
+const COMPRESSIBLE = /^(text\/|image\/svg\+xml|application\/(json|xml|manifest\+json))/;
+
+/** The body for the client: zstd, then br, then gzip, for text types, as Cloudflare chooses. */
+export function encodeBody(data: Buffer, type: string, accept: string): { body: Buffer; encoding?: string } {
+  if (!COMPRESSIBLE.test(type)) return { body: data };
+  const offered = new Set(
+    accept
+      .split(',')
+      .map((part) => part.trim().split(';'))
+      .filter(([, q]) => !/^\s*q=0(\.0*)?\s*$/.test(q ?? ''))
+      .map(([name]) => (name ?? '').trim().toLowerCase()),
+  );
+  if (offered.has('zstd'))
+    return { body: zstdCompressSync(data, { params: { [constants.ZSTD_c_compressionLevel]: 3 } }), encoding: 'zstd' };
+  if (offered.has('br'))
+    return { body: brotliCompressSync(data, { params: { [constants.BROTLI_PARAM_QUALITY]: 5 } }), encoding: 'br' };
+  if (offered.has('gzip')) return { body: gzipSync(data), encoding: 'gzip' };
+  return { body: data };
+}
 
 /** /* and :name placeholders as in Cloudflare _headers; absolute URL patterns are skipped. */
 export function headerRules(text: string): Rule[] {
@@ -153,8 +175,10 @@ export function serveDist(dir: string, options: ServeOptions = {}): Promise<Serv
       res.writeHead(404, { ...headers, 'content-type': 'text/plain; charset=utf-8' }).end('Not found');
       return;
     }
-    const data = readFileSync(found);
-    res.writeHead(status, { ...headers, 'content-length': String(data.length) });
+    const accept = String(req.headers['accept-encoding'] ?? '');
+    const { body: data, encoding } = encodeBody(readFileSync(found), type, accept);
+    const encoded = encoding ? { 'content-encoding': encoding, vary: 'accept-encoding' } : {};
+    res.writeHead(status, { ...headers, ...encoded, 'content-length': String(data.length) });
     res.end(req.method === 'HEAD' ? undefined : data);
   });
 

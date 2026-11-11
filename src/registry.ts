@@ -4,6 +4,8 @@
  * Each rule: a stable id, a group, the standard in one line, the failure message and a fix hint.
  */
 
+import { NAV_LABEL_MAX } from './nav.ts';
+
 export type Stage = 'config' | 'routes' | 'build' | 'browser' | 'ci' | 'smoke' | 'zone';
 
 export interface Rule {
@@ -373,7 +375,7 @@ export const RULES: readonly Rule[] = [
     'build',
     'Indexable pages have og:title, og:description, og:url equal to the canonical, og:locale as the locale tag with an underscore (de_CH), and a same-origin 1200×630 og:image of 150 KB or less.',
     'Open Graph tags are incomplete.',
-    'Give the entry an image, or rely on the site default image.',
+    'Give the entry an image, or rely on src/assets/og.jpg. If the image is too large, use a calmer photo or a tighter crop.',
   ),
   r(
     'head-icons',
@@ -466,6 +468,14 @@ export const RULES: readonly Rule[] = [
     'Remove target.',
   ),
   r(
+    'links-nav-label',
+    'links',
+    'routes',
+    `Each header navigation label is ${NAV_LABEL_MAX} characters or fewer: the title up to its first dash, or a nav.<id> message.`,
+    'A navigation label is too long.',
+    'Write the title as "Short label – rest of the title", or set a short nav.<id> in src/content/messages/<locale>.json.',
+  ),
+  r(
     'links-depth',
     'links',
     'build',
@@ -489,7 +499,7 @@ export const RULES: readonly Rule[] = [
     'build',
     'Every email, phone number, CHE-UID, IBAN and CHF amount in the HTML equals a value in site.json.',
     'A fact on the page is not in site.json.',
-    'Facts come only from site.json, which the owner edits.',
+    'Facts come only from site.json, which the owner edits. A further email or phone goes in its contacts list.',
   ),
   r(
     'facts-schedule',
@@ -519,9 +529,9 @@ export const RULES: readonly Rule[] = [
     'content-copied',
     'content',
     'build',
-    "A translation never reuses the default locale's title, description or h1.",
+    "A translation never reuses the default locale's description. Titles and h1s may match: names read the same.",
     'A translation copies the default locale.',
-    'Transcreate it.',
+    'Transcreate the description for this locale.',
   ),
   r(
     'content-glossary',
@@ -776,7 +786,7 @@ export const RULES: readonly Rule[] = [
     'a11y-keyboard',
     'a11y',
     'browser',
-    'Tab reaches every control, with the menu closed and open, and the focused element is never covered.',
+    'Tab reaches every control, with the menu closed and open, and no focused element is entirely covered.',
     'A control is unreachable or hidden when focused.',
     'Remove tabindex values above 0 and overlaps.',
   ),

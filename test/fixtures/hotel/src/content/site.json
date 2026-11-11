@@ -1,0 +1,56 @@
+{
+  "type": "Hotel",
+  "name": "Hotel Lärchenwald",
+  "legalName": "Hotel Lärchenwald AG",
+  "email": "info@laerchenwald.example",
+  "phone": "+41815550110",
+  "address": {
+    "street": "Via da Fex 7",
+    "postalCode": "7514",
+    "locality": "Sils im Engadin/Segl",
+    "region": "GR",
+    "country": "CH"
+  },
+  "uid": "CHE-123.456.789",
+  "vatId": "CHE-123.456.789 MWST",
+  "prices": [
+    {
+      "id": "room-single",
+      "amount": 18000
+    },
+    {
+      "id": "room-double",
+      "amount": 32000
+    },
+    {
+      "id": "room-family",
+      "amount": 42000
+    },
+    {
+      "id": "dog",
+      "amount": 2500
+    },
+    {
+      "id": "parking",
+      "amount": 1500
+    },
+    {
+      "id": "dinner-menu",
+      "amount": 9800
+    }
+  ],
+  "documents": {
+    "speisekarte.pdf": "restaurant"
+  },
+  "contacts": [
+    {
+      "name": "Restaurant",
+      "phone": "+41815550120"
+    },
+    {
+      "name": "Jobs",
+      "email": "jobs@laerchenwald.example",
+      "phone": "+41815550130"
+    }
+  ]
+}

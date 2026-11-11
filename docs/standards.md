@@ -19,7 +19,7 @@ If a check looks wrong, add an entry to `KIT-FEEDBACK.md` and keep the check.
 
 | Stage | Runs in | Groups |
 |---|---|---|
-| Config | `npx --no astro-kit check`, and the start of every `astro build` and `astro dev`. | config, routes, images, facts, content, forms |
+| Config | `npx --no astro-kit check`, and the start of every `astro build` and `astro dev`. | config, routes, images, links, facts, content, forms |
 | Build | the end of `astro build`, on the files in `dist/`. | config, routes, js, speculation, budgets, images, fonts, origins, head, headings, hreflang, indexing, links, facts, content, css, csp, edge, html, forms, legal, media, svg |
 | Browser | `npx --no astro-kit test`, in headless Chromium on the built site. | a11y, contrast, perf |
 | Release | `astro-kit ci` against the base branch and the live sitemap, `astro-kit smoke <url>` against production, `astro-kit provision zone --check`. | config, routes, smoke, zone |
@@ -127,7 +127,7 @@ Sizes are compressed: the larger of zstd level 3 and brotli level 5.
 - <a id="head-lang"></a>**head-lang** — html lang equals the locale of the route. Fix: Pass the entry's locale to Page.
 - <a id="head-title"></a>**head-title** — Titles are 15–70 characters and unique per locale. Fix: Write a distinct title for the page.
 - <a id="head-description"></a>**head-description** — Descriptions are 50–160 characters and unique per locale. Fix: Write a distinct description for the page.
-- <a id="head-og"></a>**head-og** — Indexable pages have og:title, og:description, og:url equal to the canonical, og:locale as the locale tag with an underscore (de_CH), and a same-origin 1200×630 og:image of 150 KB or less. Fix: Give the entry an image, or rely on the site default image.
+- <a id="head-og"></a>**head-og** — Indexable pages have og:title, og:description, og:url equal to the canonical, og:locale as the locale tag with an underscore (de_CH), and a same-origin 1200×630 og:image of 150 KB or less. Fix: Give the entry an image, or rely on src/assets/og.jpg. If the image is too large, use a calmer photo or a tighter crop.
 - <a id="head-icons"></a>**head-icons** — Each page links favicon.ico, icon.svg and apple-touch-icon.png. Fix: Keep the icons that init wrote in public/.
 - <a id="head-jsonld"></a>**head-jsonld** — JSON-LD parses, uses only Organization or one LocalBusiness type, WebPage (with inLanguage), WebSite and Article, shares one organisation @id, and matches site.json and schedule.json. Fix: Edit site.json or schedule.json; never hand-write JSON-LD.
 
@@ -151,19 +151,20 @@ Sizes are compressed: the larger of zstd level 3 and brotli level 5.
 - <a id="links-generic"></a>**links-generic** — No link text is generic, such as "mehr", "ici", "qui" or "here". Fix: Name the destination in the link text.
 - <a id="links-same-name"></a>**links-same-name** — Links with the same accessible name on a page share a target. Fix: Add context with a .visually-hidden span.
 - <a id="links-target-blank"></a>**links-target-blank** — No link opens a new window. Fix: Remove target.
+- <a id="links-nav-label"></a>**links-nav-label** — Each header navigation label is 32 characters or fewer: the title up to its first dash, or a nav.`<id>` message. Fix: Write the title as "Short label – rest of the title", or set a short nav.`<id>` in src/content/messages/`<locale>`.json.
 - <a id="links-depth"></a>**links-depth** — Every indexable page is within three clicks of its locale home. Fix: Link it from the navigation, a parent page or the sitemap page.
 - <a id="links-sitemap-page"></a>**links-sitemap-page** — Every indexable page links to its locale's sitemap page. Fix: Keep the footer from the kit Page component.
 
 ## facts
 
-- <a id="facts-value"></a>**facts-value** — Every email, phone number, CHE-UID, IBAN and CHF amount in the HTML equals a value in site.json. Fix: Facts come only from site.json, which the owner edits.
+- <a id="facts-value"></a>**facts-value** — Every email, phone number, CHE-UID, IBAN and CHF amount in the HTML equals a value in site.json. Fix: Facts come only from site.json, which the owner edits. A further email or phone goes in its contacts list.
 - <a id="facts-schedule"></a>**facts-schedule** — schedule.json holds opening hours and closures only. Fix: Move other data to site.json (owner) or the page content.
 
 ## content
 
 - <a id="content-stale"></a>**content-stale** — A translation is current: its transcreatedFrom matches the brief hash, and its h2 sections, facts and internal link targets match the default locale. Fix: Re-transcreate the page from its brief (docs/recipes/content.md), then set transcreatedFrom.
 - <a id="content-language"></a>**content-language** — Main content is written in the page's language. Fix: Transcreate the block; mark foreign phrases with `<span lang>`.
-- <a id="content-copied"></a>**content-copied** — A translation never reuses the default locale's title, description or h1. Fix: Transcreate it.
+- <a id="content-copied"></a>**content-copied** — A translation never reuses the default locale's description. Titles and h1s may match: names read the same. Fix: Transcreate the description for this locale.
 - <a id="content-glossary"></a>**content-glossary** — Copy uses the glossary's canonical terms and avoids banned variants (de-CH: no ß, no „ “). Fix: Use the canonical term from the glossary.
 - <a id="content-intl"></a>**content-intl** — Dates and money are formatted only with formatDate() and formatMoney(). Fix: Import formatDate or formatMoney from @raess/astro-kit/content.
 - <a id="content-messages"></a>**content-messages** — UI messages have the same keys in every locale and are NFC-normalised. A locale without kit UI text (other than de, fr, it, en) defines every kit key itself. Fix: Add the missing keys to src/content/messages/`<code>`.json.
@@ -222,7 +223,7 @@ Sizes are compressed: the larger of zstd level 3 and brotli level 5.
 - <a id="a11y-reflow"></a>**a11y-reflow** — At 320 px wide no element extends past the viewport, menu closed and open. Fix: Let the element wrap or shrink.
 - <a id="a11y-spacing"></a>**a11y-spacing** — The WCAG text-spacing override causes no overflow or clipping. Fix: Remove fixed heights on text containers.
 - <a id="a11y-forced-colors"></a>**a11y-forced-colors** — In forced colours the h1, main, focus ring and button borders stay visible. Fix: Use borders, not backgrounds, for boundaries.
-- <a id="a11y-keyboard"></a>**a11y-keyboard** — Tab reaches every control, with the menu closed and open, and the focused element is never covered. Fix: Remove tabindex values above 0 and overlaps.
+- <a id="a11y-keyboard"></a>**a11y-keyboard** — Tab reaches every control, with the menu closed and open, and no focused element is entirely covered. Fix: Remove tabindex values above 0 and overlaps.
 - <a id="a11y-no-js"></a>**a11y-no-js** — Without JS the content, navigation and form work. Fix: Render content on the server; JS only enhances.
 
 ## contrast

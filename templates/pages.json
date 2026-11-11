@@ -65,7 +65,7 @@
       },
       "contact": {
         "slug": "kontakt",
-        "title": "Kontakt mit {{NAME}} aufnehmen",
+        "title": "Kontakt – Nachricht an {{NAME}}",
         "description": "Schreiben Sie {{NAME}} über das Formular auf dieser Seite. Wir lesen jede Nachricht und antworten so bald wie möglich.",
         "body": "# Kontakt\n\nSchreiben Sie uns über das Formular. Wir antworten so bald wie möglich."
       }
@@ -97,7 +97,7 @@
       },
       "contact": {
         "slug": "contact",
-        "title": "Contacter {{NAME}} par message",
+        "title": "Contact – écrire à {{NAME}}",
         "description": "Écrivez à {{NAME}} avec le formulaire de cette page. Nous lisons chaque message et nous répondons dès que possible.",
         "body": "# Contact\n\nÉcrivez-nous avec le formulaire. Nous répondons dès que possible."
       }
@@ -129,7 +129,7 @@
       },
       "contact": {
         "slug": "contatto",
-        "title": "Scrivere a {{NAME}} con il modulo",
+        "title": "Contatti – scrivere a {{NAME}}",
         "description": "Scrivete a {{NAME}} con il modulo di questa pagina. Leggiamo ogni messaggio e rispondiamo il prima possibile.",
         "body": "# Contatto\n\nScriveteci con il modulo. Rispondiamo il prima possibile."
       }
@@ -161,7 +161,7 @@
       },
       "contact": {
         "slug": "contact",
-        "title": "Contact {{NAME}} with a message",
+        "title": "Contact – write to {{NAME}}",
         "description": "Write to {{NAME}} with the form on this page. We read every message and reply as soon as we can.",
         "body": "# Contact\n\nWrite to us with the form. We reply as soon as we can."
       }

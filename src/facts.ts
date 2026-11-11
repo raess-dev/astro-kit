@@ -11,6 +11,9 @@ export const MESSAGES_DIR = 'src/content/messages';
 const minor = z.number().int().nonnegative();
 
 /** The owner's facts. Protected by the push ruleset; agents never edit it. */
+const email = z.string().regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
+const phone = z.string().regex(/^\+[1-9]\d{6,14}$/);
+
 export const siteSchema = z
   .object({
     /** schema.org type: Organization, or one LocalBusiness subtype such as ProfessionalService. */
@@ -20,11 +23,8 @@ export const siteSchema = z
       .default('Organization'),
     name: z.string().min(1),
     legalName: z.string().min(1),
-    email: z.string().regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/),
-    phone: z
-      .string()
-      .regex(/^\+[1-9]\d{6,14}$/)
-      .optional(),
+    email,
+    phone: phone.optional(),
     address: z
       .object({
         street: z.string(),
@@ -52,6 +52,15 @@ export const siteSchema = z
     documents: z.record(z.string(), z.string()).default({}),
     /** Needed before an accessibility statement may claim conformance. */
     accessibilityAudit: z.object({ date: z.string(), by: z.string(), scope: z.string() }).optional(),
+    /** More addresses and numbers the pages may show, such as jobs@ or a restaurant line. */
+    contacts: z
+      .array(
+        z
+          .object({ name: z.string().min(1), email: email.optional(), phone: phone.optional() })
+          .strict()
+          .refine((c) => c.email !== undefined || c.phone !== undefined, 'a contact needs an email or a phone'),
+      )
+      .default([]),
   })
   .strict();
 
