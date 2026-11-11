@@ -339,8 +339,8 @@ test('extractFacts normalises every kind', () => {
       ['email', 'info@example.ch'],
       ['iban', 'CH9300762011623852957'],
       ['uid', 'CHE-123.456.789'],
-      ['chf', "CHF 1'290.00"],
-      ['chf', '129.– CHF'],
+      ['chf', '129000'],
+      ['chf', '12900'],
       ['phone', '+41441234567'],
       ['phone', '+41311234567'],
     ],
@@ -351,8 +351,11 @@ test('facts-value', () => {
   expectRules({ edits: [on('/kontakt/', '044 000 00 00', '044 000 00 01')] }, ['facts-value']);
   expectRules({ edits: [on('/kontakt/', 'mailto:hallo@example.ch', 'mailto:info@example.ch')] }, ['facts-value']);
   expectRules({ edits: [footer('/', '<p>IBAN CH93 0076 2011 6238 5295 8</p>')] }, ['facts-value']);
-  // A price must be a site.json price formatted for the locale; the change also breaks parity with de.
-  expectRules({ edits: [on('/fr/prestations/', /129\.00\sCHF/, '129.– CHF')] }, ['content-stale', 'facts-value']);
+  // A price is compared by its amount: the Swiss "129.–" and a plain "CHF 129" are the site.json price.
+  for (const text of ['129.– CHF', 'CHF 129', '129 CHF', 'CHF 129.00'])
+    expectRules({ edits: [on('/fr/prestations/', /129\.00\sCHF/, text)] }, []);
+  // A different amount is not a site.json price, and it also breaks parity with de.
+  expectRules({ edits: [on('/fr/prestations/', /129\.00\sCHF/, '130.– CHF')] }, ['content-stale', 'facts-value']);
   const fine =
     '<p>CHE-123.456.789 MWST · IBAN CH93 0076 2011 6238 5295 7 · +41 44 000 00 00</p><script type="application/ld+json">{"telephone":"+41 44 999 99 99"}</script>';
   expectRules({ edits: [footer('*', fine)] }, []);
