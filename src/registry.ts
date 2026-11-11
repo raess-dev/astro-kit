@@ -519,9 +519,9 @@ export const RULES: readonly Rule[] = [
     'content-copied',
     'content',
     'build',
-    "A translation never reuses the default locale's title, description or h1.",
+    "A translation never reuses the default locale's description. Titles and h1s may match: names read the same.",
     'A translation copies the default locale.',
-    'Transcreate it.',
+    'Transcreate the description for this locale.',
   ),
   r(
     'content-glossary',

@@ -163,7 +163,7 @@ Sizes are compressed: the larger of zstd level 3 and brotli level 5.
 
 - <a id="content-stale"></a>**content-stale** — A translation is current: its transcreatedFrom matches the brief hash, and its h2 sections, facts and internal link targets match the default locale. Fix: Re-transcreate the page from its brief (docs/recipes/content.md), then set transcreatedFrom.
 - <a id="content-language"></a>**content-language** — Main content is written in the page's language. Fix: Transcreate the block; mark foreign phrases with `<span lang>`.
-- <a id="content-copied"></a>**content-copied** — A translation never reuses the default locale's title, description or h1. Fix: Transcreate it.
+- <a id="content-copied"></a>**content-copied** — A translation never reuses the default locale's description. Titles and h1s may match: names read the same. Fix: Transcreate the description for this locale.
 - <a id="content-glossary"></a>**content-glossary** — Copy uses the glossary's canonical terms and avoids banned variants (de-CH: no ß, no „ “). Fix: Use the canonical term from the glossary.
 - <a id="content-intl"></a>**content-intl** — Dates and money are formatted only with formatDate() and formatMoney(). Fix: Import formatDate or formatMoney from @raess/astro-kit/content.
 - <a id="content-messages"></a>**content-messages** — UI messages have the same keys in every locale and are NFC-normalised. A locale without kit UI text (other than de, fr, it, en) defines every kit key itself. Fix: Add the missing keys to src/content/messages/`<code>`.json.

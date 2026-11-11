@@ -400,10 +400,6 @@ function difference(own: Set<string>, base: Set<string>): string {
 
 function checkTranslations(ctx: BuildContext, byPath: Map<string, BuiltPage>): void {
   const def = ctx.options.defaultLocale;
-  const h1Of = (page: BuiltPage) => {
-    const h1 = page.doc.querySelector('h1');
-    return h1 ? norm(textOf(h1)) : '';
-  };
   for (const variants of Object.values(ctx.manifest.byId)) {
     const base = variants[def];
     if (!base) continue;
@@ -411,14 +407,12 @@ function checkTranslations(ctx: BuildContext, byPath: Map<string, BuiltPage>): v
     const baseShape = basePage && shapeOf(ctx, basePage, byPath);
     for (const rec of Object.values(variants)) {
       if (rec.locale === def) continue;
-      for (const field of ['title', 'description'] as const) {
-        if (rec[field] && rec[field] === base[field])
-          ctx.report.add('content-copied', rec.file, `${field} equals the ${def} ${field}`);
-      }
+      // Only the description: a title or h1 such as "Restaurant", "Jobs" or the brand name reads the same in
+      // several languages, while a 50–160 character sentence never does.
+      if (rec.description && rec.description === base.description)
+        ctx.report.add('content-copied', rec.file, `description equals the ${def} description`);
       const page = byPath.get(rec.path);
       if (!page || !basePage || !baseShape) continue;
-      const h1 = h1Of(page);
-      if (h1 && h1 === h1Of(basePage)) ctx.report.add('content-copied', page.path, `h1 equals the ${def} h1 "${h1}"`);
       const shape = shapeOf(ctx, page, byPath);
       if (shape.h2 !== baseShape.h2)
         ctx.report.add('content-stale', page.path, `${shape.h2} h2 sections; ${def} has ${baseShape.h2}`);

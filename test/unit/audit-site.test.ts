@@ -397,16 +397,18 @@ test('legal-statement', () => {
   );
 });
 
-test('content-copied', () => {
-  const copyTitle = (rs: PageRecord[]) => {
+test('content-copied: a copied description fails; a shared title or h1 is a name, not a copy', () => {
+  const copy = (field: 'title' | 'description') => (rs: PageRecord[]) => {
     const de = rs.find((r) => r.entryId === 'de/services');
     const fr = rs.find((r) => r.entryId === 'fr/services');
-    if (de && fr) fr.title = de.title;
+    if (de && fr) fr[field] = de[field];
   };
-  const findings = expectRules({ records: copyTitle }, ['content-copied']);
+  // "Restaurant", "Jobs" or the brand name read the same in every locale; the h1 here follows the title.
+  expectRules({ records: copy('title') }, []);
+  const findings = expectRules({ records: copy('description') }, ['content-copied']);
   assert.deepEqual(
     findings.map((f) => f.detail?.split(' ')[0]),
-    ['title', 'h1'],
+    ['description'],
   );
 });
 
