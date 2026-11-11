@@ -127,7 +127,7 @@ Sizes are compressed: the larger of zstd level 3 and brotli level 5.
 - <a id="head-lang"></a>**head-lang** — html lang equals the locale of the route. Fix: Pass the entry's locale to Page.
 - <a id="head-title"></a>**head-title** — Titles are 15–70 characters and unique per locale. Fix: Write a distinct title for the page.
 - <a id="head-description"></a>**head-description** — Descriptions are 50–160 characters and unique per locale. Fix: Write a distinct description for the page.
-- <a id="head-og"></a>**head-og** — Indexable pages have og:title, og:description, og:url equal to the canonical, og:locale as the locale tag with an underscore (de_CH), and a same-origin 1200×630 og:image of 150 KB or less. Fix: Give the entry an image, or rely on the site default image.
+- <a id="head-og"></a>**head-og** — Indexable pages have og:title, og:description, og:url equal to the canonical, og:locale as the locale tag with an underscore (de_CH), and a same-origin 1200×630 og:image of 150 KB or less. Fix: Give the entry an image, or rely on src/assets/og.jpg. If the image is too large, use a calmer photo or a tighter crop.
 - <a id="head-icons"></a>**head-icons** — Each page links favicon.ico, icon.svg and apple-touch-icon.png. Fix: Keep the icons that init wrote in public/.
 - <a id="head-jsonld"></a>**head-jsonld** — JSON-LD parses, uses only Organization or one LocalBusiness type, WebPage (with inLanguage), WebSite and Article, shares one organisation @id, and matches site.json and schedule.json. Fix: Edit site.json or schedule.json; never hand-write JSON-LD.
 

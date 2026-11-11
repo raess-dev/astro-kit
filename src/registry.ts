@@ -373,7 +373,7 @@ export const RULES: readonly Rule[] = [
     'build',
     'Indexable pages have og:title, og:description, og:url equal to the canonical, og:locale as the locale tag with an underscore (de_CH), and a same-origin 1200×630 og:image of 150 KB or less.',
     'Open Graph tags are incomplete.',
-    'Give the entry an image, or rely on the site default image.',
+    'Give the entry an image, or rely on src/assets/og.jpg. If the image is too large, use a calmer photo or a tighter crop.',
   ),
   r(
     'head-icons',
