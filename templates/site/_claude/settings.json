@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "timeout": 300,
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" || exit 0; if [ ! -f package-lock.json ]; then echo \"No package-lock.json yet: run npm install --ignore-scripts once.\"; exit 0; fi; s=$(node -p \"require('node:crypto').createHash('sha256').update(require('node:fs').readFileSync('package-lock.json')).digest('hex')\") || exit 1; if [ \"$s\" != \"$(cat node_modules/.kit-stamp 2>/dev/null)\" ]; then npm ci --ignore-scripts --no-audit --no-fund >&2 && printf '%s\\n' \"$s\" > node_modules/.kit-stamp || exit 1; fi; cat node_modules/@raess/astro-kit/docs/INDEX.md"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": ["Edit(/node_modules/**)", "Write(/node_modules/**)"]
+  }
+}

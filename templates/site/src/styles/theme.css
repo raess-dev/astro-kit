@@ -1,0 +1,14 @@
+/*
+ * The site's tokens, in the theme layer. Set only what the brand changes; every other token keeps the kit
+ * default from node_modules/@raess/astro-kit/css/base.css (text, muted, bg, surface, border, contrast-bg,
+ * contrast-fg, error, focus, fonts, steps and spaces). `astro-kit test` checks every colour pair in light,
+ * dark and more contrast. If you set --muted or --border, also set them in the prefers-contrast block.
+ */
+@layer theme {
+  :root {
+    --link: light-dark(oklch(48% 0.16 255), oklch(80% 0.11 255));
+    --primary: light-dark(oklch(48% 0.16 255), oklch(80% 0.11 255));
+    --primary-fg: light-dark(oklch(99% 0 0), oklch(18% 0.01 250));
+    --focus: light-dark(oklch(58% 0.17 255), oklch(60% 0.17 255));
+  }
+}

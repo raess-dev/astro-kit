@@ -1,0 +1,139 @@
+# The kit's CI. test: types, lint, unit tests and the generated docs. fixtures: the fixture sites and the browser
+# checks. scan: zizmor on the workflows and gitleaks on the history. canary: weekly, against astro@latest.
+# merge: squashes a green pull request from the owner or Dependabot, then dispatches release.yml.
+name: kit
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 5 * * 1" # Mondays: everything, plus the canary
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: kit-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  ASTRO_TELEMETRY_DISABLED: "1"
+jobs:
+  test:
+    name: kit / test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run build
+      - run: npm run check
+      - run: npm test
+      - name: docs/standards.md matches the registry
+        run: node src/docs.ts --check
+
+  fixtures:
+    name: kit / fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run build
+      - name: Link the kit, so the fixtures load it from dist
+        run: mkdir -p node_modules/@raess && ln -sfn ../.. node_modules/@raess/astro-kit
+      - run: npx --no playwright-core install --with-deps chromium
+      - name: Fixture tests (site variants, the bad sites, the scale site)
+        run: npm run test:fixtures
+
+  scan:
+    name: kit / scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # gitleaks reads the whole history
+      - name: zizmor
+        uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        with:
+          version: 1.32.0
+          advanced-security: false
+          annotations: true
+      - name: gitleaks
+        env:
+          GITLEAKS: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+        run: docker run --rm -v "$PWD:/repo" "$GITLEAKS" git --redact --verbose --no-banner /repo
+
+  canary:
+    name: kit / canary (astro@latest)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm install --no-save --ignore-scripts --no-audit --no-fund astro@latest # zizmor: ignore[adhoc-packages] the canary's purpose
+      - run: node -p "'astro ' + require('astro/package.json').version"
+      - run: npm run build
+      - run: npm test
+      - name: Link the kit, so the fixtures load it from dist
+        run: mkdir -p node_modules/@raess && ln -sfn ../.. node_modules/@raess/astro-kit
+      - name: Build the good site
+        working-directory: test/fixtures/good
+        run: ../../../node_modules/.bin/astro build
+
+  merge:
+    name: kit / merge
+    needs: [test, fixtures, scan]
+    if: >-
+      github.event_name == 'pull_request' && !github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.pull_request.user.login == vars.KIT_OWNER || github.event.pull_request.user.login == 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - name: Merge the tested head, then dispatch the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          TESTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          live=$(gh pr view "$PR" --repo "$REPO" --json state,isDraft,headRefOid,baseRefName --jq '[.state, .isDraft, .headRefOid, .baseRefName] | @tsv')
+          IFS=$'\t' read -r state draft head base <<<"$live"
+          [ "$state" = OPEN ] || { echo "the pull request is $state"; exit 0; }
+          [ "$draft" = false ] || { echo 'a draft waits for the owner'; exit 0; }
+          [ "$base" = main ] || { echo "the base is $base, not main"; exit 0; }
+          [ "$head" = "$TESTED_SHA" ] || { echo 'the head moved since the tests ran; the next run merges it'; exit 0; }
+          files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename')
+          if grep -q '^\.github/' <<<"$files"; then echo 'it touches .github/: the owner reviews and merges it'; exit 0; fi
+          gh pr merge "$PR" --repo "$REPO" --squash --delete-branch --match-head-commit "$TESTED_SHA"
+          gh workflow run release.yml --repo "$REPO" --ref main

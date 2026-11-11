@@ -1,0 +1,31 @@
+---
+// Every content page: one route per page and locale from src/content/pages/<locale>/<id>.md.
+import { getEntry, render } from 'astro:content';
+{{#forms}}
+import ContactForm from '@raess/astro-kit/components/ContactForm.astro';
+{{/forms}}
+import Page from '@raess/astro-kit/components/Page.astro';
+import { pagePaths, siteIndex } from '@raess/astro-kit/content';
+
+export const getStaticPaths = pagePaths;
+const { page } = Astro.props;
+const entry = await getEntry('pages', page.entryId);
+if (!entry) throw new Error(`no content entry ${page.entryId}`);
+const { Content } = await render(entry);
+---
+
+<Page page={page}>
+  <Content />
+  {page.id === 'sitemap' && (
+    <ul>
+      {siteIndex(page.locale).map((p) => (
+        <li>
+          <a href={p.path}>{p.title}</a>
+        </li>
+      ))}
+    </ul>
+  )}
+{{#forms}}
+  {page.id === 'contact' && <ContactForm locale={page.locale} />}
+{{/forms}}
+</Page>

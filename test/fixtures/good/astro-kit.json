@@ -1,0 +1,31 @@
+{
+  "site": "https://example.ch",
+  "locales": [
+    {
+      "code": "de",
+      "tag": "de-CH",
+      "name": "Deutsch"
+    },
+    {
+      "code": "fr",
+      "tag": "fr-CH",
+      "name": "Français"
+    }
+  ],
+  "defaultLocale": "de",
+  "nav": [
+    "services"
+  ],
+  "features": {
+    "forms": false,
+    "islands": false,
+    "scripts": false
+  },
+  "prefetch": {
+    "speculationRules": true,
+    "astroPrefetch": false
+  },
+  "securityContact": "mailto:security@example.ch",
+  "dependencies": [],
+  "limits": {}
+}

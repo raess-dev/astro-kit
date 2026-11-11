@@ -1,0 +1,479 @@
+@layer kit.reset, kit.tokens, kit.base, theme;
+
+/* Reduced motion is here: !important in the first layer beats all later layers. */
+@layer kit.reset {
+  *,
+  ::before,
+  ::after {
+    box-sizing: border-box;
+  }
+  * {
+    margin: 0;
+  }
+  img,
+  picture,
+  svg,
+  video {
+    display: block;
+    max-inline-size: 100%;
+    block-size: auto;
+  }
+  input,
+  button,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation: none !important;
+      transition: none !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* The only colour literals; theme.css overrides them in @layer theme. */
+@layer kit.tokens {
+  :root {
+    color-scheme: light dark;
+    --text: light-dark(oklch(22% 0.01 250), oklch(95% 0.005 250));
+    --muted: light-dark(oklch(47% 0.01 250), oklch(77% 0.01 250));
+    --bg: light-dark(oklch(99% 0 0), oklch(18% 0.01 250));
+    --surface: light-dark(oklch(96% 0.005 250), oklch(23% 0.01 250));
+    --border: light-dark(oklch(58% 0.01 250), oklch(60% 0.01 250));
+    --link: light-dark(oklch(48% 0.16 255), oklch(80% 0.11 255));
+    --primary: light-dark(oklch(48% 0.16 255), oklch(80% 0.11 255));
+    --primary-fg: light-dark(oklch(99% 0 0), oklch(18% 0.01 250));
+    --contrast-bg: light-dark(oklch(27% 0.03 255), oklch(93% 0.02 255));
+    --contrast-fg: light-dark(oklch(98% 0 0), oklch(20% 0.02 255));
+    --error: light-dark(oklch(52% 0.19 27), oklch(75% 0.15 25));
+    --focus: light-dark(oklch(58% 0.17 255), oklch(60% 0.17 255));
+    --backdrop: light-dark(oklch(20% 0 0 / 50%), oklch(0% 0 0 / 60%));
+    --clear: transparent;
+    --font-body: system-ui, sans-serif;
+    --font-heading: var(--font-body);
+    --font-mono: ui-monospace, monospace;
+    --step--1: 0.875rem;
+    --step-0: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+    --step-1: clamp(1.2rem, 1.1rem + 0.5vw, 1.4rem);
+    --step-2: clamp(1.44rem, 1.25rem + 0.9vw, 1.85rem);
+    --step-3: clamp(1.73rem, 1.4rem + 1.6vw, 2.5rem);
+    --space-2xs: 0.25rem;
+    --space-xs: 0.5rem;
+    --space-s: 1rem;
+    --space-m: 1.5rem;
+    --space-l: 2.5rem;
+    --space-xl: 4rem;
+    --radius: 0.375rem;
+    --measure: 65ch;
+    --wide: 72rem;
+    --gutter: clamp(1rem, 4vw, 2rem);
+    --target: 2.75rem;
+  }
+  @media (prefers-contrast: more) {
+    :root {
+      --muted: light-dark(oklch(33% 0.01 250), oklch(88% 0.01 250));
+      --border: light-dark(oklch(40% 0.01 250), oklch(80% 0.01 250));
+    }
+  }
+}
+
+@layer kit.base {
+  /* No 100dvh sticky footer: a footer pinned to the bottom moves up as it streams in (CLS).
+     The canvas takes the footer colour instead, so a short page still ends in the footer. */
+  body {
+    background: var(--surface);
+    color: var(--text);
+    font: var(--step-0) / 1.6 var(--font-body);
+    overflow-wrap: break-word;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-heading);
+    line-height: 1.15;
+    text-wrap: balance;
+    hyphens: auto;
+  }
+  h1 {
+    font-size: var(--step-3);
+  }
+  h2 {
+    font-size: var(--step-2);
+  }
+  h3 {
+    font-size: var(--step-1);
+  }
+  p,
+  li,
+  dd,
+  blockquote,
+  figcaption {
+    text-wrap: pretty;
+    max-inline-size: var(--measure);
+  }
+  a {
+    color: var(--link);
+    text-underline-offset: 0.15em;
+  }
+  a:hover,
+  a[aria-current] {
+    text-decoration-thickness: 2px;
+  }
+  a[aria-current] {
+    font-weight: 700;
+  }
+  ul,
+  ol {
+    padding-inline-start: 1.25em;
+  }
+  :where(main, .stack, article, section, form, fieldset, li) > * + * {
+    margin-block-start: var(--space-s);
+  }
+  :where(main, .stack, article, section) > * + :is(h2, h3) {
+    margin-block-start: var(--space-l);
+  }
+  table {
+    display: block;
+    max-inline-size: max-content;
+    overflow-x: auto;
+    border-collapse: collapse;
+  }
+  th,
+  td {
+    padding: var(--space-xs);
+    border-block-end: 1px solid var(--border);
+    text-align: start;
+  }
+  figcaption {
+    color: var(--muted);
+    font-size: var(--step--1);
+  }
+  blockquote {
+    border-inline-start: 4px solid var(--border);
+    padding-inline-start: var(--space-s);
+  }
+  hr {
+    border: 0;
+    border-block-start: 1px solid var(--border);
+  }
+  code,
+  pre {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+  }
+  pre {
+    overflow-x: auto;
+    padding: var(--space-s);
+    background: var(--surface);
+    border-radius: var(--radius);
+  }
+
+  /* Rings for keyboard focus only, never on :focus. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  [tabindex="-1"]:focus-visible {
+    outline: none;
+  }
+
+  /* 44 px targets; minifiers write transparent as #0000, hence --clear. */
+  button,
+  .primary,
+  .secondary,
+  .outline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-xs);
+    min-block-size: var(--target);
+    min-inline-size: var(--target);
+    padding: var(--space-xs) var(--space-m);
+    border: 2px solid var(--clear);
+    border-radius: var(--radius);
+    background: var(--primary);
+    color: var(--primary-fg);
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .secondary {
+    background: var(--surface);
+    color: var(--text);
+    border-color: var(--border);
+  }
+  .outline {
+    background: none;
+    color: var(--link);
+    border-color: currentColor;
+  }
+  label,
+  legend {
+    display: block;
+    font-weight: 600;
+  }
+  label + * {
+    margin-block-start: var(--space-2xs);
+  }
+  input,
+  select,
+  textarea {
+    inline-size: 100%;
+    max-inline-size: var(--measure);
+    min-block-size: var(--target);
+    padding: var(--space-xs);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  input:is([type="checkbox"], [type="radio"]) {
+    inline-size: 1.25rem;
+    min-block-size: 1.25rem;
+    accent-color: var(--primary);
+  }
+  textarea {
+    resize: vertical;
+  }
+  :user-invalid {
+    border: 2px solid var(--error);
+  }
+  label:has(+ :user-invalid) {
+    color: var(--error);
+  }
+  label:has(+ :user-invalid)::before {
+    content: "⚠ ";
+  }
+  fieldset {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--space-s);
+  }
+  summary {
+    min-block-size: var(--target);
+    padding-block: var(--space-xs);
+    cursor: pointer;
+  }
+  dialog,
+  [popover] {
+    max-inline-size: min(100% - 2 * var(--gutter), var(--measure));
+    padding: var(--space-m);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
+    color: var(--text);
+  }
+  ::backdrop {
+    background: var(--backdrop);
+  }
+
+  /* Contact results: :target shows one; #sent hides the form. */
+  #sent,
+  #not-sent {
+    display: none;
+    padding: var(--space-s);
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+  }
+  #not-sent {
+    border-color: var(--error);
+  }
+  :is(#sent, #not-sent):target {
+    display: block;
+  }
+  #sent:target ~ form {
+    display: none;
+  }
+
+  /* The shell; the menu shows below 48rem. */
+  body > a[href="#main"] {
+    position: absolute;
+    z-index: 2;
+    inset-inline-start: var(--space-xs);
+    padding: var(--space-xs) var(--space-s);
+    background: var(--bg);
+    translate: 0 -120%;
+  }
+  body > a[href="#main"]:focus {
+    translate: 0 var(--space-xs);
+  }
+  body > header,
+  body > footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: start;
+    justify-content: space-between;
+    gap: var(--space-xs) var(--space-m);
+    padding: var(--space-xs) var(--gutter);
+  }
+  body > header {
+    background: var(--bg);
+    border-block-end: 1px solid var(--border);
+  }
+  body > header > a {
+    font-size: var(--step-1);
+    font-weight: 700;
+    color: inherit;
+    text-decoration: none;
+  }
+  body > header > a,
+  :is(header, footer) li > a,
+  form > p > a {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: var(--target);
+    min-inline-size: var(--target);
+  }
+  header nav,
+  header nav ul,
+  footer ul {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 var(--space-s);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  header nav {
+    margin-inline-start: auto;
+  }
+  header details ul {
+    flex-direction: column;
+    align-items: start;
+  }
+  header nav > details {
+    display: none;
+  }
+  @media (width < 48rem) {
+    header nav > ul {
+      display: none;
+    }
+    header nav > details {
+      display: block;
+    }
+  }
+  @media (min-height: 30rem) {
+    html {
+      scroll-padding-block-start: 5rem;
+    }
+    body > header {
+      position: sticky;
+      inset-block-start: 0;
+      z-index: 1;
+    }
+  }
+  main {
+    background: var(--bg);
+    display: grid;
+    grid-template-columns: minmax(var(--gutter), 1fr) min(100% - 2 * var(--gutter), var(--wide)) minmax(
+        var(--gutter),
+        1fr
+      );
+    align-content: start;
+    padding-block: var(--space-l);
+  }
+  /* astro-island is display: contents, so an island's own elements are the grid items. */
+  main > *,
+  main > astro-island > * {
+    grid-column: 2;
+  }
+  main > .full-bleed {
+    grid-column: 1 / -1;
+  }
+  body > footer {
+    padding-block: var(--space-l);
+    background: var(--surface);
+  }
+
+  .container {
+    inline-size: min(100% - 2 * var(--gutter), var(--wide));
+    margin-inline: auto;
+  }
+  .grid {
+    display: grid;
+    gap: var(--space-m);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  }
+  .cluster {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-xs) var(--space-s);
+    padding: 0;
+    list-style: none;
+  }
+  .lead {
+    font-size: var(--step-1);
+  }
+  .muted {
+    color: var(--muted);
+  }
+  .contrast {
+    --link: var(--contrast-fg);
+    padding: var(--space-l) var(--gutter);
+    background: var(--contrast-bg);
+    color: var(--contrast-fg);
+  }
+  .visually-hidden {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  @media (forced-colors: active) {
+    :focus-visible {
+      outline-color: Highlight;
+    }
+    button,
+    .primary,
+    .secondary,
+    .outline,
+    #sent,
+    #not-sent {
+      border-color: ButtonText;
+    }
+  }
+  @media print {
+    :root {
+      color-scheme: light;
+    }
+    body > a[href="#main"],
+    header nav,
+    form {
+      display: none;
+    }
+    a[href^="http"]::after {
+      content: " (" attr(href) ")";
+    }
+    h1,
+    h2,
+    h3,
+    h4 {
+      break-after: avoid;
+    }
+    h1,
+    h2,
+    h3,
+    h4,
+    figure,
+    table,
+    img {
+      break-inside: avoid;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition {
+    navigation: auto;
+  }
+}

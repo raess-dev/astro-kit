@@ -1,0 +1,22 @@
+// Managed by @raess/astro-kit. Protected path: the owner changes it.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "SITE_NAME",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash"
+  },
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "SITE_HOST", "custom_domain": true }],
+  "env": {
+    "preview": {
+      "name": "SITE_NAME-preview",
+      "routes": [],
+      "workers_dev": true,
+      "preview_urls": true
+    }
+  }
+}
