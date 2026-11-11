@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import astroKit from '../../src/index.ts';
+import { COLUMN_SIZES, LAZY_SIZES, markdownImageSizes } from '../../src/markdown.ts';
 import type { KitOptions } from '../../src/options.ts';
 import { loadOptions } from '../../src/options.ts';
 import { preflight } from '../../src/preflight.ts';
@@ -67,6 +68,45 @@ test('config-adapter and config-i18n: config:setup fails a build on a project-se
     logger: { warn: () => undefined },
   };
   assert.deepEqual(await thrown(() => hook(params as never)), ['config-adapter', 'config-i18n']);
+});
+
+test('Markdown photos: the first gets priority, every one gets the column sizes, explicit values stay', () => {
+  const run = (images: Record<string, unknown>[]) => {
+    const set: [string, string, unknown][] = [];
+    const plugin = markdownImageSizes();
+    for (const properties of images) {
+      const ctx = {
+        setProperty: (_: unknown, key: string, value: unknown) => set.push([String(properties.src), key, value]),
+      };
+      plugin.element.visit({ properties }, ctx);
+    }
+    return set;
+  };
+  assert.deepEqual(run([{ src: 'hero.jpg' }, { src: 'room.jpg' }, { src: 'own.jpg', sizes: '10rem' }]), [
+    ['hero.jpg', 'priority', true],
+    ['hero.jpg', 'sizes', COLUMN_SIZES],
+    ['room.jpg', 'sizes', LAZY_SIZES],
+  ]);
+  // A new document starts again: its first photo is the hero.
+  assert.deepEqual(run([{ src: 'next.jpg' }])[0], ['next.jpg', 'priority', true]);
+  assert.equal(LAZY_SIZES, `auto, ${COLUMN_SIZES}`);
+});
+
+test('config:setup adds the Markdown image sizes plugin to the Sätteri processor once', async () => {
+  const hook = astroKit().hooks['astro:config:setup'];
+  assert.ok(hook);
+  const processor = { name: 'satteri', options: { hastPlugins: [] as unknown[] } };
+  const params = {
+    config: { root: pathToFileURL(GOOD), experimental: {}, markdown: { processor } },
+    command: 'build',
+    updateConfig: () => ({}),
+    addWatchFile: () => undefined,
+    injectScript: () => undefined,
+    logger: { warn: () => undefined },
+  };
+  await hook(params as never);
+  await hook(params as never);
+  assert.deepEqual(processor.options.hastPlugins, [markdownImageSizes]);
 });
 
 test('config-locked: config:done fails when a locked value changed after the kit set it', async () => {

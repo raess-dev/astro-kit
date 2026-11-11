@@ -38,7 +38,9 @@ Build each piece of UI with the first tier that works, and say in the pull reque
 - Disclosure, accordion, FAQ: `<details name="group">` with `<summary>`.
 - Modal: `<dialog>` opened by `<button commandfor="id" command="show-modal">`. No script.
 - Menu, tooltip, panel: the `popover` attribute with `popovertarget`.
-- Images: `<Picture>` from `astro:assets` with a file from `src/assets/`; `priority` on the one LCP image only.
+- Images: `<Picture>` from `astro:assets` with a file from `src/assets/`; `priority` on the one LCP image only. In
+  Markdown, `![alt](../../../assets/photo.jpg)` also works: the kit sizes it to the content column, and the first
+  photo of a page loads with priority, so put the hero photo first.
 - Icons and logos: import the `.svg` file as a component. Brand fonts: the Astro Fonts API, local provider.
 
 ## Content model

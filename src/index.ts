@@ -8,6 +8,7 @@ import { loadMessages } from './facts.ts';
 import { writeEdgeFiles } from './hosts/cloudflare.ts';
 import { solidHydrationHash } from './islands.ts';
 import { buildManifest, type Manifest } from './manifest.ts';
+import { addMarkdownImageSizes } from './markdown.ts';
 import type { KitOptions } from './options.ts';
 import { preflight } from './preflight.ts';
 import { loadRedirects } from './redirects.ts';
@@ -89,6 +90,8 @@ export default function astroKit(): AstroIntegration {
           adapter = cloudflare({ imageService: 'compile', prerenderEnvironment: 'node' });
         }
         if (kit.prefetch.astroPrefetch) injectScript('page', prefetchGateScript(kit));
+        // Markdown photos cannot set sizes; the kit gives them the content column (src/markdown.ts).
+        addMarkdownImageSizes(config.markdown?.processor as Parameters<typeof addMarkdownImageSizes>[0]);
 
         updateConfig({
           site: kit.site,
