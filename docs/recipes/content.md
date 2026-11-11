@@ -7,13 +7,13 @@ Reads: `docs/spec.md`, and the content, head and links groups of [standards.md](
 1. Add `src/content/pages/<default>/<id>.md` with `title` (15–70 characters), `description` (50–160), `slug`, and
    the `brief` from the spec: `intent`, `audience`, `message` and `cta`.
 2. Build. Each other locale fails `routes-translation`: transcreate it (below), or list the locale in `missing`.
-3. Link the page from a parent page or the nav (the owner edits `nav`), within three clicks of the locale home.
+3. Link it within three clicks of the locale home: from a parent page, or from the nav (the owner edits `nav`; the
+   label is the title up to its first ` – `, or a `nav.<id>` message, so keep that part short).
 
 ## The brief and transcreatedFrom
 
-Every locale is written from the brief, not from the default-locale text. When the brief changes, each translation
-fails `content-stale` and the finding prints the new hash. Transcreate the locale again, then set `transcreatedFrom`
-to that hash; never set it without redoing the text. Keep the default locale's h2 sections, facts and link targets.
+Write every locale from the brief, not from the default text. A changed brief fails `content-stale` with the new hash:
+transcreate again, then set `transcreatedFrom` (never without redoing the text). Keep the h2s, facts and link targets.
 
 ## Transcreation prompt
 
@@ -34,7 +34,7 @@ The uncertainties never go into the page: put them in the pull request body, and
 
 ## Rules
 
-- Facts come only from `site.json`. Render prices with `formatMoney()` and dates with `formatDate()`.
+- Facts come only from `site.json`; a second email or phone goes in its `contacts`. `CHF 180.–` in Markdown is fine: the amount counts. Code uses `formatMoney()` and `formatDate()`.
 - Banned terms go in `src/content/glossary.json` as `{"de": {"banned": {"variant": "canonical"}}}`. de-CH already bans ß, „ and “.
 - Moved page: new `slug`, plus `{"from": "/old/", "to": "/new/"}` in `src/content/redirects.json`. Removed: `{"from": "/old/", "gone": true}`.
 - `draft: true` keeps a page out of production; a draft pull request or the `preview` label previews it.
