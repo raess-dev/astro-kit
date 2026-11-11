@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -31,21 +32,13 @@ function run(dir: string, args: string[], env: Record<string, string> = {}) {
   return { status: r.status, out, ids: [...new Set([...out.matchAll(/✗ \[([a-z0-9-]+)\]/g)].map((m) => m[1]))].sort() };
 }
 
-/** A fresh copy of the good site, or of a site written by init with the given features. */
-function site(name: string, features: string[] = []): string {
+/** A fresh copy of the good site, or of a site written by init with the given features (and host and locales). */
+function site(name: string, features: string[] = [], init = { site: 'https://example.ch', locales: 'de,fr' }): string {
   const dir = join(WORK, name);
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
   if (features.length) {
-    const r = run(dir, [
-      'init',
-      '--site',
-      'https://example.ch',
-      '--locales',
-      'de,fr',
-      '--features',
-      features.join(','),
-    ]);
+    const r = run(dir, ['init', '--site', init.site, '--locales', init.locales, '--features', features.join(',')]);
     assert.equal(r.status, 0, r.out);
     cpSync(join(GOOD, 'src/assets/og.jpg'), join(dir, 'src/assets/og.jpg'));
   } else {
@@ -88,11 +81,69 @@ function png(width: number, height: number): Buffer {
   return b;
 }
 
+type Sharp = (
+  input: Buffer,
+  options: { raw: { width: number; height: number; channels: 3 } },
+) => { jpeg(options: { quality: number }): { toFile(path: string): Promise<unknown> } };
+
+/**
+ * Camera-like photos from a fixed seed, so the repository holds no binaries: noise over a base colour, about as
+ * detailed as a real photo. sharp comes with Astro's image pipeline; the kit adds no dependency for it.
+ */
+async function photos(dir: string): Promise<void> {
+  const sharp = createRequire(join(KIT, 'node_modules/astro/package.json'))('sharp') as Sharp;
+  const list: [string, number, number, [number, number, number]][] = [
+    ['hotel-aussen.jpg', 2400, 1600, [60, 110, 70]],
+    ['doppelzimmer.jpg', 2000, 1333, [150, 110, 70]],
+    ['restaurant.jpg', 2000, 1333, [120, 80, 50]],
+    // Its 1200×630 share image is 157 KB at JPEG quality 80, over the 150 KB head-og limit; 134 KB at the kit's 70.
+    ['og.jpg', 1200, 630, [60, 110, 70]],
+  ];
+  mkdirSync(join(dir, 'src/assets'), { recursive: true });
+  for (const [name, width, height, [r, g, b]] of list) {
+    let seed = 7;
+    const rand = () => {
+      seed ^= seed << 13;
+      seed >>>= 0;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      seed >>>= 0;
+      return seed / 4294967296;
+    };
+    const px = Buffer.alloc(width * height * 3);
+    for (let i = 0; i < px.length; i += 3) {
+      const n = (rand() + rand() + rand() - 1.5) * 18;
+      px[i] = Math.max(0, Math.min(255, r + n));
+      px[i + 1] = Math.max(0, Math.min(255, g + n));
+      px[i + 2] = Math.max(0, Math.min(255, b + n));
+    }
+    await sharp(px, { raw: { width, height, channels: 3 } })
+      .jpeg({ quality: 82 })
+      .toFile(join(dir, 'src/assets', name));
+  }
+}
+
 // ── variants that must pass ────────────────────────────────────────────────
 
 test('good: build and browser checks pass', () => {
   const dir = site('good');
   build(dir);
+  const t = browser(dir);
+  assert.equal(t.status, 0, t.out);
+});
+
+test('hotel: a realistic three-locale site with forms passes build, check and the browser checks', async () => {
+  // Written as a hotel's editor would: a brand h1, "Restaurant" in every locale, Swiss prices ("CHF 180.–"),
+  // two phones and two emails, photos in Markdown, a PDF menu, closures, an English guest quote on every page.
+  const dir = site('hotel', ['forms'], { site: 'https://laerchenwald.example', locales: 'de,fr,en' });
+  cpSync(join(KIT, 'test/fixtures/hotel'), dir, { recursive: true });
+  await photos(dir);
+  build(dir);
+  // After a build, the adapter's .wrangler/ output must not fail Biome.
+  const checked = run(dir, ['check']);
+  assert.equal(checked.status, 0, checked.out);
+  const home = readFileSync(join(dir, 'dist/client/index.html'), 'utf8');
+  assert.match(home, /<img[^>]*fetchpriority="high"[^>]*hotel-aussen/);
   const t = browser(dir);
   assert.equal(t.status, 0, t.out);
 });

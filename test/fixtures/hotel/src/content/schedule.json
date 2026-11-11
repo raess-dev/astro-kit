@@ -1,0 +1,7 @@
+{
+  "openingHours": [{ "days": ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"], "opens": "07:00", "closes": "22:00" }],
+  "closures": [
+    { "from": "2026-10-19", "to": "2026-12-17", "note": "Zwischensaison" },
+    { "from": "2027-04-06", "to": "2027-06-10", "note": "Zwischensaison" }
+  ]
+}
