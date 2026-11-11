@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { get as httpGet } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { crc32, deflateSync } from 'node:zlib';
+import { brotliDecompressSync, crc32, deflateSync, gunzipSync, zstdDecompressSync } from 'node:zlib';
 import { type Browser, chromium } from 'playwright-core';
 import {
   axeFailures,
@@ -73,6 +74,50 @@ test('serveDist answers like Workers static assets and applies _headers', async 
     const post = await get('/api/contact/', { method: 'POST', body: new URLSearchParams({ locale: 'fr', name: 'x' }) });
     assert.equal(post.status, 303);
     assert.equal(post.headers.get('location'), '/fr/contact/#sent');
+  } finally {
+    await server.close();
+  }
+});
+
+test('serveDist compresses text like Cloudflare (zstd, then br, then gzip) and leaves images alone', async () => {
+  const html = `<h1>${'Hotel Lärchenwald '.repeat(200)}</h1>`;
+  const dir = dist({ 'index.html': html, 'a.png': Buffer.alloc(2000, 7) });
+  const server = await serveDist(dir);
+  const raw = (path: string, accept: string) =>
+    new Promise<{ encoding: string | undefined; vary: string | undefined; body: Buffer }>((done, fail) => {
+      httpGet(`${server.origin}${path}`, { headers: { 'accept-encoding': accept } }, (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () =>
+          done({
+            encoding: res.headers['content-encoding'],
+            vary: res.headers.vary,
+            body: Buffer.concat(chunks),
+          }),
+        );
+      }).on('error', fail);
+    });
+  try {
+    const decode: Record<string, (b: Buffer) => Buffer> = {
+      zstd: zstdDecompressSync,
+      br: brotliDecompressSync,
+      gzip: gunzipSync,
+    };
+    for (const [accept, encoding] of [
+      ['gzip, deflate, br, zstd', 'zstd'],
+      ['gzip, br', 'br'],
+      ['gzip', 'gzip'],
+    ] as const) {
+      const r = await raw('/', accept);
+      assert.equal(r.encoding, encoding, accept);
+      assert.equal(r.vary, 'accept-encoding');
+      assert.ok(r.body.length < html.length / 4);
+      assert.equal(decode[encoding]?.(r.body).toString(), html);
+    }
+    const plain = await raw('/', 'identity');
+    assert.equal(plain.encoding, undefined);
+    assert.equal(plain.body.toString(), html);
+    assert.equal((await raw('/a.png', 'gzip, br, zstd')).encoding, undefined);
   } finally {
     await server.close();
   }
