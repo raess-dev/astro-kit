@@ -4,6 +4,8 @@
  * Each rule: a stable id, a group, the standard in one line, the failure message and a fix hint.
  */
 
+import { NAV_LABEL_MAX } from './nav.ts';
+
 export type Stage = 'config' | 'routes' | 'build' | 'browser' | 'ci' | 'smoke' | 'zone';
 
 export interface Rule {
@@ -469,7 +471,7 @@ export const RULES: readonly Rule[] = [
     'links-nav-label',
     'links',
     'routes',
-    'Each header navigation label is 24 characters or fewer: the title up to its first dash, or a nav.<id> message.',
+    `Each header navigation label is ${NAV_LABEL_MAX} characters or fewer: the title up to its first dash, or a nav.<id> message.`,
     'A navigation label is too long.',
     'Write the title as "Short label – rest of the title", or set a short nav.<id> in src/content/messages/<locale>.json.',
   ),

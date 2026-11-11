@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import astroKit from '../../src/index.ts';
 import { COLUMN_SIZES, LAZY_SIZES, markdownImageSizes } from '../../src/markdown.ts';
+import { NAV_LABEL_MAX } from '../../src/nav.ts';
 import type { KitOptions } from '../../src/options.ts';
 import { loadOptions } from '../../src/options.ts';
 import { preflight } from '../../src/preflight.ts';
@@ -41,7 +42,7 @@ test('preflight passes on the good fixture', () => {
   assert.deepEqual(ids(report), []);
 });
 
-test('links-nav-label: a nav label over 24 characters fails; a dash or a nav.<id> message shortens it', () => {
+test('links-nav-label: a nav label over 32 characters fails; a dash or a nav.<id> message shortens it', () => {
   const dir = copy();
   const de = join(dir, 'src/content/pages/de/services.md');
   const title = (text: string) =>
@@ -55,6 +56,12 @@ test('links-nav-label: a nav label over 24 characters fails; a dash or a nav.<id
   };
   title('Zimmer und Preise im Hotel Lärchenwald');
   assert.deepEqual(labels(), ['"Zimmer und Preise im Hotel Lärchenwald" has 38 characters']);
+  // The limit is 32 characters: 32 pass, 33 fail.
+  assert.equal(NAV_LABEL_MAX, 32);
+  title(`${'Zimmer'.padEnd(32, '.')} – Hotel Lärchenwald`);
+  assert.deepEqual(labels(), []);
+  title(`${'Zimmer'.padEnd(33, '.')} – Hotel Lärchenwald`);
+  assert.deepEqual(labels(), [`"${'Zimmer'.padEnd(33, '.')}" has 33 characters`]);
   title('Zimmer und Preise – Hotel Lärchenwald');
   assert.deepEqual(labels(), []);
   // A nav.<id> message wins over the title; every locale brings the project's own keys.

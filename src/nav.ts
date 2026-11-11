@@ -4,7 +4,7 @@
  */
 
 /** The longest header navigation label (links-nav-label). Longer labels wrap the header onto several rows. */
-export const NAV_LABEL_MAX = 24;
+export const NAV_LABEL_MAX = 32;
 
 /** A nav page's header label: its nav.<id> message, else its title up to the first dash. */
 export function navLabel(title: string, message?: string): string {

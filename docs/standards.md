@@ -151,7 +151,7 @@ Sizes are compressed: the larger of zstd level 3 and brotli level 5.
 - <a id="links-generic"></a>**links-generic** — No link text is generic, such as "mehr", "ici", "qui" or "here". Fix: Name the destination in the link text.
 - <a id="links-same-name"></a>**links-same-name** — Links with the same accessible name on a page share a target. Fix: Add context with a .visually-hidden span.
 - <a id="links-target-blank"></a>**links-target-blank** — No link opens a new window. Fix: Remove target.
-- <a id="links-nav-label"></a>**links-nav-label** — Each header navigation label is 24 characters or fewer: the title up to its first dash, or a nav.`<id>` message. Fix: Write the title as "Short label – rest of the title", or set a short nav.`<id>` in src/content/messages/`<locale>`.json.
+- <a id="links-nav-label"></a>**links-nav-label** — Each header navigation label is 32 characters or fewer: the title up to its first dash, or a nav.`<id>` message. Fix: Write the title as "Short label – rest of the title", or set a short nav.`<id>` in src/content/messages/`<locale>`.json.
 - <a id="links-depth"></a>**links-depth** — Every indexable page is within three clicks of its locale home. Fix: Link it from the navigation, a parent page or the sitemap page.
 - <a id="links-sitemap-page"></a>**links-sitemap-page** — Every indexable page links to its locale's sitemap page. Fix: Keep the footer from the kit Page component.
 
