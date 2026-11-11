@@ -466,6 +466,14 @@ export const RULES: readonly Rule[] = [
     'Remove target.',
   ),
   r(
+    'links-nav-label',
+    'links',
+    'routes',
+    'Each header navigation label is 24 characters or fewer: the title up to its first dash, or a nav.<id> message.',
+    'A navigation label is too long.',
+    'Write the title as "Short label – rest of the title", or set a short nav.<id> in src/content/messages/<locale>.json.',
+  ),
+  r(
     'links-depth',
     'links',
     'build',

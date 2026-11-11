@@ -8,7 +8,7 @@ Reads: `docs/spec.md`, and the content, head and links groups of [standards.md](
    the `brief` from the spec: `intent`, `audience`, `message` and `cta`.
 2. Build. Each other locale fails `routes-translation`: transcreate it (below), or list the locale in `missing`.
 3. Link it within three clicks of the locale home: from a parent page, or from the nav (the owner edits `nav`; the
-   label is the title up to its first ` – `, or a `nav.<id>` message, so keep that part short).
+   label is the title up to its first ` – `, or a `nav.<id>` message: 24 characters at most, `links-nav-label`).
 
 ## The brief and transcreatedFrom
 

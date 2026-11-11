@@ -240,9 +240,9 @@ test('dev: a changed title and a new page appear without a manual restart', asyn
   try {
     await until(async () => (await page('/leistungen/')).status === 200, 'the services page');
     write(dir, 'src/content/pages/de/services.md', (old) =>
-      old.replace('title: "Leistungen von Example für KMU"', 'title: "Neue Leistungen von Example für KMU"'),
+      old.replace('title: "Leistungen für KMU – Example"', 'title: "Neue Leistungen für KMU – Example"'),
     );
-    await until(async () => (await page('/leistungen/')).html.includes('Neue Leistungen von Example'), 'the new title');
+    await until(async () => (await page('/leistungen/')).html.includes('Neue Leistungen für KMU'), 'the new title');
     write(
       dir,
       'src/content/pages/de/team.md',

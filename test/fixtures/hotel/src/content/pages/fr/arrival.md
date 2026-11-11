@@ -1,6 +1,6 @@
 ---
 slug: acces
-title: "Accès à l’Hotel Lärchenwald à Sils Maria"
+title: "Accès – Hotel Lärchenwald à Sils Maria"
 description: "Comment venir à Sils Maria en train et en car postal ou en voiture, et où vous garer à l’hôtel pendant votre séjour."
 transcreatedFrom: de4e6a50726d
 ---

@@ -1,6 +1,6 @@
 ---
 slug: prestations
-title: "Prestations d’Example pour les PME"
+title: "Prestations pour PME – Example"
 description: "Trois prestations d’Example pour les PME : stratégie, planification et réalisation par une seule équipe, toujours joignable."
 transcreatedFrom: "c1269c53da4a"
 ---

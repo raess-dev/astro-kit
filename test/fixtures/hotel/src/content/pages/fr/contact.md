@@ -1,6 +1,6 @@
 ---
 slug: contact
-title: "Contact et réservation, Hotel Lärchenwald"
+title: "Contact et réservation – Hotel Lärchenwald"
 description: "Écrivez-nous avec le formulaire, appelez-nous ou envoyez un e-mail. La réception est là tous les jours de 7 h à 22 h."
 transcreatedFrom: 7ca605f48441
 ---

@@ -1,6 +1,6 @@
 /** The integration's hooks and the project checks that run before a build. */
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -39,6 +39,31 @@ test('preflight passes on the good fixture', () => {
   const report = new Report();
   assert.ok(preflight(GOOD, report));
   assert.deepEqual(ids(report), []);
+});
+
+test('links-nav-label: a nav label over 24 characters fails; a dash or a nav.<id> message shortens it', () => {
+  const dir = copy();
+  const de = join(dir, 'src/content/pages/de/services.md');
+  const title = (text: string) =>
+    writeFileSync(de, readFileSync(de, 'utf8').replace(/^title: .*$/m, `title: "${text}"`));
+  const labels = () => {
+    const report = new Report();
+    preflight(dir, report);
+    return report.findings
+      .filter((f) => f.rule === 'links-nav-label' && f.where.endsWith('de/services.md'))
+      .map((f) => f.detail);
+  };
+  title('Zimmer und Preise im Hotel Lärchenwald');
+  assert.deepEqual(labels(), ['"Zimmer und Preise im Hotel Lärchenwald" has 38 characters']);
+  title('Zimmer und Preise – Hotel Lärchenwald');
+  assert.deepEqual(labels(), []);
+  // A nav.<id> message wins over the title; every locale brings the project's own keys.
+  title('Zimmer und Preise im Hotel Lärchenwald');
+  mkdirSync(join(dir, 'src/content/messages'), { recursive: true });
+  writeFileSync(join(dir, 'src/content/messages/de.json'), '{ "nav.services": "Zimmer" }\n');
+  writeFileSync(join(dir, 'src/content/messages/fr.json'), '{ "nav.services": "Chambres" }\n');
+  assert.deepEqual(labels(), []);
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test('config-options: an invalid astro-kit.json stops before any other check', () => {

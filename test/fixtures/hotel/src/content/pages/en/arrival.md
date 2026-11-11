@@ -1,6 +1,6 @@
 ---
 slug: getting-here
-title: "Getting to Hotel Lärchenwald in Sils Maria"
+title: "Getting here – Hotel Lärchenwald, Sils Maria"
 description: "How to reach Sils Maria by train and PostBus or by car, and where to park at the hotel during your stay with us."
 transcreatedFrom: de4e6a50726d
 ---

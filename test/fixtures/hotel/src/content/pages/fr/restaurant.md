@@ -1,6 +1,6 @@
 ---
 slug: restaurant
-title: "Le restaurant de l’Hotel Lärchenwald à Sils"
+title: "Restaurant – Hotel Lärchenwald à Sils"
 description: "Cuisine engadinoise avec des produits de la vallée, midi et soir, aussi pour les clients de passage. Nous conseillons de réserver."
 transcreatedFrom: f9709ff5f118
 ---

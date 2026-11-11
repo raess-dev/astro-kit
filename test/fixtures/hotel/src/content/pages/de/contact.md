@@ -1,6 +1,6 @@
 ---
 slug: kontakt
-title: "Kontakt und Reservation, Hotel Lärchenwald"
+title: "Kontakt und Reservation – Hotel Lärchenwald"
 description: "Schreiben Sie uns über das Formular, rufen Sie an oder senden Sie eine E-Mail. Die Rezeption ist täglich von 7 bis 22 Uhr da."
 brief:
   intent: "Let guests ask a question or a booking request."

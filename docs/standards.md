@@ -19,7 +19,7 @@ If a check looks wrong, add an entry to `KIT-FEEDBACK.md` and keep the check.
 
 | Stage | Runs in | Groups |
 |---|---|---|
-| Config | `npx --no astro-kit check`, and the start of every `astro build` and `astro dev`. | config, routes, images, facts, content, forms |
+| Config | `npx --no astro-kit check`, and the start of every `astro build` and `astro dev`. | config, routes, images, links, facts, content, forms |
 | Build | the end of `astro build`, on the files in `dist/`. | config, routes, js, speculation, budgets, images, fonts, origins, head, headings, hreflang, indexing, links, facts, content, css, csp, edge, html, forms, legal, media, svg |
 | Browser | `npx --no astro-kit test`, in headless Chromium on the built site. | a11y, contrast, perf |
 | Release | `astro-kit ci` against the base branch and the live sitemap, `astro-kit smoke <url>` against production, `astro-kit provision zone --check`. | config, routes, smoke, zone |
@@ -151,6 +151,7 @@ Sizes are compressed: the larger of zstd level 3 and brotli level 5.
 - <a id="links-generic"></a>**links-generic** — No link text is generic, such as "mehr", "ici", "qui" or "here". Fix: Name the destination in the link text.
 - <a id="links-same-name"></a>**links-same-name** — Links with the same accessible name on a page share a target. Fix: Add context with a .visually-hidden span.
 - <a id="links-target-blank"></a>**links-target-blank** — No link opens a new window. Fix: Remove target.
+- <a id="links-nav-label"></a>**links-nav-label** — Each header navigation label is 24 characters or fewer: the title up to its first dash, or a nav.`<id>` message. Fix: Write the title as "Short label – rest of the title", or set a short nav.`<id>` in src/content/messages/`<locale>`.json.
 - <a id="links-depth"></a>**links-depth** — Every indexable page is within three clicks of its locale home. Fix: Link it from the navigation, a parent page or the sitemap page.
 - <a id="links-sitemap-page"></a>**links-sitemap-page** — Every indexable page links to its locale's sitemap page. Fix: Keep the footer from the kit Page component.
 

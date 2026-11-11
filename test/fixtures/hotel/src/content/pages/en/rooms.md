@@ -1,6 +1,6 @@
 ---
 slug: rooms
-title: "Rooms and prices at Hotel Lärchenwald"
+title: "Rooms and prices – Hotel Lärchenwald"
 description: "Single, double and family rooms with a view of Lake Sils or the larch forest. All prices are per night, breakfast included."
 transcreatedFrom: cd1e41965277
 ---

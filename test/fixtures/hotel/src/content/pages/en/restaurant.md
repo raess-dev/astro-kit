@@ -1,6 +1,6 @@
 ---
 slug: restaurant
-title: "The restaurant at Hotel Lärchenwald in Sils"
+title: "Restaurant – Hotel Lärchenwald in Sils"
 description: "Engadin cooking with produce from the valley, for lunch and dinner, open to outside guests too. We recommend booking a table."
 transcreatedFrom: f9709ff5f118
 ---

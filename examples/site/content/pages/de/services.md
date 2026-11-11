@@ -1,6 +1,6 @@
 ---
 slug: leistungen
-title: "Leistungen von Example für KMU"
+title: "Leistungen für KMU – Example"
 description: "Drei Leistungen von Example für KMU: Strategie, Planung und Umsetzung aus einer Hand, mit festen Ansprechpersonen."
 brief:
   intent: "Explain the three services and help a visitor choose one."

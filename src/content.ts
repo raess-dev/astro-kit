@@ -8,6 +8,7 @@ import { glob } from 'astro/loaders';
 import { z } from 'astro/zod';
 import type { Schedule, SiteFacts } from './facts.ts';
 import type { Manifest, PageRecord } from './manifest.ts';
+import { navLabel } from './nav.ts';
 import type { KitOptions } from './options.ts';
 
 export type { PageRecord };
@@ -116,6 +117,12 @@ export function siteIndex(locale: string): PageRecord[] {
 
 export function localeTag(code: string): string {
   return options.locales.find((l) => l.code === code)?.tag ?? code;
+}
+
+/** The header navigation label of a page (links-nav-label checks its length). */
+export function navText(record: PageRecord, locale: string): string {
+  const key = `nav.${record.id}`;
+  return navLabel(record.title, messages[locale]?.[key] ?? messages[options.defaultLocale]?.[key]);
 }
 
 /** UI message for a locale; kit defaults merged with src/content/messages/<locale>.json. */

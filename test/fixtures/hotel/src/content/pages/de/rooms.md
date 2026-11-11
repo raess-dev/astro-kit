@@ -1,6 +1,6 @@
 ---
 slug: zimmer
-title: "Zimmer und Preise im Hotel Lärchenwald"
+title: "Zimmer und Preise – Hotel Lärchenwald"
 description: "Einzel-, Doppel- und Familienzimmer mit Blick auf den Silsersee oder den Lärchenwald. Alle Preise pro Nacht mit Frühstück."
 brief:
   intent: "Help guests pick a room and book it."

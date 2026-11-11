@@ -1,6 +1,6 @@
 ---
 slug: anreise
-title: "Anreise zum Hotel Lärchenwald in Sils"
+title: "Anreise – Hotel Lärchenwald in Sils"
 description: "So kommen Sie mit Bahn und Postauto oder mit dem Auto nach Sils Maria, und wo Sie beim Hotel parken können."
 brief:
   intent: "Explain how to get to the hotel."

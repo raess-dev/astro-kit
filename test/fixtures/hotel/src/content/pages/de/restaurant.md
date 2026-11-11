@@ -1,6 +1,6 @@
 ---
 slug: restaurant
-title: "Restaurant im Hotel Lärchenwald, Sils"
+title: "Restaurant – Hotel Lärchenwald, Sils"
 description: "Engadiner Küche mit Produkten aus dem Tal, mittags und abends, auch für Gäste von auswärts. Wir empfehlen eine Reservation."
 brief:
   intent: "Bring hotel and outside guests to the restaurant and get reservations."

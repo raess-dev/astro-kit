@@ -1,6 +1,6 @@
 ---
 slug: contact
-title: "Contact and booking, Hotel Lärchenwald"
+title: "Contact and booking – Hotel Lärchenwald"
 description: "Write to us with the form, give us a call or send an email. The front desk is open every day from 7 am to 10 pm."
 transcreatedFrom: 7ca605f48441
 ---

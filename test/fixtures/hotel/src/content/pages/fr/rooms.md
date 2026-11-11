@@ -1,6 +1,6 @@
 ---
 slug: chambres
-title: "Chambres et prix de l’Hotel Lärchenwald"
+title: "Chambres et prix – Hotel Lärchenwald"
 description: "Chambres simples, doubles et familiales avec vue sur le lac de Sils ou la forêt. Tous les prix par nuit, petit-déjeuner compris."
 transcreatedFrom: cd1e41965277
 ---

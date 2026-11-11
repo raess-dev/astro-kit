@@ -13,6 +13,7 @@ import 'virtual:astro-kit/theme.css';
 import {
   alternates as alternatesOf,
   localeTag,
+  navText,
   options,
   type PageRecord,
   page as pageOf,
@@ -162,20 +163,12 @@ if (url && record?.date) {
 // Escaping < keeps a title from closing the script element.
 const jsonld = JSON.stringify({ '@context': 'https://schema.org', '@graph': graph }).replace(/</g, '\\u003c');
 
-// Navigation labels: a nav.<id> message when the project defines one, else the title up to its first dash.
-const label = (r: PageRecord): string => {
-  try {
-    return t(locale, `nav.${r.id}`);
-  } catch {
-    return r.title.split(/ [–—|-] /)[0] ?? r.title;
-  }
-};
 const links = (ids: readonly string[], text: (r: PageRecord) => string) =>
   ids.flatMap((id) => {
     const r = pageOf(id, locale);
     return r ? [{ href: r.path, text: text(r), current: r.path === path ? 'page' : undefined }] : [];
   });
-const nav = links(options.nav, label);
+const nav = links(options.nav, (r) => navText(r, locale));
 const footer = links(['contact', 'imprint', 'privacy', 'sitemap'], (r) => t(locale, r.id));
 const index = record?.id === 'sitemap' ? siteIndex(locale).filter((r) => r.path !== path) : [];
 ---
