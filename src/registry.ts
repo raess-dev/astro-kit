@@ -489,7 +489,7 @@ export const RULES: readonly Rule[] = [
     'build',
     'Every email, phone number, CHE-UID, IBAN and CHF amount in the HTML equals a value in site.json.',
     'A fact on the page is not in site.json.',
-    'Facts come only from site.json, which the owner edits.',
+    'Facts come only from site.json, which the owner edits. A further email or phone goes in its contacts list.',
   ),
   r(
     'facts-schedule',

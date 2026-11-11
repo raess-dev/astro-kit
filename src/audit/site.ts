@@ -151,16 +151,29 @@ function pricesFor(ctx: BuildContext, locale: string): Map<string, string> {
 }
 
 /** The site.json key a fact equals, or undefined. */
+/** The site's email addresses (lower case) and phone numbers: the main ones first, then contacts. */
+function contactValues(site: SiteFacts): { email: string[]; phone: string[] } {
+  const email = [site.email, ...site.contacts.map((c) => c.email)];
+  const phone = [site.phone, ...site.contacts.map((c) => c.phone)];
+  return {
+    email: email.filter((v): v is string => !!v).map((v) => v.toLowerCase()),
+    phone: phone.filter((v): v is string => !!v),
+  };
+}
+
 function factKey(f: Fact, site: SiteFacts, prices: Map<string, string>): string | undefined {
+  const known = contactValues(site);
   const equal: Record<Fact['kind'], boolean> = {
-    email: f.value === site.email.toLowerCase(),
-    phone: f.value === site.phone,
+    email: known.email.includes(f.value),
+    phone: known.phone.includes(f.value),
     uid: f.value === site.uid || (site.vatId?.includes(f.value) ?? false),
     iban: f.value === site.iban?.replace(/ /g, ''),
     chf: prices.has(flat(f.value)),
   };
   if (!equal[f.kind]) return undefined;
-  return f.kind === 'chf' ? prices.get(flat(f.value)) : f.kind;
+  if (f.kind === 'chf') return prices.get(flat(f.value));
+  // Several addresses and numbers can be valid, so the parity key names the value.
+  return f.kind === 'email' || f.kind === 'phone' ? `${f.kind} ${f.value}` : f.kind;
 }
 
 function checkFacts(ctx: BuildContext): void {
@@ -176,9 +189,10 @@ function checkFacts(ctx: BuildContext): void {
       if (/^tel:/i.test(href)) facts.push({ kind: 'phone', raw: href, value: e164(href.slice(4)) });
     }
     const prices = pricesFor(ctx, page.locale);
+    const known = contactValues(site);
     const want = {
-      email: site.email,
-      phone: site.phone,
+      email: known.email.join(', '),
+      phone: known.phone.join(', '),
       uid: site.uid,
       iban: site.iban,
       chf: [...prices.keys()].join(', '),

@@ -156,7 +156,7 @@ Sizes are compressed: the larger of zstd level 3 and brotli level 5.
 
 ## facts
 
-- <a id="facts-value"></a>**facts-value** — Every email, phone number, CHE-UID, IBAN and CHF amount in the HTML equals a value in site.json. Fix: Facts come only from site.json, which the owner edits.
+- <a id="facts-value"></a>**facts-value** — Every email, phone number, CHE-UID, IBAN and CHF amount in the HTML equals a value in site.json. Fix: Facts come only from site.json, which the owner edits. A further email or phone goes in its contacts list.
 - <a id="facts-schedule"></a>**facts-schedule** — schedule.json holds opening hours and closures only. Fix: Move other data to site.json (owner) or the page content.
 
 ## content

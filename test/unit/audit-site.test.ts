@@ -41,6 +41,7 @@ const FACTS: SiteFacts = {
   prices: [{ id: 'first', amount: 12900, currency: 'CHF' }],
   sameAs: [],
   documents: {},
+  contacts: [],
 };
 const PAGES: Record<string, Record<Locale, [string, string]>> = {
   home: { de: ['', 'Startseite'], fr: ['', 'Accueil'] },
@@ -355,6 +356,14 @@ test('facts-value', () => {
   const fine =
     '<p>CHE-123.456.789 MWST · IBAN CH93 0076 2011 6238 5295 7 · +41 44 000 00 00</p><script type="application/ld+json">{"telephone":"+41 44 999 99 99"}</script>';
   expectRules({ edits: [footer('*', fine)] }, []);
+});
+
+test('facts-value: a second email or phone is a fact once site.json lists it in contacts', () => {
+  const jobs = footer('*', '<p>Bewerbungen an jobs@example.ch oder +41 44 000 00 99</p>');
+  const findings = expectRules({ edits: [jobs] }, ['facts-value']);
+  assert.deepEqual([...new Set(findings.map((f) => f.detail?.split(' ')[0]))], ['email', 'phone']);
+  const contacts = [{ name: 'Jobs', email: 'jobs@example.ch', phone: '+41440000099' }];
+  expectRules({ edits: [jobs], site: { contacts } }, []);
 });
 
 test('legal-pages', () => {
