@@ -275,6 +275,38 @@ test('perf-image-oversize measures the delivered pixels, not the sizes-scaled na
   }
 });
 
+test('a11y-keyboard: a wrapped link and a field partly below the fold are visible; a link under a fixed bar is covered', async (t) => {
+  const browser = await launch();
+  if (!browser) {
+    t.skip('no Chrome found; set CHROME_PATH');
+    return;
+  }
+  const bar = '<div style="position: fixed; inset: 0 0 auto 0; height: 4rem; background: #fff"></div>';
+  // Two lines with a gap between them: the box centre falls on the li, not on the link.
+  const wrapped =
+    '<ul style="inline-size: 12rem; line-height: 2"><li><a href="/a/">Datenschutzerklärung des Hotels Lärchenwald</a></li></ul>';
+  // Its top is on screen and its centre below the fold (844 px), so Chrome does not scroll it on focus.
+  const tall =
+    '<textarea aria-label="Message" style="position: absolute; inset-block-start: 760px; block-size: 250px"></textarea>';
+  const dir = dist({
+    'page/index.html': `<!doctype html><html lang="de"><title>Seite</title><body style="font-size: 18px; margin: 0">${bar}<p style="margin: 0"><a href="/b/">Unter dem Balken</a></p><div style="block-size: 5rem"></div>${wrapped}${tall}</body></html>`,
+  });
+  const server = await serveDist(dir);
+  try {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await context.addInitScript(PAGE_HELPERS);
+    const page = await context.newPage();
+    await page.goto(`${server.origin}/page/`);
+    const report = new Report();
+    await sweep({ report }, page, '/page/');
+    const keyboard = report.findings.filter((f) => f.rule === 'a11y-keyboard').map((f) => f.detail);
+    assert.deepEqual(keyboard, ['hidden when focused 1: a "Unter dem Balken" (covered)']);
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
 test('a11y-keyboard counts each radio group as one Tab stop', async (t) => {
   const browser = await launch();
   if (!browser) {

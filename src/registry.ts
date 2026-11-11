@@ -776,7 +776,7 @@ export const RULES: readonly Rule[] = [
     'a11y-keyboard',
     'a11y',
     'browser',
-    'Tab reaches every control, with the menu closed and open, and the focused element is never covered.',
+    'Tab reaches every control, with the menu closed and open, and no focused element is entirely covered.',
     'A control is unreachable or hidden when focused.',
     'Remove tabindex values above 0 and overlaps.',
   ),

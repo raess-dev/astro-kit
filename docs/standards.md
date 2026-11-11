@@ -222,7 +222,7 @@ Sizes are compressed: the larger of zstd level 3 and brotli level 5.
 - <a id="a11y-reflow"></a>**a11y-reflow** — At 320 px wide no element extends past the viewport, menu closed and open. Fix: Let the element wrap or shrink.
 - <a id="a11y-spacing"></a>**a11y-spacing** — The WCAG text-spacing override causes no overflow or clipping. Fix: Remove fixed heights on text containers.
 - <a id="a11y-forced-colors"></a>**a11y-forced-colors** — In forced colours the h1, main, focus ring and button borders stay visible. Fix: Use borders, not backgrounds, for boundaries.
-- <a id="a11y-keyboard"></a>**a11y-keyboard** — Tab reaches every control, with the menu closed and open, and the focused element is never covered. Fix: Remove tabindex values above 0 and overlaps.
+- <a id="a11y-keyboard"></a>**a11y-keyboard** — Tab reaches every control, with the menu closed and open, and no focused element is entirely covered. Fix: Remove tabindex values above 0 and overlaps.
 - <a id="a11y-no-js"></a>**a11y-no-js** — Without JS the content, navigation and form work. Fix: Render content on the server; JS only enhances.
 
 ## contrast
