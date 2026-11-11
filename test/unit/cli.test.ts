@@ -603,3 +603,19 @@ test('behind a proxy, a network command reruns with NODE_USE_ENV_PROXY, so its r
   );
   assert.equal(code, 1);
 });
+
+test('the Biome preset skips every folder the site .gitignore lists for build output', () => {
+  const root = temp();
+  const preset = new URL('../../config/biome.json', import.meta.url).pathname;
+  write(root, 'biome.json', `{ "extends": [${JSON.stringify(preset)}] }\n`);
+  write(root, 'ok.ts', "export const ok = 'ok';\n");
+  // Unformatted, as the tools write them: Astro, the Cloudflare adapter (wrangler) and the build.
+  for (const dir of ['dist', '.astro', '.wrangler/deploy', 'node_modules/x'])
+    write(root, `${dir}/config.json`, '{"configPath":"../../dist/server/wrangler.json","auxiliaryWorkers":[]}');
+  const biome = new URL('../../node_modules/.bin/biome', import.meta.url).pathname;
+  const r = spawnSync(biome, ['ci', '--colors=off', '.'], { cwd: root, encoding: 'utf8' });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  const ignored = read(new URL('../../templates/site/', import.meta.url).pathname, '_gitignore');
+  for (const dir of ['dist', '.astro', '.wrangler'])
+    assert.match(ignored, new RegExp(`^${dir.replace('.', '\\.')}/$`, 'm'));
+});

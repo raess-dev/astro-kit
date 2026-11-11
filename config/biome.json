@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@biomejs/biome/configuration_schema.json",
   "root": false,
   "files": {
-    "includes": ["**", "!**/dist", "!**/.astro", "!**/node_modules"]
+    "includes": ["**", "!**/dist", "!**/.astro", "!**/.wrangler", "!**/node_modules"]
   },
   "formatter": {
     "enabled": true,
