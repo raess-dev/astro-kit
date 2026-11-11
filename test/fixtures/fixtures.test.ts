@@ -353,7 +353,9 @@ test('bad build: the dist audits report every planted build rule', () => {
     (old) =>
       `${old}\n#### Zu tief\n\n<a href="/gibt-es-nicht/">mehr</a> <a href="/" target="_blank">Startseite</a> <a href="https://cdn.example.org/x.css">Stil</a>\n\n<img src="https://cdn.example.org/a.jpg" alt="Fremdbild">\n\n<script>console.log(1)</script>\n\n<svg><path d="M0 0h1"/></svg>\n\nTelefon: +41 44 000 00 00, E-Mail: falsch@example.ch\n`,
   );
-  write(dir, 'src/content/pages/fr/home.md', (old) => old.replace(/^title: .*$/m, 'title: "Willkommen bei Example"'));
+  // content-copied: the French home reuses the German description (a shared title is a name, not a copy).
+  const copied = 'description: "Platzhalter: In ein bis zwei Sätzen steht hier, was Example anbietet, für wen und wo."';
+  write(dir, 'src/content/pages/fr/home.md', (old) => old.replace(/^description: .*$/m, copied));
   const r = run(dir, ['build']);
   assert.notEqual(r.status, 0);
   assert.deepEqual(
