@@ -2700,6 +2700,7 @@ Read `node_modules/@raess/astro-kit/docs/INDEX.md` first. If it is missing, run 
   - `noUnknownAttribute` off.
   - `**/astro-kit.json` formats with `expand: "always"`.
   - `src/styles/tokens.css` is excluded from the formatter, because the kit renders it (7.7).
+  - `noEmptySource` is off for `src/styles/fonts.css`: a site with system fonts keeps that file empty, and the rule fails an empty file and a file that holds only a comment.
 - **TS preset** (`config/tsconfig.json`): extends `astro/tsconfigs/strictest`, plus `erasableSyntaxOnly`, `verbatimModuleSyntax`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` and `skipLibCheck`.
 - **`astro-kit.json`**: the defaults of 5.3 with the values of `--site`, `--locales`, `--features` and `--owner`, in the `--apply` format of 5.5. An existing file is kept.
 - **`package.json`**: `{name: <worker>, private: true, type: "module", scripts: {check: "astro-kit check", build: "astro-kit build", test: "astro-kit test", ci: "astro-kit ci"}}`.

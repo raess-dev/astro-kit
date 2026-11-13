@@ -73,6 +73,10 @@
     {
       "includes": ["**/src/styles/tokens.css"],
       "formatter": { "enabled": false }
+    },
+    {
+      "includes": ["**/src/styles/fonts.css"],
+      "linter": { "rules": { "suspicious": { "noEmptySource": "off" } } }
     }
   ]
 }
