@@ -476,7 +476,7 @@ site/
 
 ### 5.2 Fields
 
-The schema is a zod `strict()` object. `loadOptions` reports each issue as `config-options` with `<path>: <message>`.
+The schema is a zod `strict()` object, strict at every level. `loadOptions` reports each issue as one `config-options` finding. Its place is `astro-kit.json: <field path>`, or `astro-kit.json` alone for the whole file, and its detail is the message. A field path reads like `locales[1].code`, `forms.contact.fields[0].name` or `legal.privacy.fr`. A key that is empty or holds a dot, a bracket, a quote or white space stands in brackets: `documents["leitfaden.pdf"]`. A missing file, a text that is not JSON and each unknown key are findings too. The key `__proto__` is an unknown key in every object and record, also in `site.json` and `glossary.json`. The cross-field refinements run only when zod could read every field on its own. A missing required field, a wrong type, a value outside its enum or a list that is too long stops them, and their findings come with the next run.
 
 | Field | Type | Default | Validation | Settings page note (label, explanation, consequence) |
 |---|---|---|---|---|
@@ -506,23 +506,23 @@ The schema is a zod `strict()` object. `loadOptions` reports each issue as `conf
 | `contact.to` | email | required | `^[^\s@]+@[^\s@]+\.[^\s@]+$` | **Recipient.** Default inbox for every form. |
 | `contact.from` | email | required | same | **Sender**, `form@<domain>`. Its domain needs one SPF record and a DMARC record. |
 | `contact.probe` | email | none | same | **Probe inbox.** The weekly smoke probe sends here instead of to `to`. |
-| `forms` | record `id → form` | `{ "contact": { "fields": DEFAULT } }` with forms | id `^[a-z][a-z0-9-]{0,31}$`; 1–10 forms; absent without forms | **Forms.** Each form posts to `/api/forms/<id>/` and must appear on at least one page. |
+| `forms` | record `id → form` | `{ "contact": { "fields": DEFAULT } }` with forms; `DEFAULT` is the fields `name` (`text`), `email` (`email`) and `message` (`textarea`), each with the defaults of its type | id `^[a-z][a-z0-9-]{0,31}$`; 1–10 forms; absent without forms | **Forms.** Each form posts to `/api/forms/<id>/` and must appear on at least one page. |
 | `forms.<id>.to` | email | `contact.to` | | **Recipient for this form only.** The kit renders it into `wrangler.jsonc`, so the owner starts the protected task after this change (10.6). |
 | `forms.<id>.fields` | array, 1–20 | | unique names; the names `return`, `website`, `form` and `mode` are reserved | **Fields**, in mail order. |
 | `fields[].name` | string | required | `^[a-z][a-z0-9_]{0,31}$` | **Field name**, the `name` attribute. |
 | `fields[].type` | enum | required | `text`, `textarea`, `email`, `tel`, `date`, `number`, `choice`, `consent` | **Type**, which sets the control (section 9.1). |
-| `fields[].required` | boolean | `true` | `consent` is always `true` | **Required.** The label must say required or optional. |
+| `fields[].required` | boolean | `true` | `consent` is always `true`; `false` fails | **Required.** The label must say required or optional. |
 | `fields[].maxLength` | integer | text 200, textarea 5000, email 254, tel 32 | 1–5000; string types only | **Maximum length**, the `maxlength` attribute and the server limit. |
-| `fields[].min` / `fields[].max` | number, or date `YYYY-MM-DD` | none | required for `number`; optional for `date` | **Range.** The `min`/`max` attributes and the server check. |
-| `fields[].options` | string[] | none | required for `choice`; 2–20 values `^[a-z0-9][a-z0-9-]{0,39}$` | **Choices**, the option values. The labels belong to the page. |
-| `fields[].autocomplete` | string | `name` → `name`, `email` → `email`, `tel` → `tel`, else `off` | | **Autofill hint.** |
+| `fields[].min` / `fields[].max` | number, or date `YYYY-MM-DD` | none | required for `number`; optional for `date`; not allowed for another type | **Range.** The `min`/`max` attributes and the server check. |
+| `fields[].options` | string[] | none | required for `choice`, not allowed for another type; 2–20 values `^[a-z0-9][a-z0-9-]{0,39}$` | **Choices**, the option values. The labels belong to the page. |
+| `fields[].autocomplete` | string | by the field's `name`: `name` → `name`, `email` → `email`, `tel` → `tel`, else `off` | | **Autofill hint.** |
 | `legal.legalNote` | record `code → path` | required (init writes the 5.3 slugs) | exactly one path for each `locales[].code`, no other keys | **Legal note pages** (the provider identification that Swiss and EU law require, called *Impressum* in German). Every indexable page must link its own language's legal note. |
 | `legal.privacy` | record `code → path` | required (init writes the 5.3 slugs) | exactly one path for each `locales[].code`, no other keys | **Privacy pages.** Every indexable page and every form must link its own language's privacy page. |
 | `legal.accessibility` | record `code → path` | none | a subset of the locales | **Accessibility statement.** It may claim conformance only with an audit in `site.json`. |
-| legal paths | string | | `^/([a-z0-9]+(-[a-z0-9]+)*/)*$`; starts with `/<code>/` for a non-default locale | |
+| legal paths | string | | `^/([a-z0-9]+(-[a-z0-9]+)*/)*$`; starts with `/<code>/` for a non-default locale; does not start with a locale code for the default locale | |
 | `processing` | array of `cdn`, `previews`, `forms`, `server` | `["cdn", "previews"]` | unique; see `legal-processing` | **Declared processing.** What the privacy text covers (section 5.4). |
 | `securityContact` | string | required | `^(mailto:\|https://)` | **Security contact**, the `Contact:` line of security.txt. |
-| `dependencies` | string[] | `[]` | npm package names | **Extra packages** the owner allows beyond the kit's own. Each one is code the owner trusts. |
+| `dependencies` | string[] | `[]` | npm package names: `^(@[a-z0-9~-][a-z0-9._~-]*/)?[a-z0-9~-][a-z0-9._~-]*$`, ≤ 214 characters | **Extra packages** the owner allows beyond the kit's own. Each one is code the owner trusts. |
 | `origins` | array, ≤ 10 | `[]` | unique `host` | **Third-party origins.** Each entry lets pages talk to one other host (9.4). Each one sends visitor data to another company, so each needs a contract and a sentence in the privacy text. |
 | `origins[].host` | string | required | `^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`; not the host of `site` | **Host**, exact and without `https://`, for example `js.stripe.com`. No wildcard: list each host. |
 | `origins[].directives` | array of `connect`, `frame`, `script`, `form` | required | 1–4 values, unique | **What a page may do with the host:** call it (`connect`), show it in a frame (`frame`), run its script (`script`), post a form to it (`form`). `script` turns Trusted Types off. |
@@ -544,7 +544,7 @@ The schema is a zod `strict()` object. `loadOptions` reports each issue as `conf
 - `defaultLocale` must be one of `locales[].code`. Message: `defaultLocale must be one of locales[].code`.
 - `features.forms` needs `contact`. Message: `features.forms needs contact.to and contact.from`.
 - Without forms, `contact` and `forms` must be absent.
-- Each legal path must start with its locale's prefix.
+- Each legal path must start with its locale's prefix: `/<code>/` for a non-default locale. A path of the default locale sits at the root, so its first segment is no locale code.
 - At least one of `modes.auto`, `modes.light`, `modes.dark` and `modes.contrast` is `true`. Message: `modes needs at least one option set to true`.
 - With `modes.contrast` `true`, at least one of `modes.auto`, `modes.light` and `modes.dark` is `true`. Message: `modes.contrast needs auto, light or dark too: design.md needs a base theme, and contrast alone never shows it`.
 - With `modes.auto` `true`, `modes.default` is absent. Message: `modes.default is only for modes.auto false; with auto on, auto is the default mode`.
@@ -636,7 +636,7 @@ Each declared origin adds one more sentence to the privacy text, with the name o
 
 ### 5.6 Other files the kit reads
 
-**`site.json`** (root; strict; failures report as `config-options` with `site.json` as the place):
+**`site.json`** (root; required; strict at every level; failures report as `config-options` with `site.json` as the place):
 
 | Field | Type | Validation / default |
 |---|---|---|
@@ -648,21 +648,22 @@ Each declared origin adds one more sentence to the privacy text, with the name o
 | `uid` | string | optional; `^CHE-\d{3}\.\d{3}\.\d{3}$` |
 | `vatId` | string | optional |
 | `iban` | string | optional; `^[A-Z]{2}\d{2}[A-Z0-9 ]{10,30}$` |
-| `prices` | `[{id, amount (integer minor units ≥ 0), currency (3 letters, default CHF)}]` | default `[]` |
-| `sameAs` | URL[] | default `[]` |
-| `documents` | record `dist-relative PDF path → page path` | default `{}`; e.g. `{"leitfaden.pdf": "/leitfaden/"}` |
+| `prices` | `[{id, amount (integer minor units ≥ 0), currency (3 capital letters, default CHF)}]` | default `[]` |
+| `sameAs` | URL[] | default `[]`; each starts with `https://` or `http://` |
+| `documents` | record `dist-relative PDF path → page path` | default `{}`; e.g. `{"leitfaden.pdf": "/leitfaden/"}`; a key has no leading `/` and ends in `.pdf`; a value matches `^/([a-z0-9]+(-[a-z0-9]+)*/)*$` |
 | `accessibilityAudit` | `{date, by, scope}` | optional; needed before a conformance claim |
 | `contacts` | `[{name, email?, phone?}]` (strict; email or phone required) | default `[]`; more addresses and numbers pages may show |
 
-**`schedule.json`** (root; strict; failures report as `facts-schedule`):
+**`schedule.json`** (root; required; strict; failures report as `facts-schedule` with `schedule.json` as the place):
 
 - `openingHours: [{days: (Mo|Tu|We|Th|Fr|Sa|Su)[] (≥ 1), opens: HH:MM, closes: HH:MM}]`
 - `closures: [{from: YYYY-MM-DD, to: YYYY-MM-DD, note?: ≤ 80 chars}]`
 - Times match `^([01]\d|2[0-3]):[0-5]\d$`.
+- Both lists are required, and each may be empty. A date exists in the calendar.
 
-**`redirects.json`** (root): `[{from, to} | {from, gone: true}]`. See `routes-redirects`.
+**`redirects.json`** (root): `[{from, to} | {from, gone: true}]`. A missing file is an empty list. See `routes-redirects`.
 
-**`glossary.json`** (root): `{ "<code>": { "banned": { "<variant>": "<canonical>" } } }`.
+**`glossary.json`** (root; strict; failures report as `config-options` with `glossary.json` as the place; a missing file is an empty glossary): `{ "<code>": { "banned": { "<variant>": "<canonical>" } } }`. A `<code>` matches `^[a-z]{2,3}$`, `banned` is required, and a variant is not empty.
 
 **`docs/design.md`**: section 7.4.
 
@@ -679,8 +680,8 @@ Each declared origin adds one more sentence to the privacy text, with the name o
 **`astro:config:setup`**
 
 1. **Root.** `root = fileURLToPath(config.root)`.
-2. **Preflight.** `preflight(root, report)` runs every config-stage rule of section 8 in this order:
-   1. options and facts: `config-options`, `config-waiver`, `legal-processing`, `facts-schedule`;
+2. **Preflight.** `preflight(root, report)` runs the config-stage rules of section 8 that read the project files, in this order. It returns the settings, or nothing when they are not valid. The rules on the Astro config and on the routes run in step 3 and in the later hooks.
+   1. options and facts: `config-options` (`astro-kit.json`, then `site.json`, then `glossary.json`), `config-waiver`, `legal-processing`, `facts-schedule`;
    2. shims: `config-shim`;
    3. package: `config-overrides`, `config-dep-spec`, `config-dep-allowlist`;
    4. sources: `config-suppression`, `config-imports`, `config-server`, the source halves of the `js-*` and `csp-hash` rules;
@@ -692,12 +693,14 @@ Each declared origin adds one more sentence to the privacy text, with the name o
    10. CSS source halves: `css-sources`, `css-layer-file`, `css-component-file`, `css-literal`, `css-token-family`, `css-local-var`, `css-var-undefined`, `css-selector`, `css-banned`, `css-media`, `css-page`, `modes-media`.
 
    **Dependency rule.** The design rules after `design-format`, and `modes-themes`, run only when `design-format` passes. `design-tokens` also needs `modes-themes` to pass, because the rendering uses the mode options (7.7). The CSS rules that need `tokens.css` or `design.md` run only when both parse.
+
+   **Settings rule.** A check that reads the settings runs only with valid settings: `config-waiver`, `legal-processing`, the rendered parts of `config-shim`, `config-dep-allowlist`, and each later rule that takes the settings as input. Every other check always runs. So a run without valid settings still reports the facts files, the source shims, the package, the sources, `public/`, the images and the redirects.
 3. **Config shape.**
    - `config.adapter` set → `config-adapter`.
    - `config.i18n` set → `config-i18n`.
    - Any truthy `config.experimental` key whose value differs from its default → `config-experimental`. The only allowed default is `{collectionStorage: 'single-file'}`.
 4. **Findings.**
-   - Invalid options: throw a `FindingError`.
+   - A `config-options` finding (in `astro-kit.json`, `site.json` or `glossary.json`): throw a `FindingError`.
    - Other findings: throw when `command === 'build'`; otherwise `logger.warn(formatFindings(...))` and continue, so that dev and check keep the page visible.
 5. **Watch files.** `addWatchFile` for `astro-kit.json`, `site.json`, `schedule.json`, `redirects.json`, `glossary.json` and `docs/design.md`.
 6. **Islands.** With `features.islands`, push `(await import('@astrojs/solid-js')).default()` into integrations and add `solidHydrationHash(root)` to the script hashes.
@@ -1440,7 +1443,7 @@ Each declared theme needs an enabled option that reaches it: `light` through `au
 
 **Compressed size** is the larger of zstd level 3 (`ZSTD_c_compressionLevel`) and brotli quality 5 (`BROTLI_PARAM_QUALITY`).
 
-**Where.** The `where` of a finding is one of three things: a built page path (`/zimmer/`), a project file with a line (`src/styles/elements.css:12`), or a file with a field path (`astro-kit.json: forms.contact`).
+**Where.** The `where` of a finding is one of three things: a built page path (`/zimmer/`); a project file or folder (`public/robots.txt`, `src/middleware/`), with the line where the rule reads text (`src/styles/elements.css:12`); or a file with a field path (`astro-kit.json: forms.contact`, `redirects.json: [3].from`).
 
 **Levels.** Each rule has the level `error` or `warn` (11.5). An `error` finding fails its command. A `warn` finding is printed with `!` in place of `✗` and fails nothing. In the first release, every rule of this section is `error`.
 
@@ -1476,19 +1479,19 @@ Each declared theme needs an enabled option that reaches it: `light` through `au
 
 | Rule | Stage | Standard and measurement | Input |
 |---|---|---|---|
-| `config-options` | config | `astro-kit.json` exists and matches the strict schema of 5.2. `site.json` at the root matches its schema. Findings name the field path. A looser limit fails. | astro-kit.json, site.json |
-| `config-shim` | config | `astro.config.mjs`, `biome.json` and `tsconfig.json` equal the kit shims after CRLF→LF and trimEnd + newline, and no other `astro.config.*` file exists. The rendered protected files equal the kit's rendering for the settings, compared in the same way: `.github/workflows/site.yml`, `.github/workflows/site-merge.yml`, `.github/dependabot.yml`, `.github/kit-identity.sh`, `.github/CODEOWNERS` and `.npmrc` (a file that does not match gets the hint of 10.6). `AGENTS.md` holds the kit block of 12.1, and `CLAUDE.md` holds the line `@AGENTS.md`. Feature shims (`eslint.config.mjs`, `src/pages/api/forms/[form].ts`) are compared in `check`. | shims, protected files, agent files |
+| `config-options` | config | `astro-kit.json` exists and matches the strict schema of 5.2. `site.json` at the root exists and matches its schema, and `glossary.json`, when it exists, matches its schema (5.6). Findings name the field path. A looser limit fails. | astro-kit.json, site.json, glossary.json |
+| `config-shim` | config | `astro.config.mjs`, `biome.json` and `tsconfig.json` equal the kit shims after CRLF→LF and trimEnd + newline, and no other `astro.config.*` file exists. The root `biome.json` is the only Biome config: no other file named `biome.json`, `biome.jsonc`, `.biome.json` or `.biome.jsonc` exists in any folder of the project, outside `.git` and the folders that Biome skips (`node_modules`, `dist`, `.astro`, `.wrangler`). A nested Biome config can switch the linter off for its folder. The rendered protected files equal the kit's rendering for the settings, compared in the same way: `.github/workflows/site.yml`, `.github/workflows/site-merge.yml`, `.github/dependabot.yml`, `.github/kit-identity.sh`, `.github/CODEOWNERS` and `.npmrc` (a file that does not match gets the hint of 10.6). `AGENTS.md` holds the kit block of 12.1, and `CLAUDE.md` holds the line `@AGENTS.md`. Feature shims (`eslint.config.mjs`, `src/pages/api/forms/[form].ts`) are compared in `check`. | shims, protected files, agent files |
 | `config-locked` | config | No integration or config changes a value of the 6.1 table. Message: `${actual} instead of ${expected}`. | resolved config |
 | `config-adapter` | config | The project sets no adapter; the kit adds `@astrojs/cloudflare` only with forms. | config |
 | `config-experimental` | config | No truthy experimental flag other than `collectionStorage: 'single-file'`. | config |
 | `config-i18n` | config | The project sets no `i18n`; the resolved `i18n` equals the kit's. | config |
-| `config-imports` | config | No source imports `astro:transitions` or `astro:transitions/client` (regex on `src/**/*.{astro,ts,tsx,js,mjs,jsx}`). | src |
-| `config-suppression` | config | `src/` contains no `biome-ignore`, `@ts-ignore`, `@ts-expect-error` or `@ts-nocheck` (`.astro .ts .tsx .js .mjs .jsx .css .md .mdx`). | src |
+| `config-imports` | config | No source imports `astro:transitions` or `astro:transitions/client` (regex on `src/**/*.{astro,ts,tsx,js,mjs,jsx,mts,cts,cjs}`). White space and comments may stand between `from`, `import(` or `require(` and the module name. | src |
+| `config-suppression` | config | Nothing takes a file out of the checks. `src/` contains no `biome-ignore`, `@ts-ignore`, `@ts-expect-error` or `@ts-nocheck`, in any letter case (`.astro .ts .tsx .js .mjs .jsx .mts .cts .cjs .css .md .mdx`). Each of these files has at most 1,048,576 B: Biome checks no larger file, and the kit does not read one. No folder under `src/` or `public/` is named `node_modules`, `dist`, `.astro` or `.wrangler`, and no symbolic link there leads into such a folder: Biome skips these folders at any depth. No symbolic link under `src/` or `public/` leads out of the project, and neither folder is such a link: no check reads a file outside the project. The checks walk every other folder and follow a link that stays inside the project. | src, public |
 | `config-server` | config | The project has no server code of its own: no `src/middleware.*` file and no `src/middleware/` folder, no `src/actions/` folder and no `src/actions.*` file, and no `server:defer` in a `.astro` file under `src/` (S19). | src |
 | `config-waiver` | config | Each entry of `waivers` names a waivable rule (see Waivers). Its `until` is today or later, and at most 90 days after today (UTC). The message for an old entry: `the waiver for <rule> on <where> ended on <until>: fix the page, or ask the owner for a new date`. | astro-kit.json |
 | `config-overrides` | config | `package.json` has no `overrides` or `resolutions`. | package.json |
-| `config-dep-spec` | config | No dependency other than the kit uses a spec matching `^(git\|https?:\|file:\|link:\|github:\|[^@\s]+\/[^@\s]+$)`, in dependencies, devDependencies or optionalDependencies. | package.json |
-| `config-dep-allowlist` | config | Dependencies are only: `astro`, `@raess/astro-kit`, `wrangler`; with forms `@astrojs/cloudflare`; with islands `@astrojs/solid-js`, `solid-js`, `eslint`, `eslint-plugin-solid`, `typescript-eslint`; plus `dependencies`. | package.json |
+| `config-dep-spec` | config | Every dependency other than the kit has a spec of the npm registry: a version, a range or a tag. The trimmed spec matches `^(?!\.)(?!.*\.(tgz\|tar\|tar\.gz)$)[\w.*~^<>=\|+ -]*$` in any letter case, in dependencies, devDependencies or optionalDependencies. So a git or URL spec, a file, a link, a GitHub shorthand and an `npm:` alias fail. | package.json |
+| `config-dep-allowlist` | config | Dependencies are only: `astro`, `@raess/astro-kit`, `wrangler`; with forms `@astrojs/cloudflare`; with islands `@astrojs/solid-js`, `solid-js`, `eslint`, `eslint-plugin-solid`, `typescript-eslint`; plus `dependencies`. The rule reads dependencies, devDependencies, optionalDependencies and peerDependencies. A `package.json` that is not a JSON object fails, and so does a section that is not an object. A project without `package.json` has no finding. | package.json |
 | `config-public-shadow` | config | `public/` holds none of `robots.txt`, `_headers`, `_redirects`, `.well-known/security.txt`, `_kit`, `sitemap*.xml`. | public |
 | `config-wrangler` | config | Only `wrangler.jsonc` exists (no `.json` or `.toml`). It equals the kit's rendering for the settings (`renderWrangler`, 10.4), after CRLF→LF and trimEnd + newline. The rendering has full-line `//` comments only and no trailing commas, because the deploy job reads it with `jq`. A file that does not match gets the hint of 10.6. | wrangler.jsonc, options |
 | `config-kit-identity` | ci | `.github/kit-identity.sh` (10.3) checks that `.npmrc` has the exact line `ignore-scripts=true`, that there is no `npm-shrinkwrap.json`, that every lockfile entry is an npm registry tarball under its own name and version with an integrity hash, and that the kit entry is the kit itself, with a `sha512` hash and a version not lower than on the base (`sort -V`). | .npmrc, lockfile, git base |
@@ -1501,7 +1504,7 @@ Each declared theme needs an enabled option that reaches it: `light` through `au
 | `routes-404` | build | `/404.html` exists in dist. (The project builds it from `src/pages/404.astro`; the rule reads only dist.) It is the only 404 page: no other built page path has a `404` segment. Message for such a path `<p>`: `<p> has a 404 segment. Under build.format 'directory' it is written to <p>index.html, an ordinary page that answers 200. Cloudflare answers a missing URL only with a file named 404.html, which Astro builds only from src/pages/404.astro. Put every language on /404.html.` `/404.html` links every locale home (`/` and each `/<code>/`). It holds no form whose action starts with `/api/forms/`, because its `return` would fail step 5 of 9.1. It passes every page rule that does not exempt it (6.1 marks it `is404`). | dist, options |
 | `routes-slug` | config + build | Every built page path other than `/404.html` ends in `/` (`…/index.html`), and each of its segments matches `^[a-z0-9]+(-[a-z0-9]+)*$`. A default-locale path does not start with a locale code or a reserved segment (`_astro`, `_actions`, `_server-islands`, `_image`, `_kit`, `api`, `500`, `.well-known`). A non-default path has no reserved segment after `/<code>/`. A `404` segment is left to `routes-404`, so it reports once. **The endpoint clause,** checked in `astro:routes:resolved` (6.1): a project route of type `endpoint`, other than the form shim, is a static file route. Its pattern ends with a literal file extension `.<ext>` (`[a-z0-9]+`) that is not `html` or `htm`. Its first segment holds no parameter (`[`) and is not a reserved segment. When the first segment is a locale code, the second segment holds no parameter and is not a reserved segment. A parameter can stand for any name, so the kit cannot know which file it writes there. For example, `/[name].txt` and `/[dir]/[file].json` fail, and `/live.json` and `/feeds/[lang].json` pass. Its pattern is none of `/robots.txt`, `/_headers` and `/_redirects`, and no `/sitemap*.xml`. So a project endpoint can never write the file of a page or a file that the kit writes. `routes-on-demand` still requires it to be prerendered. Two page routes never build one path: the locked `prerenderConflictBehavior: 'error'` fails that build (S11). Astro compares route paths, not output files, so it does not see a static endpoint that writes the file of a page (`src/pages/a/index.html.ts` beside `src/pages/a.astro`). The endpoint clause fails that. | resolved routes, dist |
 | `routes-translation` | build | Every non-default-locale page lists a default-locale alternate. In a `coverage: "full"` locale, every indexable default-locale page lists an alternate in that locale. `/404.html` is exempt. | built hreflang, options |
-| `routes-redirects` | config + build | `redirects.json` rows are `{from, to}` or `{from, gone: true}`. `from` starts with `/` and has no whitespace and no `?` ("query strings cannot be matched; mark it gone or add a zone Single Redirect"). No duplicate `from`. `to` starts with `/`. No chains (no `to` is a `from`). Limits: 2,000 static, 100 dynamic, 1,000 characters per line. Every literal `to` is built (patterns, and `/api/` with forms, are skipped). | redirects.json, dist |
+| `routes-redirects` | config + build | `redirects.json` rows are `{from, to}` or `{from, gone: true}`. `from` starts with `/` and has no whitespace and no `?` ("query strings cannot be matched; mark it gone or add a zone Single Redirect"). No duplicate `from`. `to` starts with `/`, not with `//` or `/\`, and has no whitespace, so a row writes one line and never leaves the site. No chains (no `to` is a `from`). Limits: 2,000 static, 100 dynamic, 1,000 characters per line. Every literal `to` is built (patterns, and `/api/` with forms, are skipped). | redirects.json, dist |
 | `routes-removed` | ci | No base-branch `redirects.json` source is dropped unless its path is built again. Every path in the live `${site}/_kit/routes.txt` and the live `sitemap.xml` (one level of sitemap index, ≤ 50 children) is built or redirected. Timeout 15 s; 404, ENOTFOUND and EAI_AGAIN are skips; another non-OK answer is a finding; a URL with a query fails. Matching treats `/a`, `/a/` and `/a/index.html` as one; `*` and `:name` patterns match. | git base, live site, dist |
 
 ### js (4)
@@ -1537,7 +1540,7 @@ Each declared theme needs an enabled option that reaches it: `light` through `au
 | `images-format` | build | Every `picture` has ≥ 1 `source`, all `type="image/avif"`, and an `img` src ending in `.webp`. | dist |
 | `images-priority` | build | At most one `fetchpriority="high"` image per page. | dist |
 | `images-public` | config | `public/` holds no raster file (`.png .jpg .jpeg .gif .webp .avif .bmp .tif .tiff`) except `favicon.ico`, `apple-touch-icon.png`, `og.png`, `og.jpg`. | public |
-| `images-original` | config | Every raster file under `src/` is ≤ 2,560 px on its long edge and ≤ 3,145,728 B. The size is read from the PNG, GIF, WebP or JPEG header. | src |
+| `images-original` | config | Every raster file under `src/` is ≤ 2,560 px on its long edge and ≤ 3,145,728 B. The size is read from the PNG, GIF, WebP or JPEG header. A `.png`, `.gif`, `.webp`, `.jpg` or `.jpeg` file without such a header fails. So does a JPEG file with more than 4,096 markers and fill bytes before its frame header. A raster file of another format has the byte limit only. | src |
 
 ### fonts (1) and origins (2; `origins-gesture` is in the browser table)
 
@@ -2648,10 +2651,28 @@ Read `node_modules/@raess/astro-kit/docs/INDEX.md` first. If it is missing, run 
     export default defineConfig({ integrations: [astroKit()] });
     ```
 
-  - `biome.json`: `{"$schema": "./node_modules/@biomejs/biome/configuration_schema.json", "extends": ["@raess/astro-kit/biome.json"]}`.
-  - `tsconfig.json`: `{"extends": "@raess/astro-kit/tsconfig.json", "include": [".astro/types.d.ts", "**/*"], "exclude": ["dist", "node_modules"]}`.
+  - `biome.json`:
+
+    ```json
+    {
+      "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+      "extends": ["@raess/astro-kit/biome.json"]
+    }
+    ```
+
+  - `tsconfig.json`:
+
+    ```json
+    {
+      "extends": "@raess/astro-kit/tsconfig.json",
+      "include": [".astro/types.d.ts", "**/*"],
+      "exclude": ["dist", "node_modules"]
+    }
+    ```
+
+  - Each shim ends with one newline. The two JSON shims have the format that Biome gives them under the kit preset: each object expanded, each short list on one line. So `biome ci` passes on a project that holds them.
 - **Biome preset** (`config/biome.json`):
-  - `files.includes` excludes `dist`, `.astro`, `.wrangler` and `node_modules`.
+  - `files.includes` excludes `dist`, `.astro`, `.wrangler` and `node_modules` at any depth. Biome also never checks a file of more than 1,048,576 B (its default `files.maxSize`). `config-suppression` fails such a folder and such a file under `src/`, so the exclusion hides no source.
   - Formatter: spaces, indent 2, line width 120, single quotes. HTML full support on, with indented script and style. Markdown formatting off.
   - Linter: `recommended`, `useNodejsImportProtocol` error, `suspicious` error except `noBitwiseOperators` off (byte parsing and the xorshift generator of 14.2 need bitwise operators).
   - `linter.domains`: `{ "solid": "none" }`. When Biome detects Solid in `package.json`, it turns on the domain's one recommended rule, `noReactSpecificProps`; its other Solid rules run only with `"all"` or by name. ESLint covers Solid (9.2), so Biome runs no Solid rule.
@@ -2923,7 +2944,7 @@ No test can prove these facts, because they need GitHub, Cloudflare, npm and a m
 |---|---|---|---|---|
 | M0 | Skeleton | `package.json` (with `version` `0.0.0`), tsconfigs, `biome.json`, the presets `config/biome.json` and `config/tsconfig.json` (12.2), `kit.yml` (the `test`, `scan` and `merge` jobs), `kit-approved.yml`, `.github/CODEOWNERS`, `docs/spec.md` (this document), `src/registry.ts` with `Report`, `formatFindings`, levels and waivers, `src/docs.ts`, README, CONTRIBUTING, SECURITY, CHANGELOG, LICENSE; the versions pinned per section 2 | nothing | `npm run check`, `npm test` and `node src/docs.ts --check` pass (with no rule yet, the generated files are empty tables). A test asserts the finding format, a waived finding and a `warn` finding. |
 | M1 | Test repository and spikes | nothing | The repository, created by the owner (16): a `package.json` with `astro` as a dependency and `wrangler` and `@types/node` as devDependencies, at the section 2 pins; the suite harness of 14.2; `test/spikes.test.ts` with S1–S19 (13.2); `acceptance.yml` with its two jobs | Each spike asserts its fact or applies its fallback, in the `acceptance` job. The measured values are in `test/spikes.results.json`. Where a spike used its fallback, a PR changes this specification before the dependent milestone starts. |
-| M2 | Options, facts, preflight | `src/options.ts`, `facts.ts`, `redirects.ts`, `routes.ts`, `shims.ts`, `project.ts`, `preflight.ts`; these config-stage rules: `config-options`, `config-shim` (the three source shims, and no other `astro.config.*` file), `config-overrides`, `config-dep-spec`, `config-dep-allowlist`, `config-imports`, `config-suppression`, `config-server`, `config-waiver`, `config-public-shadow`, `legal-processing`, `facts-schedule`, `images-public`, `images-original`, `routes-redirects` (source half) | nothing | A unit test per rule (one passing and one failing case). `loadOptions` messages name the paths. A looser limit fails. |
+| M2 | Options, facts, preflight | `src/options.ts`, `facts.ts`, `redirects.ts`, `routes.ts`, `shims.ts`, `project.ts`, `preflight.ts`; these config-stage rules: `config-options`, `config-shim` (the three source shims, no other `astro.config.*` file and no other Biome config), `config-overrides`, `config-dep-spec`, `config-dep-allowlist`, `config-imports`, `config-suppression`, `config-server`, `config-waiver`, `config-public-shadow`, `legal-processing`, `facts-schedule`, `images-public`, `images-original`, `routes-redirects` (source half) | nothing | A unit test per rule (one passing and one failing case). `loadOptions` messages name the paths. A looser limit fails. |
 | M3 | Integration, kit CSS, tokens and edge output | `src/index.ts`, `config.ts`, `csp.ts`, `modes.ts` (options, `themeOf`, `modeScript`), `virtual.ts`, `inject.ts`, `build.ts`, `context.ts`, `hosts/cloudflare.ts` (the edge files and the static `renderWrangler`), `audit/index.ts`, `audit/edge.ts`, `env.d.ts`, `css/base.css`, `design/parse.ts`, `design/tokens.ts`, and `src/cli.ts` and `src/ci.ts` with the commands `build` and `tokens`; the rules `config-locked`, `config-adapter`, `config-experimental`, `config-i18n`, `config-wrangler` (for a static site), `routes-on-demand`, `routes-slug` (the endpoint clause), `edge-headers`, `edge-redirects`, `design-format`, `modes-themes`, `design-tokens` (the source half); the `real-site` job in `kit.yml` | The hotel site, stage 1, with `features.forms` false until M7: `astro-kit.json`, the shims, `.npmrc`, `wrangler.jsonc` (the static text of 10.4), `.github/kit-identity.sh` (the text of 10.3), `AGENTS.md`, `CLAUDE.md`, `site.json`, `schedule.json`, `redirects.json`, `glossary.json`, `legal.lock.json` (`{}`), `docs/design.md`, `tokens.css` as the output of `tokens`, `elements.css`, `fonts.css`, a layout component, the three homes, `/404.html` and the six legal pages. The lockfile pins the placeholder kit (11.4). | Hook unit tests with fake Astro arguments (14.1): the recorded `updateConfig` values equal the 6.1 table; one `injectScript('page-ssr')` call holds the four imports in order; the six watch files are added. The `_headers` merge tests cover adapter-first, adapter-after and prefetch. `robots.txt`, `sitemap.xml`, `security.txt`, `release.txt` and `routes.txt` are byte-exact. On a fake dist of HTML strings, `build:done` changes no byte of a page except the mode script insert and the speculation insert. `base.css` is at most 2,048 B compressed and equals the 7.6 text byte for byte. `renderTokens` gives the exact text of setting 1 of 7.7, and for settings 2 to 5 the texts that the test holds, written out from the 7.7 algorithm. The theme function `T` of 7.12 is tested for every option and system state. **The real-site job passes:** `npx --no astro-kit build` of the hotel site with the packed kit succeeds, and a suite case finds the CSP meta, the mode script and the speculation block in every built page. |
 | M4 | CSS analyzers | `src/css/parse.ts`, `values.ts`, `selectors.ts`, `media.ts` | A suite case feeds the built CSS of the hotel site to the parsers and asserts that every rule and declaration parses | Table-driven unit tests: specificity, compounds, the literal classifier, the family map, the length group, the geometry literals, and media preludes. |
 | M5 | Build audits | `src/css/rules.ts`, `design/rules.ts`, `audit/page.ts`, `site.ts`, `budgets.ts`, `html.ts`, `text.ts`; every rule of stage `build`, and the build half of every `config + build` rule, that M3, M7, M8 and M9 do not deliver (so `speculation-block` and `modes-script` too); every css rule; `design-specs` and `design-pairs`; `modes-switch` and `modes-media` | The hotel site, stage 2: all 26 pages, the content of 14.2, images, the PDF, the mode switch. The `build`, `css`, `design` and `modes` planted sets, each with the ids of the rules that exist at this milestone, and the five agent mistakes. The other ids join with their rules: the forms ids at M7; `js-budget`, `legal-origins` and `origins-third-party` at M8; `legal-approved` at M9. | A unit test per rule, with one passing and one failing case on strings or a `BuildContext` built from strings (14.1). The drift matrix and the freedom matrix pass. The real-site job passes, and the planted sets give their exact ids. |
@@ -2963,7 +2984,7 @@ The kit has unit tests only. `npm test` runs them (`node --test 'test/unit/**/*.
   - the six watch files of step 5;
   - with islands, the Solid integration in `integrations` and its hash in the script hashes;
   - with forms, the Cloudflare adapter in `adapter` and in `integrations`;
-  - an options finding always throws a `FindingError`; any other finding throws for `build` and goes to `logger.warn` for `dev`.
+  - a `config-options` finding always throws a `FindingError`; any other finding throws for `build` and goes to `logger.warn` for `dev`.
 - **`astro:config:done`** gets a fake resolved config. Each locked key, changed in turn, gives `config-locked` with `${actual} instead of ${expected}`.
 - **`astro:routes:resolved`** gets fake route lists, for `routes-on-demand` and the endpoint clause of `routes-slug`. The lists hold an endpoint with a parameter in its first segment (`/[name].txt`), which fails, and one with a parameter in a later segment (`/feeds/[lang].json`), which passes. A second call with the same list gives the same findings.
 - **`astro:build:done`** gets `dir` (the file URL of a fake dist of HTML strings), a fake `assets` map and a logger. The test asserts:
