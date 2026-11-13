@@ -1,0 +1,78 @@
+{
+  "$schema": "../node_modules/@biomejs/biome/configuration_schema.json",
+  "root": false,
+  "files": {
+    "includes": ["**", "!**/dist", "!**/.astro", "!**/.wrangler", "!**/node_modules"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 120
+  },
+  "javascript": {
+    "formatter": { "quoteStyle": "single" }
+  },
+  "html": {
+    "experimentalFullSupportEnabled": true,
+    "formatter": { "enabled": true, "indentScriptAndStyle": true }
+  },
+  "markdown": {
+    "formatter": { "enabled": false }
+  },
+  "linter": {
+    "enabled": true,
+    "domains": { "solid": "none" },
+    "rules": {
+      "preset": "recommended",
+      "style": {
+        "useNodejsImportProtocol": "error",
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "paths": {
+              "astro:transitions": "No ClientRouter: native CSS view transitions keep the CSP strict."
+            },
+            "patterns": [
+              {
+                "group": ["astro:transitions/**"],
+                "message": "No ClientRouter: native CSS view transitions keep the CSP strict."
+              }
+            ]
+          }
+        }
+      },
+      "suspicious": "error"
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noBitwiseOperators": "off",
+            "useBaseline": {
+              "level": "error",
+              "options": {
+                "available": 2024,
+                "allowAtRules": ["view-transition"],
+                "allowProperties": ["accent-color", "resize"],
+                "allowPropertyValues": { "text-wrap": ["pretty"] }
+              }
+            },
+            "noUnknownAttribute": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/astro-kit.json"],
+      "json": { "formatter": { "expand": "always" } }
+    },
+    {
+      "includes": ["**/src/styles/tokens.css"],
+      "formatter": { "enabled": false }
+    }
+  ]
+}

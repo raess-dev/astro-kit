@@ -210,6 +210,18 @@ Version 1 does not do these things. Each line says what a site does instead. A s
 | Images (transitive) | `sharp` | through Astro's image pipeline | Image processing in sites, and the deterministic photos of the test repository (14.2); never a direct dependency |
 | Tests only | `yaml` `2.9.1`, `@types/node` `22.20.5` | devDependencies | Workflow parsing, types |
 
+**The pins of milestone M0** (2026-11-13). Each is the latest version in its line. Where the table gives no other value, the pin equals the floor.
+
+| Package | Pin |
+|---|---|
+| `astro` | `7.4.11` |
+| `@biomejs/biome` | `2.6.7` |
+| `html-validate` | `11.21.1` |
+| `solid-js` | `1.9.19` |
+| `@astrojs/solid-js` | `7.1.5` |
+| `@astrojs/cloudflare` | `14.4.7` |
+| `wrangler` | `4.160.1` |
+
 ### 2.2 Pinned GitHub Actions
 
 Use the same pins in `kit.yml`, `release.yml` and the site template. Refresh each pin to the latest release's commit SHA at milestone M0, and keep the `# vX.Y.Z` comment.
@@ -1957,7 +1969,7 @@ The form may sit on a page, in a dialog or in a sidebar, but not on `/404.html`,
 - **Install:**
 
   ```sh
-  npm install --save-exact --ignore-scripts @astrojs/solid-js@7.1.2 solid-js@1.9.18
+  npm install --save-exact --ignore-scripts @astrojs/solid-js@7.1.5 solid-js@1.9.19
   npm install --save-exact --ignore-scripts --save-dev eslint@10.14.0 eslint-plugin-solid@0.19.0 typescript-eslint@8.72.2
   npx --no astro-kit init --shims
   ```
@@ -2777,7 +2789,7 @@ These facts were checked on the versions of 2.1, against the published package s
 8. Every `injectScript('page')` script is bundled into one `/_astro/page.<hash>.js` chunk.
 9. Astro 7.4's `experimental` block defaults to `{ collectionStorage: 'single-file' }`.
 10. Astro does not hash a renderer's hydration script.
-11. Solid's `generateHydrationScript()` returns `<script>…</script><!--xs-->`. Its text starts with `window._$HY||`. With solid-js 1.9.18 its hash is `sha256-VmEf2BGdqVUwcvyhTyarJo/bY7DNqS2+T2sz4IO/kbw=`.
+11. Solid's `generateHydrationScript()` returns `<script>…</script><!--xs-->`. Its text starts with `window._$HY||`. With solid-js 1.9.18 and 1.9.19 its hash is `sha256-VmEf2BGdqVUwcvyhTyarJo/bY7DNqS2+T2sz4IO/kbw=`.
 12. The CSP meta is identical on every page. Astro places it after the project's head tags and before its `<style>`.
 13. Astro always hashes the five client-directive scripts (idle, load, media, only, visible), every inline script and client JS asset, and injected `head-inline` and `before-hydration` scripts. With a renderer it also hashes the island runtime and its style. It hashes every inline page `<style>` and client CSS asset as a union over all pages.
 14. Astro emits no SRI `integrity` attributes.
@@ -2805,7 +2817,7 @@ These facts were checked on the versions of 2.1, against the published package s
 36. A detailed 1200×630 JPEG is about 157 KB at quality 80 and 134 KB at quality 70, against the 150 KB limit.
 37. sharp comes with Astro's image pipeline.
 38. The speculation JSON hashes to `sha256-4255RGsO6JUC8vuukcO69AaAmBKnnolynaWf9b0Q6og=`.
-39. Biome 2.6.6 has a `solid` linter domain (`linter.domains.solid`: `"all"`, `"recommended"` or `"none"`). `biome explain <rule>` lists four rules in it: `noSolidDestructuredProps` (correctness, default info), `useSolidForComponent` (performance, info), `noReactSpecificProps` (suspicious, warn) and `noDuplicatedSpreadProps` (suspicious, warn; also in the `react` domain). When Biome detects the dependency `solid@>=1.0.0`, it enables only the domain's recommended rule, `noReactSpecificProps`. No Biome rule tracks signal reads outside reactive scopes; ESLint's `solid/reactivity` does.
+39. Biome 2.6.6 and 2.6.7 have a `solid` linter domain (`linter.domains.solid`: `"all"`, `"recommended"` or `"none"`). `biome explain <rule>` lists four rules in it: `noSolidDestructuredProps` (correctness, default info), `useSolidForComponent` (performance, info), `noReactSpecificProps` (suspicious, warn) and `noDuplicatedSpreadProps` (suspicious, warn; also in the `react` domain). When Biome detects the dependency `solid@>=1.0.0`, it enables only the domain's recommended rule, `noReactSpecificProps`. No Biome rule tracks signal reads outside reactive scopes; ESLint's `solid/reactivity` does.
 40. Vite 8 minifies CSS with lightningcss. The minifier rewrites values: `0.5` becomes `.5`, hex colors are shortened, `rgb()` and `hsl()` become hex or names, and long numbers are rounded. With the `cssTarget` of 6.1 it keeps `light-dark()`, `oklch()` and `@layer`. So no rule compares a value in built CSS with a value in a source file.
 41. `security.csp` puts one hash for each distinct inline style sheet of the whole site into the CSP meta of every page. One hash is 54 B raw.
 42. Astro has the config key `prerenderConflictBehavior` (`'error'`, `'warn'` or `'ignore'`; the default is `'warn'`). With `'warn'`, Astro skips the second route that builds a path.
@@ -2928,7 +2940,7 @@ The kit has unit tests only. `npm test` runs them (`node --test 'test/unit/**/*.
   - the edge files are byte-exact;
   - the audits run in the order of step 4;
   - a finding throws.
-- **Feature packages.** In the islands and forms cases, the hooks import `@astrojs/solid-js` and `@astrojs/cloudflare` from the kit's devDependencies (3.4). `solidHydrationHash(root)` resolves `solid-js` from the root (6.2). So the islands case adds the symlink `<root>/node_modules/solid-js` → the kit's `node_modules/solid-js`. With solid-js 1.9.18, the hash equals `sha256-VmEf2BGdqVUwcvyhTyarJo/bY7DNqS2+T2sz4IO/kbw=` (13.1, item 11).
+- **Feature packages.** In the islands and forms cases, the hooks import `@astrojs/solid-js` and `@astrojs/cloudflare` from the kit's devDependencies (3.4). `solidHydrationHash(root)` resolves `solid-js` from the root (6.2). So the islands case adds the symlink `<root>/node_modules/solid-js` → the kit's `node_modules/solid-js`. The hash equals the value that 13.1, item 11 gives for the installed version of `solid-js`.
 
 **Per rule.** Every rule of section 8 has at least one passing case and one failing case.
 
