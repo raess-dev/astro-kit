@@ -7,9 +7,6 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 
-const FILE = fileURLToPath(new URL('../../.github/workflows/kit.yml', import.meta.url));
-const TEXT = readFileSync(FILE, 'utf8');
-
 interface Step {
   uses?: string;
   run?: string;
@@ -22,6 +19,7 @@ interface Job {
   if?: string;
   'timeout-minutes'?: number;
   permissions?: Record<string, string>;
+  env?: Record<string, string>;
   steps: Step[];
 }
 interface Workflow {
@@ -30,23 +28,45 @@ interface Workflow {
   env: Record<string, string>;
   jobs: Record<string, Job>;
 }
-const WORKFLOW = parse(TEXT) as Workflow;
+
+const load = (name: string): { text: string; workflow: Workflow } => {
+  const text = readFileSync(fileURLToPath(new URL(`../../.github/workflows/${name}`, import.meta.url)), 'utf8');
+  return { text, workflow: parse(text) as Workflow };
+};
+const KIT = load('kit.yml');
+const APPROVED = load('kit-approved.yml');
+const FILES = [KIT, APPROVED];
+const JOBS: Record<string, Job> = { ...KIT.workflow.jobs, ...APPROVED.workflow.jobs };
 
 const job = (id: string): Job => {
-  const found = WORKFLOW.jobs[id];
-  if (!found) throw new Error(`kit.yml has no job ${id}`);
+  const found = JOBS[id];
+  if (!found) throw new Error(`the workflows have no job ${id}`);
   return found;
 };
+const expression = (name: string): string => `\${{ ${name} }}`;
 
 test('kit.yml has the triggers, the empty top-level permissions and the env of 11.1', () => {
-  assert.deepEqual(WORKFLOW.on.pull_request?.types, ['opened', 'synchronize', 'reopened', 'ready_for_review']);
-  assert.deepEqual(WORKFLOW.on.pull_request_review?.types, ['submitted']);
-  assert.deepEqual(WORKFLOW.on.push?.branches, ['main']);
-  assert.ok('schedule' in WORKFLOW.on);
-  assert.ok('workflow_dispatch' in WORKFLOW.on);
-  assert.deepEqual(WORKFLOW.permissions, {});
-  assert.equal(WORKFLOW.env.ASTRO_TELEMETRY_DISABLED, '1');
-  assert.equal(WORKFLOW.env.REPO, '$' + '{{ github.repository }}');
+  const { on, permissions, env } = KIT.workflow;
+  assert.deepEqual(Object.keys(on).sort(), ['pull_request', 'push', 'schedule', 'workflow_dispatch']);
+  assert.deepEqual(on.pull_request?.types, ['opened', 'synchronize', 'reopened', 'ready_for_review']);
+  assert.deepEqual(on.push?.branches, ['main']);
+  assert.deepEqual(permissions, {});
+  assert.equal(env.ASTRO_TELEMETRY_DISABLED, '1');
+  assert.equal(env.REPO, expression('github.repository'));
+});
+
+test('the merge after an approval is a workflow of its own, on review events only', () => {
+  const { on, permissions, env, jobs } = APPROVED.workflow;
+  assert.deepEqual(Object.keys(on), ['pull_request_review']);
+  assert.deepEqual(on.pull_request_review?.types, ['submitted']);
+  assert.deepEqual(permissions, {});
+  assert.equal(env.REPO, expression('github.repository'));
+  assert.deepEqual(Object.keys(jobs), ['merge-approved']);
+  // A skipped job counts as a passed check. So no workflow that runs on a review may hold a job with the name of a
+  // required check, and no job of kit.yml may be skipped by an event condition except the merge job.
+  assert.deepEqual(Object.keys(KIT.workflow.jobs), ['test', 'scan', 'merge']);
+  assert.equal(job('test').if, undefined);
+  assert.equal(job('scan').if, undefined);
 });
 
 test('every job has a name, its own permissions and a timeout', () => {
@@ -56,9 +76,10 @@ test('every job has a name, its own permissions and a timeout', () => {
     merge: 'kit / merge',
     'merge-approved': 'kit / merge after approval',
   };
-  for (const [id, name] of Object.entries(names)) {
+  assert.deepEqual(Object.keys(JOBS).sort(), Object.keys(names).sort());
+  for (const id of Object.keys(JOBS)) {
     const found = job(id);
-    assert.equal(found.name, name);
+    assert.equal(found.name, names[id]);
     assert.ok(found.permissions, `${id} has permissions`);
     assert.ok(found['timeout-minutes'], `${id} has a timeout`);
   }
@@ -71,7 +92,7 @@ test('every job has a name, its own permissions and a timeout', () => {
 });
 
 test('every action is pinned to a commit with its version in a comment', () => {
-  const lines = TEXT.split('\n').filter((line) => /^\s*-?\s*uses:/.test(line));
+  const lines = FILES.flatMap((file) => file.text.split('\n')).filter((line) => /^\s*-?\s*uses:/.test(line));
   assert.ok(lines.length >= 4);
   for (const line of lines) {
     assert.match(line, /uses: [\w.-]+\/[\w.-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+$/, line.trim());
@@ -79,7 +100,7 @@ test('every action is pinned to a commit with its version in a comment', () => {
 });
 
 test('every checkout drops its credentials, and setup-node reads .node-version', () => {
-  const steps = Object.values(WORKFLOW.jobs).flatMap((found) => found.steps);
+  const steps = Object.values(JOBS).flatMap((found) => found.steps);
   const checkouts = steps.filter((step) => step.uses?.startsWith('actions/checkout@'));
   const nodes = steps.filter((step) => step.uses?.startsWith('actions/setup-node@'));
   assert.ok(checkouts.length >= 2);
@@ -94,7 +115,7 @@ test('every checkout drops its credentials, and setup-node reads .node-version',
   );
 });
 
-test('the test job runs the commands of 11.1 in order', () => {
+test('the test job runs the commands of 11.1 in order, and scan gets the gitleaks pin through its env', () => {
   const runs = job('test')
     .steps.map((step) => step.run)
     .filter((run) => run !== undefined);
@@ -106,26 +127,49 @@ test('the test job runs the commands of 11.1 in order', () => {
     'npm test',
     'node src/docs.ts --check',
   ]);
+  assert.match(job('scan').env?.GITLEAKS ?? '', /^ghcr\.io\/gitleaks\/gitleaks:v\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/);
 });
 
-test('merge needs the checks; merge-approved runs for an approval of a pull request into main only', () => {
+test('merge needs the checks and a pull request of this repository; merge-approved needs an approval into main', () => {
   assert.deepEqual(job('merge').needs, ['test', 'scan']);
-  assert.equal(job('merge-approved').needs, undefined);
-  const condition = job('merge-approved').if ?? '';
-  assert.match(condition, /github\.event\.review\.state == 'approved'/);
-  assert.match(condition, /github\.event\.pull_request\.base\.ref == 'main'/);
+  const condition = job('merge').if ?? '';
+  assert.match(condition, /github\.event_name == 'pull_request'/);
+  assert.match(condition, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
+  const approved = job('merge-approved').if ?? '';
+  assert.match(approved, /github\.event\.review\.state == 'approved'/);
+  assert.match(approved, /github\.event\.pull_request\.base\.ref == 'main'/);
+  assert.match(approved, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
   assert.equal(job('merge').steps[0]?.run, job('merge-approved').steps[0]?.run, 'both jobs run one script');
+  for (const id of ['merge', 'merge-approved']) {
+    assert.deepEqual(Object.keys(job(id).steps[0]?.env ?? {}), [
+      'GH_TOKEN',
+      'KIT_AGENTS',
+      'PR',
+      'TESTED_SHA',
+      'HEAD_REF',
+    ]);
+  }
+  // `github.head_ref` is empty on a review event, so the approved job reads the branch from the pull request.
+  assert.equal(job('merge').steps[0]?.env?.HEAD_REF, expression('github.head_ref'));
+  assert.equal(job('merge-approved').steps[0]?.env?.HEAD_REF, expression('github.event.pull_request.head.ref'));
 });
 
 // ── the merge script, against a fake gh ─────────────────────────────────────
 
 const SCRIPT = job('merge').steps[0]?.run ?? '';
 
-/** A `gh` that answers from environment variables and records the calls that change something. */
+/**
+ * A `gh` that answers `gh api` from JSON in environment variables and applies the `--jq` program of the call with
+ * the real jq, as gh does. It records the calls that change something.
+ */
 const FAKE_GH = `#!/usr/bin/env bash
+program=''
+for ((i = 1; i <= $#; i++)); do
+  if [ "\${!i}" = --jq ]; then j=$((i + 1)); program="\${!j}"; fi
+done
 case "$1 $2" in
-  "api repos/o/r/pulls/7") printf '%s\\n' "$FAKE_LIVE" ;;
-  "api --paginate") printf '%s\\n' "$FAKE_FILES" ;;
+  "api repos/o/r/pulls/7") jq -r "$program" <<<"$FAKE_PULL" ;;
+  "api --paginate") [ "$3" = repos/o/r/pulls/7/files ] || exit 9; jq -r "$program" <<<"$FAKE_FILES" ;;
   "pr merge") echo "merge $*" >> "$FAKE_LOG"; if [ "$FAKE_REFUSE" = 1 ]; then echo 'required status check is expected' >&2; exit 1; fi ;;
   "workflow run") echo "dispatch $*" >> "$FAKE_LOG" ;;
   *) echo "unexpected gh call: $*" >&2; exit 9 ;;
@@ -134,11 +178,11 @@ esac
 
 interface Case {
   state?: string;
-  draft?: string;
+  draft?: boolean;
   head?: string;
   base?: string;
   author?: string;
-  files?: string[];
+  files?: (string | { filename: string; previous_filename: string })[];
   agents?: string | undefined;
   refuse?: boolean;
 }
@@ -150,7 +194,16 @@ function merge(c: Case): { status: number | null; out: string; calls: string[] }
     writeFileSync(gh, FAKE_GH);
     chmodSync(gh, 0o755);
     const log = join(dir, 'calls.log');
-    const live = [c.state ?? 'open', c.draft ?? 'false', c.head ?? 'abc', c.base ?? 'build', c.author ?? 'kit-agent'];
+    const pull = {
+      state: c.state ?? 'open',
+      draft: c.draft ?? false,
+      head: { sha: c.head ?? 'abc' },
+      base: { ref: c.base ?? 'build' },
+      user: { login: c.author ?? 'kit-agent' },
+    };
+    const files = (c.files ?? ['src/registry.ts']).map((file) =>
+      typeof file === 'string' ? { filename: file } : file,
+    );
     const env: Record<string, string> = {
       PATH: `${dir}:${process.env.PATH ?? ''}`,
       REPO: 'o/r',
@@ -158,8 +211,8 @@ function merge(c: Case): { status: number | null; out: string; calls: string[] }
       TESTED_SHA: 'abc',
       HEAD_REF: 'feature',
       GH_TOKEN: 'x',
-      FAKE_LIVE: live.join('\t'),
-      FAKE_FILES: (c.files ?? ['src/registry.ts']).join('\n'),
+      FAKE_PULL: JSON.stringify(pull),
+      FAKE_FILES: JSON.stringify(files),
       FAKE_LOG: log,
       FAKE_REFUSE: c.refuse ? '1' : '0',
     };
@@ -189,18 +242,29 @@ test('the merge script dispatches the release after a merge into main', () => {
 test('the merge script leaves every pull request that it must not merge', () => {
   const cases: [string, Case, RegExp][] = [
     ['a closed pull request', { state: 'closed' }, /the pull request is closed/],
-    ['a draft', { draft: 'true' }, /a draft waits for the owner/],
+    ['a draft', { draft: true }, /a draft waits for the owner/],
     ['another base', { base: 'release' }, /the base is release, not main or build/],
     ['a moved head', { head: 'def' }, /the head moved/],
     ['a foreign author', { author: 'someone' }, /someone is not an agent account/],
     ['the owner as author', { author: 'owner', agents: '["kit-agent"]' }, /owner is not an agent account/],
     ['no KIT_AGENTS variable', { agents: undefined }, /kit-agent is not an agent account/],
     ['an empty KIT_AGENTS variable', { agents: '' }, /kit-agent is not an agent account/],
+    ['a KIT_AGENTS variable that is no JSON', { agents: '[kit-agent]' }, /kit-agent is not an agent account/],
     ['a workflow file', { files: ['src/a.ts', '.github/workflows/kit.yml'] }, /it changes a protected file/],
     ['the code-owner file', { files: ['.github/CODEOWNERS'] }, /it changes a protected file/],
     ['.npmrc', { files: ['.npmrc'] }, /it changes a protected file/],
     ['wrangler.jsonc', { files: ['wrangler.jsonc'] }, /it changes a protected file/],
     ['a nested wrangler file', { files: ['sub/wrangler.toml'] }, /it changes a protected file/],
+    [
+      'a protected file that is moved away',
+      { files: [{ filename: 'docs/npmrc.txt', previous_filename: '.npmrc' }] },
+      /it changes a protected file/,
+    ],
+    [
+      'the code-owner file that is moved away',
+      { files: ['src/a.ts', { filename: 'docs/CODEOWNERS', previous_filename: '.github/CODEOWNERS' }] },
+      /it changes a protected file/,
+    ],
   ];
   for (const [name, c, message] of cases) {
     const result = merge(c);
@@ -218,7 +282,13 @@ test('the merge script merges a Dependabot pull request without a KIT_AGENTS var
 
 test('the file rule reads whole names: a file that only resembles a protected one is merged', () => {
   const result = merge({
-    files: ['docs/wrangler-notes.md', 'src/npmrc.ts', 'templates/site/_npmrc', 'docs/.github.md'],
+    files: [
+      'docs/wrangler-notes.md',
+      'src/npmrc.ts',
+      'templates/site/_npmrc',
+      'docs/.github.md',
+      { filename: 'src/b.ts', previous_filename: 'src/a.ts' },
+    ],
   });
   assert.equal(result.status, 0, result.out);
   assert.equal(result.calls.length, 1, result.out);

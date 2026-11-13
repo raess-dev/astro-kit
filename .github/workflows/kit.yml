@@ -1,12 +1,12 @@
 # The kit's CI (specification, 11.1). test: types, lint, unit tests and the generated docs. scan: zizmor on the
 # workflows and gitleaks on the history. merge: squashes a green pull request of an agent account or Dependabot.
 # A pull request that changes .github/ or .npmrc is never merged here: the owner approves it and merges it by hand.
+# The merge after an approval is in kit-approved.yml: a job that is skipped here on a review event would report a
+# skipped check with the name of a required check, and GitHub counts a skipped check as passed.
 name: kit
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  pull_request_review:
-    types: [submitted]
   push:
     branches: [main]
   schedule:
@@ -22,7 +22,6 @@ env:
 jobs:
   test:
     name: kit / test
-    if: github.event_name != 'pull_request_review'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -45,11 +44,12 @@ jobs:
 
   scan:
     name: kit / scan
-    if: github.event_name != 'pull_request_review'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
+    env:
+      GITLEAKS: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,8 +62,6 @@ jobs:
           advanced-security: false
           annotations: true
       - name: gitleaks
-        env:
-          GITLEAKS: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
         run: docker run --rm -v "$PWD:/repo" "$GITLEAKS" git --redact --verbose --no-banner /repo
 
   merge:
@@ -96,48 +94,7 @@ jobs:
           [ "$head" = "$TESTED_SHA" ] || { echo 'the head moved since this run started; the run of the new head merges it'; exit 0; }
           jq -e --arg a "$author" '(. + ["dependabot[bot]"]) | index($a) != null' <<<"${KIT_AGENTS:-[]}" >/dev/null ||
             { echo "$author is not an agent account: CI does not merge this pull request"; exit 0; }
-          files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename')
-          if grep -qE '^\.github/|^\.npmrc$|(^|/)wrangler\.[^/]+$' <<<"$files"; then
-            echo 'it changes a protected file: the owner approves it and merges it by hand'; exit 0
-          fi
-          if ! out=$(gh pr merge "$PR" --repo "$REPO" --squash --delete-branch --match-head-commit "$TESTED_SHA" 2>&1); then
-            echo "GitHub refused the merge: $out"
-            echo 'A required check is not green yet, or an owner file waits for the approval of the owner.'
-            exit 0
-          fi
-          if [ "$base" = main ]; then gh workflow run release.yml --repo "$REPO" --ref main -f paired="$HEAD_REF"; fi
-
-  merge-approved:
-    name: kit / merge after approval
-    if: >-
-      github.event_name == 'pull_request_review' && github.event.review.state == 'approved' &&
-      github.event.pull_request.base.ref == 'main' &&
-      github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write
-      pull-requests: write
-      actions: write
-    steps:
-      - name: Merge the approved head
-        env:
-          GH_TOKEN: ${{ github.token }}
-          KIT_AGENTS: ${{ vars.KIT_AGENTS }}
-          PR: ${{ github.event.pull_request.number }}
-          TESTED_SHA: ${{ github.event.pull_request.head.sha }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        run: |
-          set -euo pipefail
-          live=$(gh api "repos/$REPO/pulls/$PR" --jq '[.state, .draft, .head.sha, .base.ref, .user.login] | @tsv')
-          IFS=$'\t' read -r state draft head base author <<<"$live"
-          [ "$state" = open ] || { echo "the pull request is $state"; exit 0; }
-          [ "$draft" = false ] || { echo 'a draft waits for the owner'; exit 0; }
-          [ "$base" = main ] || [ "$base" = build ] || { echo "the base is $base, not main or build"; exit 0; }
-          [ "$head" = "$TESTED_SHA" ] || { echo 'the head moved since this run started; the run of the new head merges it'; exit 0; }
-          jq -e --arg a "$author" '(. + ["dependabot[bot]"]) | index($a) != null' <<<"${KIT_AGENTS:-[]}" >/dev/null ||
-            { echo "$author is not an agent account: CI does not merge this pull request"; exit 0; }
-          files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename')
+          files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)')
           if grep -qE '^\.github/|^\.npmrc$|(^|/)wrangler\.[^/]+$' <<<"$files"; then
             echo 'it changes a protected file: the owner approves it and merges it by hand'; exit 0
           fi

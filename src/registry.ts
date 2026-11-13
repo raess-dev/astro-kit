@@ -114,7 +114,7 @@ export function getRule(id: string, rules: RuleMap = RULE_BY_ID): Rule {
  * place is `/`, `:` or a space.
  */
 export function waives(waiver: Waiver, finding: Pick<Finding, 'rule' | 'where'>): boolean {
-  if (waiver.rule !== finding.rule) return false;
+  if (waiver.rule !== finding.rule || waiver.where === '') return false;
   if (finding.where === waiver.where) return true;
   if (!finding.where.startsWith(waiver.where)) return false;
   if (waiver.where.endsWith('/')) return true;

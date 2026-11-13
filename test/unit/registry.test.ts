@@ -208,6 +208,8 @@ test('a waiver covers a place at a boundary only', () => {
     [folder, '/fr/kontakt/', true],
     [folder, '/fr', true],
     [folder, '/fragen/', false],
+    [{ rule: 'head-title', where: '', reason: 'r', until: '2026-12-31' }, '/jobs/', false],
+    [{ rule: 'head-title', where: '', reason: 'r', until: '2026-12-31' }, '', false],
   ];
   for (const [waiver, where, expected] of cases) {
     assert.equal(waives(waiver, { rule: 'head-title', where }), expected, `${waiver.where} on ${where}`);

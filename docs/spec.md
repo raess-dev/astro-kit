@@ -244,6 +244,7 @@ Use the same pins in `kit.yml`, `release.yml` and the site template. Refresh eac
 ```text
 astro-kit/
 ├── .github/workflows/kit.yml        CI: test, real-site, scan, canary, merge
+├── .github/workflows/kit-approved.yml   the merge after the owner's approval
 ├── .github/workflows/release.yml    staged trusted publishing
 ├── .github/CODEOWNERS               one line: /.github/ @<the KIT_OWNER login>
 ├── .gitignore                       node_modules/ dist/ *.tgz
@@ -327,7 +328,7 @@ templates/
 ├── site/                                 init walks this tree; `_x` becomes `.x`, `.tmpl` is rendered and its suffix dropped
 │   ├── AGENTS.md.tmpl CLAUDE.md KIT-FEEDBACK.md
 │   ├── _claude/settings.json _mcp.json _gitignore _node-version _npmrc
-│   ├── _github/workflows/site.yml _github/dependabot.yml _github/kit-identity.sh _github/CODEOWNERS.tmpl
+│   ├── _github/workflows/site.yml _github/workflows/site-merge.yml _github/dependabot.yml _github/kit-identity.sh _github/CODEOWNERS.tmpl
 │   ├── docs/spec.md docs/design.md
 │   ├── site.json.tmpl schedule.json redirects.json glossary.json legal.lock.json
 │   └── src/styles/tokens.css src/styles/elements.css src/styles/fonts.css src/styles/components/.gitkeep src/styles/pages/.gitkeep
@@ -395,7 +396,7 @@ site/
 ├── legal.lock.json               [init: {}] [reads] [owner]  the hashes of the approved legal pages
 ├── AGENTS.md  CLAUDE.md  KIT-FEEDBACK.md        [init]  AGENTS.md is the project's; its kit block is compared
 ├── .claude/settings.json  .mcp.json             [init] [owner]
-├── .github/workflows/site.yml                   [init] [push] [owner]
+├── .github/workflows/site.yml  .github/workflows/site-merge.yml  [init] [push] [owner]
 ├── .github/dependabot.yml  .github/kit-identity.sh  .github/CODEOWNERS  [init] [push] [owner]
 ├── docs/spec.md                  [init skeleton]  the business brief (agents read it)
 ├── docs/design.md                [init skeleton] [reads] [owner]  the design system
@@ -871,7 +872,7 @@ Canonical: ${site}/.well-known/security.txt
 
 | Command | Flags | What it runs | Exit | Network |
 |---|---|---|---|---|
-| `init` | `--site https://host`, `--locales de,fr`, `--features forms,islands,scripts`, `--owner @login`, `--shims`, `--protected`, `--force` | Writes the site templates (section 12.2). Never overwrites without `--force`. `--shims` writes only the shims and the enabled feature shims. `--protected` writes only the six protected files of 10.6 from `astro-kit.json`, and always overwrites them; it loads no project code. `--owner` sets `codeOwner`. An unknown feature throws `astro-kit init: unknown feature X (forms, islands, scripts)`. An existing `astro-kit.json` wins over flags: `astro-kit init: astro-kit.json exists; its values are used and the flags are ignored.` Prints `wrote <file>` / `kept <file>` and a "Next:" block. | 0; 1 on a thrown error | no |
+| `init` | `--site https://host`, `--locales de,fr`, `--features forms,islands,scripts`, `--owner @login`, `--shims`, `--protected`, `--force` | Writes the site templates (section 12.2). Never overwrites without `--force`. `--shims` writes only the shims and the enabled feature shims. `--protected` writes only the seven protected files of 10.6 from `astro-kit.json`, and always overwrites them; it loads no project code. `--owner` sets `codeOwner`. An unknown feature throws `astro-kit init: unknown feature X (forms, islands, scripts)`. An existing `astro-kit.json` wins over flags: `astro-kit init: astro-kit.json exists; its values are used and the flags are ignored.` Prints `wrote <file>` / `kept <file>` and a "Next:" block. | 0; 1 on a thrown error | no |
 | `check` | | Preflight; the feature shim comparison; `biome ci --colors=off --error-on-warnings .`; with islands and any `src/**/*.tsx`, `eslint --max-warnings 0 src`; `astro check` | 0/1 | no |
 | `build` | | `astro build` | tool code | no |
 | `test` | `--all`, `--outline <path\|https URL>`, `--shots <dir>` | The browser checks on `dist` (section 8, a11y/contrast/perf). Needs `dist/index.html` (or `dist/client/index.html`). `--outline` prints a Playwright `ariaSnapshot()` of `body`. `--shots <dir>` also writes one full-page PNG for each tested page and viewport into `<dir>`, at device scale 1. It is off by default, and no workflow uses it. | 0/1 | only for an external `--outline` URL |
@@ -1463,7 +1464,7 @@ Each declared theme needs an enabled option that reaches it: `light` through `au
 | Rule | Stage | Standard and measurement | Input |
 |---|---|---|---|
 | `config-options` | config | `astro-kit.json` exists and matches the strict schema of 5.2. `site.json` at the root matches its schema. Findings name the field path. A looser limit fails. | astro-kit.json, site.json |
-| `config-shim` | config | `astro.config.mjs`, `biome.json` and `tsconfig.json` equal the kit shims after CRLF→LF and trimEnd + newline, and no other `astro.config.*` file exists. The rendered protected files equal the kit's rendering for the settings, compared in the same way: `.github/workflows/site.yml`, `.github/dependabot.yml`, `.github/kit-identity.sh`, `.github/CODEOWNERS` and `.npmrc` (a file that does not match gets the hint of 10.6). `AGENTS.md` holds the kit block of 12.1, and `CLAUDE.md` holds the line `@AGENTS.md`. Feature shims (`eslint.config.mjs`, `src/pages/api/forms/[form].ts`) are compared in `check`. | shims, protected files, agent files |
+| `config-shim` | config | `astro.config.mjs`, `biome.json` and `tsconfig.json` equal the kit shims after CRLF→LF and trimEnd + newline, and no other `astro.config.*` file exists. The rendered protected files equal the kit's rendering for the settings, compared in the same way: `.github/workflows/site.yml`, `.github/workflows/site-merge.yml`, `.github/dependabot.yml`, `.github/kit-identity.sh`, `.github/CODEOWNERS` and `.npmrc` (a file that does not match gets the hint of 10.6). `AGENTS.md` holds the kit block of 12.1, and `CLAUDE.md` holds the line `@AGENTS.md`. Feature shims (`eslint.config.mjs`, `src/pages/api/forms/[form].ts`) are compared in `check`. | shims, protected files, agent files |
 | `config-locked` | config | No integration or config changes a value of the 6.1 table. Message: `${actual} instead of ${expected}`. | resolved config |
 | `config-adapter` | config | The project sets no adapter; the kit adds `@astrojs/cloudflare` only with forms. | config |
 | `config-experimental` | config | No truthy experimental flag other than `collectionStorage: 'single-file'`. | config |
@@ -2122,8 +2123,6 @@ Images, fonts, media and style sheets of another origin stay forbidden. Download
 - Line 1: `# Managed by @raess/astro-kit. A protected file: the kit renders it, and only the protected task changes it.`
 - **Triggers:**
   - `push` to every branch;
-  - `pull_request` types `[opened, reopened, ready_for_review]`;
-  - `pull_request_review` types `[submitted]`;
   - `workflow_dispatch` with the inputs `protected` (boolean, default `false`) and `branch` (string, default empty). A merge by the workflow token starts no push run, so the merge script dispatches the deploy;
   - `schedule` `"23 4 * * *"` (smoke) and `"47 3 * * 1"` (smoke `--probe`, Mondays).
 - `permissions: {}`.
@@ -2133,7 +2132,8 @@ Images, fonts, media and style sheets of another origin stay forbidden. Download
 - Every job has its own permissions and a timeout. A step that calls `gh` gets `GH_TOKEN: ${{ github.token }}` through its `env`.
 - Every checkout uses `persist-credentials: false`, except in the `protected` job. setup-node uses `node-version-file: .node-version`.
 - **Install steps.** Where a job installs, it runs these three steps in this order: `bash .github/kit-identity.sh`; `npm ci --ignore-scripts --no-audit --no-fund`; `npm ls --all > /dev/null` (10.3).
-- Job order: `ci, preview, merge, merge-event, build, build-alert, deploy, smoke, rollback, feedback, protected`.
+- Job order: `ci, preview, merge, build, build-alert, deploy, smoke, rollback, feedback, protected`.
+- **A second file, `.github/workflows/site-merge.yml`,** holds the one job `merge-event`. Its triggers are `pull_request` types `[opened, reopened, ready_for_review]` and `pull_request_review` types `[submitted]`. It has `permissions: {}`, the env `REPO`, and the concurrency group `site-merge-${{ github.event.pull_request.number }}`. It is a file of its own for one reason: GitHub counts a skipped job as a passed check. If `site.yml` ran on these events, its `ci` job would be skipped, and that skipped run would satisfy the required check `site / ci` on a head whose real run failed. So no workflow that runs on a pull-request event holds a job with the name of a required check.
 
 **The branch model.** An agent pushes a branch. Each push runs `ci` and gives the branch one preview. When the branch has a pull request that is ready, and its head is green, CI merges it. A pull request that changes an owner file of 4.2 waits for the owner's approval; GitHub enforces that (10.2). A pull request that changes a protected file also waits for the owner to merge it by hand. A merge deploys.
 
@@ -2144,7 +2144,7 @@ Images, fonts, media and style sheets of another origin stay forbidden. Download
 | `ci` | `site / ci` (the required check) | a push to a branch other than `main` | contents read; 20 min | Job env `BASE_REF: main`. Checkout with `fetch-depth: 0`; the install steps; `npx --no playwright-core install --with-deps chromium`; `npx --no astro-kit ci`. Then, on a forms site, rebuild with `CLOUDFLARE_ENV=preview npx --no astro-kit build` (S14). Upload `dist` as `preview-dist` (include hidden files, error if empty, 7 days). |
 | `preview` | `site / preview` | needs ci; the actor is not `dependabot[bot]` | contents read; environment `preview`, with the preview URL as its `url`; 10 min | The preview steps below |
 | `merge` | | needs ci | contents write, pull-requests write, actions write; 5 min | The merge script below, with `BRANCH: ${{ github.ref_name }}` and `TESTED_SHA: ${{ github.sha }}` |
-| `merge-event` | | `pull_request`, or `pull_request_review` with `review.state == 'approved'` | contents write, pull-requests write, actions write; 5 min | The merge script, with `PR: ${{ github.event.pull_request.number }}` and `TESTED_SHA: ${{ github.event.pull_request.head.sha }}` |
+| `merge-event` (in `site-merge.yml`) | | `pull_request`, or `pull_request_review` with `review.state == 'approved'` | contents write, pull-requests write, actions write; 5 min | The merge script, with `PR: ${{ github.event.pull_request.number }}` and `TESTED_SHA: ${{ github.event.pull_request.head.sha }}` |
 | `build` | `deploy / build` | `main`: a push, or a dispatch with `protected` false | contents read; 20 min | Job env `BASE_REF: main`. Checkout `fetch-depth: 0`; the install steps; chromium; `astro-kit ci`; upload `site-dist`. Project code runs in this job, so it holds no token that can write. |
 | `build-alert` | | needs build; `always() && needs.build.result != 'skipped'` | issues write; 5 min | No checkout. When `build` failed: the alert step with the title `main: build failed`. When it passed: the close step with that title and `COMMENT: Fixed by ${{ github.sha }}`. |
 | `deploy` | `deploy / production` | needs build | contents read, issues read; environment `production`; concurrency `deploy-production`, no cancel; 10 min; job output `deployed` | Checkout; the install steps; download `site-dist`; the deploy steps below |
@@ -2180,7 +2180,7 @@ IFS=$'\t' read -r state draft head base author <<<"$live"
 [ "$head" = "$TESTED_SHA" ] || { echo 'the head moved since this run started; the run of the new head merges it'; exit 0; }
 jq -e --arg a "$author" '(. + ["dependabot[bot]"]) | index($a) != null' <<<"${KIT_AGENTS:-[]}" >/dev/null ||
   { echo "$author is not an agent account: CI does not merge this pull request"; exit 0; }
-files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename')
+files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)')
 if grep -qE '^\.github/|^\.npmrc$|(^|/)wrangler\.[^/]+$' <<<"$files"; then
   echo 'it changes a protected file: the owner approves it and merges it by hand'; exit 0
 fi
@@ -2193,7 +2193,7 @@ gh workflow run site.yml --repo "$REPO" --ref main
 ```
 
 - **GitHub decides what needs an approval.** GitHub refuses the merge when `site / ci` is not green on the head, and when a file with a code owner has no approval of that owner (10.2). The script adds: no drafts, only `main`, only the tested head, only an agent author.
-- **One file rule.** The script never merges a pull request that changes a protected file. The workflow token cannot change workflow files, and it does not pass the push ruleset. The owner approves such a pull request and presses "Squash and merge". That push to `main` starts the deploy.
+- **One file rule.** The script never merges a pull request that changes a protected file. It reads the old name of a renamed file too, so a pull request that moves a protected file away is not merged either. The workflow token cannot change workflow files, and it does not pass the push ruleset. The owner approves such a pull request and presses "Squash and merge". That push to `main` starts the deploy.
 - **Two ways in.** `merge` runs after `ci` on each push. `merge-event` runs when the pull request opens, becomes ready, or gets an approval. Whichever comes last merges.
 
 **Alert step** (env: `GH_TOKEN`, `TITLE`, `BODY` with the default `Failed:`, `KIT_OWNER: ${{ vars.KIT_OWNER }}`). It keeps one open issue for each title, assigned to the owner:
@@ -2419,7 +2419,7 @@ updates:
 
 ### 10.6 The protected task
 
-The protected files are renderings of the kit: `.github/workflows/site.yml`, `.github/dependabot.yml`, `.github/kit-identity.sh`, `.github/CODEOWNERS`, `.npmrc` and `wrangler.jsonc`. They change in two cases: a setting that they depend on changes (the site host, the forms, the mail addresses, the code owner), or a kit upgrade changes a template. No agent can push them. The owner starts this task, and the task writes them.
+The protected files are renderings of the kit: `.github/workflows/site.yml`, `.github/workflows/site-merge.yml`, `.github/dependabot.yml`, `.github/kit-identity.sh`, `.github/CODEOWNERS`, `.npmrc` and `wrangler.jsonc`. They change in two cases: a setting that they depend on changes (the site host, the forms, the mail addresses, the code owner), or a kit upgrade changes a template. No agent can push them. The owner starts this task, and the task writes them.
 
 **How the owner starts it.** In GitHub: Actions, the workflow "site", "Run workflow" on `main`, `protected` checked, and `branch` set to the branch of the pull request that needs the files (empty for `main`). Then the owner approves the `owner` environment.
 
@@ -2429,7 +2429,7 @@ The protected files are renderings of the kit: `.github/workflows/site.yml`, `.g
 2. `actions/checkout` of that branch (or `main`), with `ssh-key: ${{ secrets.KIT_PROTECTED_KEY }}` and `fetch-depth: 0`. This checkout keeps its credentials: the job pushes with them.
 3. `bash .github/kit-identity.sh`.
 4. Read the kit version from the lockfile. Install only the kit, outside the checkout: `npm install --prefix "$RUNNER_TEMP/kit" --ignore-scripts --no-audit --no-fund --save-exact "@raess/astro-kit@$version"`.
-5. In the checkout: `node "$RUNNER_TEMP/kit/node_modules/@raess/astro-kit/dist/cli.js" init --protected`. This command reads `astro-kit.json` as data and writes the six files. No project code runs in this job, and the job never runs `npm ci` in the checkout.
+5. In the checkout: `node "$RUNNER_TEMP/kit/node_modules/@raess/astro-kit/dist/cli.js" init --protected`. This command reads `astro-kit.json` as data and writes the seven files. No project code runs in this job, and the job never runs `npm ci` in the checkout.
 6. When `git status --porcelain` is empty: print `The protected files are up to date.` and end.
 7. Otherwise run `git config user.name 'github-actions[bot]'` and `git config user.email '41898282+github-actions[bot]@users.noreply.github.com'`, then `git add -A` and `git commit -m 'chore: render the protected files'`.
    - With a branch: `git push origin "HEAD:$BRANCH"`. The push starts `site / ci` on that branch.
@@ -2446,7 +2446,8 @@ The protected files are renderings of the kit: `.github/workflows/site.yml`, `.g
 
 **Header.**
 
-- Triggers: `pull_request` `[opened, synchronize, reopened, ready_for_review]`; `pull_request_review` `[submitted]`; push `main`; schedule `"41 5 * * 1"`; `workflow_dispatch`.
+- Triggers: `pull_request` `[opened, synchronize, reopened, ready_for_review]`; push `main`; schedule `"41 5 * * 1"`; `workflow_dispatch`.
+- **A second file, `.github/workflows/kit-approved.yml`,** holds the one job `merge-approved`, on `pull_request_review` `[submitted]`, with `permissions: {}`, the env `REPO` and the concurrency group `kit-approved-<PR>`. It is a file of its own for the reason that 10.1 gives for `site-merge.yml`: a skipped `kit / test` on a review event would count as a passed required check.
 - `permissions: {}`; concurrency `kit-<event>-<PR|ref>`, canceling for pull_request.
 - Every job has its own permissions and a timeout: `test`, `real-site`, `scan` and `canary` get `contents: read` (canary 60 min); `merge` and `merge-approved` get `contents: write`, `pull-requests: write` and `actions: write`, 5 min. Every checkout uses `persist-credentials: false`, and setup-node uses `node-version-file: .node-version`.
 - Env `ASTRO_TELEMETRY_DISABLED: "1"` and `REPO: ${{ github.repository }}`. The `scan` job gets `GITLEAKS`, the gitleaks image pin of 2.2, through its `env`.
@@ -2459,8 +2460,8 @@ The protected files are renderings of the kit: `.github/workflows/site.yml`, `.g
 | `real-site` | `kit / real-site` (60 min) | The steps of the real-site job below. It exists from milestone M3 (14). |
 | `scan` | `kit / scan` (10 min) | `fetch-depth: 0`; zizmor (`version: 1.32.0`, `advanced-security: false`, `annotations: true`); `docker run --rm -v "$PWD:/repo" "$GITLEAKS" git --redact --verbose --no-banner /repo` |
 | `canary` | `kit / canary (astro@latest)` | Schedule or dispatch only. Real-site step 1, with three additions in the kit: after `npm ci`, `npx --no playwright-core install --with-deps chromium`; then `npm install --no-save --ignore-scripts --no-audit --no-fund astro@latest` (zizmor ignore `adhoc-packages`) and a print of the version; after `npm run build`, `npm test`. Real-site steps 2–4, where step 4 adds `astro@latest` to its one `npm install --no-save` command (a second `--no-save` install removes the packages of the first). Then, in `site/`: a print of the version and `npx --no astro-kit build`. |
-| `merge` | `kit / merge` | `needs: [test, scan]` until M3, and `needs: [test, scan, real-site]` from M3; on `pull_request`, for a same-repository PR. The merge script of 10.1 with `PR: ${{ github.event.pull_request.number }}` and `TESTED_SHA: ${{ github.event.pull_request.head.sha }}`, and with two changes: it also accepts the base `build`, and its last line is `gh workflow run release.yml --ref main -f paired="$HEAD_REF"` (`HEAD_REF: ${{ github.head_ref }}` through `env`), run only when the base is `main`. |
-| `merge-approved` | `kit / merge after approval` | On `pull_request_review` with `review.state == 'approved'`, and only when the base of the pull request is `main`. The same script with the same env. GitHub refuses the merge while a required check is not green. A PR into `build` merges only through the `merge` job, which needs the checks. |
+| `merge` | `kit / merge` | `needs: [test, scan]` until M3, and `needs: [test, scan, real-site]` from M3; on `pull_request`, for a same-repository PR. The merge script of 10.1 with `PR: ${{ github.event.pull_request.number }}` and `TESTED_SHA: ${{ github.event.pull_request.head.sha }}`, and with three changes: it has no pull-request lookup, because `PR` is always set; it also accepts the base `build`; and its last line is `gh workflow run release.yml --ref main -f paired="$HEAD_REF"` (`HEAD_REF: ${{ github.head_ref }}` through `env`), run only when the base is `main`. |
+| `merge-approved` (in `kit-approved.yml`) | `kit / merge after approval` | On `pull_request_review` with `review.state == 'approved'`, and only when the base of the pull request is `main`. The same script with the same env, except `HEAD_REF: ${{ github.event.pull_request.head.ref }}`, because `github.head_ref` is empty on a review event. GitHub refuses the merge while a required check is not green. A PR into `build` merges only through the `merge` job, which needs the checks. |
 
 **Who merges.** The script merges a PR only when its author is in `vars.KIT_AGENTS`, or is `dependabot[bot]`. It never merges a PR that changes `.github/**` (the file rule of 10.1): the kit repository has `.github/CODEOWNERS` with the line `/.github/ @<KIT_OWNER>` and the `pull_request` rule of 10.2, so the owner approves such a PR and merges it by hand. The kit repository has no push ruleset: the builder writes `kit.yml` and `release.yml`, and the code-owner review is the gate for them. The ruleset of `main` does not cover the branch `build`, so a milestone PR into `build` needs no approval. The `merge` job merges it when its checks are green, unless it changes `.github/**` or `.npmrc` (M0, M3, M6, M9, M10 and M12 do): the owner merges such a PR by hand, like every PR with a protected file.
 
@@ -2647,7 +2648,7 @@ Read `node_modules/@raess/astro-kit/docs/INDEX.md` first. If it is missing, run 
 - **`package.json`**: `{name: <worker>, private: true, type: "module", scripts: {check: "astro-kit check", build: "astro-kit build", test: "astro-kit test", ci: "astro-kit ci"}}`.
   - Dependencies, sorted: `@raess/astro-kit` (the kit's version), `astro`, and the feature pins.
   - devDependencies: `wrangler` (the deploy and preview jobs run it from the lockfile), and the islands lint pins with islands.
-- **Protected files, rendered from the settings** (4.2): `.github/workflows/site.yml`, `.github/dependabot.yml`, `.github/kit-identity.sh`, `.github/CODEOWNERS` (10.2), `.npmrc` (`ignore-scripts=true\nsave-exact=true\n`) and `wrangler.jsonc` (10.4).
+- **Protected files, rendered from the settings** (4.2): `.github/workflows/site.yml`, `.github/workflows/site-merge.yml`, `.github/dependabot.yml`, `.github/kit-identity.sh`, `.github/CODEOWNERS` (10.2), `.npmrc` (`ignore-scripts=true\nsave-exact=true\n`) and `wrangler.jsonc` (10.4).
 - **Fixed small files:** `.node-version` (`24`), `.gitignore` (4.1).
 - **Other files:** `docs/spec.md`, the `docs/design.md` skeleton, `src/styles/tokens.css` (`@layer tokens {\n}\n`, until `docs/design.md` is valid), `src/styles/elements.css` (`@layer elements {\n}\n`), `src/styles/fonts.css` (empty), `.gitkeep` in `components/` and `pages/`, `site.json` (`{"type": "Organization", "name": "<NAME>", "legalName": "<NAME> AG", "email": "info@<host>"}`), `schedule.json` (`{"openingHours": [], "closures": []}`), `redirects.json` (`[]`), `glossary.json` (`{}`), `legal.lock.json` (`{}`), the agent files and the feature shims.
 - **Not written:** pages, a 404, icons or a content model.
@@ -2890,7 +2891,7 @@ No test can prove these facts, because they need GitHub, Cloudflare, npm and a m
 
 | # | Milestone | Kit delivers | Test repository delivers | Acceptance |
 |---|---|---|---|---|
-| M0 | Skeleton | `package.json` (with `version` `0.0.0`), tsconfigs, `biome.json`, the presets `config/biome.json` and `config/tsconfig.json` (12.2), `kit.yml` (the `test`, `scan`, `merge` and `merge-approved` jobs), `.github/CODEOWNERS`, `docs/spec.md` (this document), `src/registry.ts` with `Report`, `formatFindings`, levels and waivers, `src/docs.ts`, README, CONTRIBUTING, SECURITY, CHANGELOG, LICENSE; the versions pinned per section 2 | nothing | `npm run check`, `npm test` and `node src/docs.ts --check` pass (with no rule yet, the generated files are empty tables). A test asserts the finding format, a waived finding and a `warn` finding. |
+| M0 | Skeleton | `package.json` (with `version` `0.0.0`), tsconfigs, `biome.json`, the presets `config/biome.json` and `config/tsconfig.json` (12.2), `kit.yml` (the `test`, `scan` and `merge` jobs), `kit-approved.yml`, `.github/CODEOWNERS`, `docs/spec.md` (this document), `src/registry.ts` with `Report`, `formatFindings`, levels and waivers, `src/docs.ts`, README, CONTRIBUTING, SECURITY, CHANGELOG, LICENSE; the versions pinned per section 2 | nothing | `npm run check`, `npm test` and `node src/docs.ts --check` pass (with no rule yet, the generated files are empty tables). A test asserts the finding format, a waived finding and a `warn` finding. |
 | M1 | Test repository and spikes | nothing | The repository, created by the owner (16): a `package.json` with `astro` as a dependency and `wrangler` and `@types/node` as devDependencies, at the section 2 pins; the suite harness of 14.2; `test/spikes.test.ts` with S1–S19 (13.2); `acceptance.yml` with its two jobs | Each spike asserts its fact or applies its fallback, in the `acceptance` job. The measured values are in `test/spikes.results.json`. Where a spike used its fallback, a PR changes this specification before the dependent milestone starts. |
 | M2 | Options, facts, preflight | `src/options.ts`, `facts.ts`, `redirects.ts`, `routes.ts`, `shims.ts`, `project.ts`, `preflight.ts`; these config-stage rules: `config-options`, `config-shim` (the three source shims, and no other `astro.config.*` file), `config-overrides`, `config-dep-spec`, `config-dep-allowlist`, `config-imports`, `config-suppression`, `config-server`, `config-waiver`, `config-public-shadow`, `legal-processing`, `facts-schedule`, `images-public`, `images-original`, `routes-redirects` (source half) | nothing | A unit test per rule (one passing and one failing case). `loadOptions` messages name the paths. A looser limit fails. |
 | M3 | Integration, kit CSS, tokens and edge output | `src/index.ts`, `config.ts`, `csp.ts`, `modes.ts` (options, `themeOf`, `modeScript`), `virtual.ts`, `inject.ts`, `build.ts`, `context.ts`, `hosts/cloudflare.ts` (the edge files and the static `renderWrangler`), `audit/index.ts`, `audit/edge.ts`, `env.d.ts`, `css/base.css`, `design/parse.ts`, `design/tokens.ts`, and `src/cli.ts` and `src/ci.ts` with the commands `build` and `tokens`; the rules `config-locked`, `config-adapter`, `config-experimental`, `config-i18n`, `config-wrangler` (for a static site), `routes-on-demand`, `edge-headers`, `edge-redirects`, `design-format`, `modes-themes`, `design-tokens` (the source half); the `real-site` job in `kit.yml` | The hotel site, stage 1, with `features.forms` false until M7: `astro-kit.json`, the shims, `.npmrc`, `wrangler.jsonc` (the static text of 10.4), `.github/kit-identity.sh` (the text of 10.3), `AGENTS.md`, `CLAUDE.md`, `site.json`, `schedule.json`, `redirects.json`, `glossary.json`, `legal.lock.json` (`{}`), `docs/design.md`, `tokens.css` as the output of `tokens`, `elements.css`, `fonts.css`, a layout component, the three homes, `/404.html` and the six legal pages. The lockfile pins the placeholder kit (11.4). | Hook unit tests with fake Astro arguments (14.1): the recorded `updateConfig` values equal the 6.1 table; one `injectScript('page-ssr')` call holds the four imports in order; the six watch files are added. The `_headers` merge tests cover adapter-first, adapter-after and prefetch. `robots.txt`, `sitemap.xml`, `security.txt`, `release.txt` and `routes.txt` are byte-exact. On a fake dist of HTML strings, `build:done` changes no byte of a page except the mode script insert and the speculation insert. `base.css` is at most 2,048 B compressed and equals the 7.6 text byte for byte. `renderTokens` gives the exact text of setting 1 of 7.7, and for settings 2 to 5 the texts that the test holds, written out from the 7.7 algorithm. The theme function `T` of 7.12 is tested for every option and system state. **The real-site job passes:** `npx --no astro-kit build` of the hotel site with the packed kit succeeds, and a suite case finds the CSP meta, the mode script and the speculation block in every built page. |

@@ -24,8 +24,9 @@ const STAGES: readonly { stage: Stage; when: string }[] = [
   { stage: 'zone', when: '`npx --no astro-kit provision zone`.' },
 ];
 
-/** Wraps HTML tags in backticks, so a rendered page shows them instead of dropping them. */
-const tags = (text: string): string => text.replace(/(?<!`)<\/?[A-Za-z][^<>`]*>(?!`)/g, (tag) => `\`${tag}\``);
+/** Wraps an HTML tag outside a code span in backticks, so a rendered page shows it instead of dropping it. */
+const tags = (text: string): string =>
+  text.replace(/`[^`]*`|<\/?[A-Za-z][^<>`]*>/g, (match) => (match.startsWith('`') ? match : `\`${match}\``));
 
 const marks = (rule: Rule): string => {
   const out: string[] = [];
@@ -98,4 +99,4 @@ export function run(
   return 2;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) process.exitCode = run(process.argv.slice(2));
+if (import.meta.main) process.exitCode = run(process.argv.slice(2));

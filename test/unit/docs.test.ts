@@ -36,6 +36,15 @@ test('a rule is rendered with its anchor, its marks, its standard and its hint',
   );
   assert.ok(text.includes('| build | The end of `astro build`, on the files in `dist/`. | head |'));
   assert.ok(text.includes('2 rules in 2 groups.'));
+});
+
+test('a tag inside a code span stays as it is; a tag outside one gets backticks', () => {
+  const text = renderStandards([
+    r('a-b', 'g', 'build', 'Use `the <title> element` once. Chain `<main><h1><span>` nests.', 'm', 'A <p> has it.'),
+    r('c-d', 'g', 'build', 'The message is `the waiver for <rule> on <where> ended on <until>`.', 'm', 'h'),
+  ]);
+  assert.ok(text.includes('— Use `the <title> element` once. Chain `<main><h1><span>` nests. Fix: A `<p>` has it.'));
+  assert.ok(text.includes('— The message is `the waiver for <rule> on <where> ended on <until>`. Fix: h'));
   assert.ok(text.endsWith('\n'));
 });
 
