@@ -6,11 +6,16 @@
  * that needs no `dist/`:
  *
  * 1. Rows are `{from, to}` or `{from, gone: true}`.
- * 2. `from` starts with `/` and has no whitespace and no `?`.
+ * 2. `from` starts with `/` and has no whitespace, no `?` and no `#`.
  * 3. No duplicate `from`.
  * 4. `to` starts with `/`, not with `//` or `/\`, and has no whitespace.
- * 5. No chains: no `to` is a `from`.
- * 6. Limits: 2,000 static, 100 dynamic, 1,000 characters per line.
+ * 5. Cloudflare stores each path as written: no backslash and no `.` or `..` segment.
+ * 6. No chains: the path of no `to` is a `from`.
+ * 7. Limits: 2,000 static, 100 dynamic, 1,000 characters per line.
+ *
+ * Sentence 5 is what keeps sentence 4 true. Cloudflare reads each `from` and `to` as a URL and removes dot
+ * segments, so it stores `/.//host/` as `//host/`, and that `to` leaves the site. It also keeps only the path of a
+ * `from`, so `/#old` would redirect the home page.
  *
  * The build half is not checked here, because it needs the built paths: "Every literal `to` is built (patterns, and
  * `/api/` with forms, are skipped)." The rule `edge-redirects` checks the written `dist/_redirects` again.
@@ -32,6 +37,9 @@ export const REDIRECT_STATUS = 301;
 /** The exact message of `routes-redirects` for a `from` with a query string. */
 export const QUERY_MESSAGE = 'query strings cannot be matched; mark it gone or add a zone Single Redirect';
 
+/** The exact message of `routes-redirects` for a `from` with a fragment. Cloudflare keeps only the path. */
+export const FRAGMENT_MESSAGE = 'fragments cannot be matched: a browser never sends the text after #';
+
 /** One row of `redirects.json`: a moved URL, or a removed one. */
 export type RedirectRow = { from: string; to: string } | { from: string; gone: true };
 
@@ -43,20 +51,64 @@ interface Issues {
 const add = (ctx: Issues, path: PropertyKey[], message: string): void =>
   ctx.addIssue({ code: 'custom', message, path });
 
-const fromSchema = z.string().superRefine((from, ctx) => {
-  if (!from.startsWith('/')) add(ctx, [], 'from must start with /');
-  if (/\s/.test(from)) add(ctx, [], 'from must not hold whitespace');
-  if (from.includes('?')) add(ctx, [], QUERY_MESSAGE);
-});
+/** A `.` or `..` segment as the URL parser of Cloudflare reads it: `%2e` is a dot too, in any letter case. */
+const DOT_SEGMENT = /^(?:\.|%2e){1,2}$/i;
 
 /**
- * A `to` is a path of this site, on one line. `//host/` and `/\host/` name another host in a browser, and
- * whitespace would add a word or a whole line to `_redirects`.
+ * Why Cloudflare would not store the path as written, as the end of a sentence about it, or `undefined`. The path
+ * starts with `/`. `text` is the whole `from` or `to`: a backslash counts in a query string too, because the kit
+ * does not judge where a browser stops reading a path.
+ *
+ * - A browser reads a backslash as `/`.
+ * - Cloudflare removes a `.` and a `..` segment. What is left can start with `//`, and that names another host.
  */
+function pathProblem(text: string, path = text): string | undefined {
+  if (text.includes('\\')) return 'must not hold a backslash: a browser reads it as /';
+  if (path.split('/').some((segment) => DOT_SEGMENT.test(segment))) {
+    return 'must not hold a . or .. segment, also not as %2e: Cloudflare removes it';
+  }
+  return undefined;
+}
+
+/** The path of a `to`: the text before its query string and its fragment. */
+export const targetPath = (to: string): string => /^[^?#]*/.exec(to)?.[0] ?? to;
+
+/**
+ * Every problem of one `from`, each as a whole sentence. `label` names the field in a sentence. `_redirects` holds
+ * the same text, so `edge-redirects` uses this function too.
+ */
+export function sourceProblems(from: string, label = 'from'): string[] {
+  const problems: string[] = [];
+  if (!from.startsWith('/')) problems.push(`${label} must start with /`);
+  if (/\s/.test(from)) problems.push(`${label} must not hold whitespace`);
+  if (from.includes('?')) problems.push(QUERY_MESSAGE);
+  if (from.includes('#')) problems.push(FRAGMENT_MESSAGE);
+  const problem = from.startsWith('/') ? pathProblem(from) : undefined;
+  if (problem !== undefined) problems.push(`${label} ${problem}`);
+  return problems;
+}
+
+/**
+ * Every problem of one `to`, each as a whole sentence. A `to` is a path of this site, on one line. `//host/` and
+ * `/\host/` name another host in a browser, and whitespace would add a word or a whole line to `_redirects`.
+ */
+export function targetProblems(to: string, label = 'to'): string[] {
+  const problems: string[] = [];
+  const leaves = /^\/[/\\]/.test(to);
+  if (!to.startsWith('/')) problems.push(`${label} must start with /`);
+  if (leaves) problems.push(`${label} must not start with // or /\\: it would leave the site`);
+  if (/\s/.test(to)) problems.push(`${label} must not hold whitespace`);
+  const problem = !to.startsWith('/') || leaves ? undefined : pathProblem(to, targetPath(to));
+  if (problem !== undefined) problems.push(`${label} ${problem}`);
+  return problems;
+}
+
+const fromSchema = z.string().superRefine((from, ctx) => {
+  for (const problem of sourceProblems(from)) add(ctx, [], problem);
+});
+
 const toSchema = z.string().superRefine((to, ctx) => {
-  if (!to.startsWith('/')) add(ctx, [], 'to must start with /');
-  if (/^\/[/\\]/.test(to)) add(ctx, [], 'to must not start with // or /\\: it would leave the site');
-  if (/\s/.test(to)) add(ctx, [], 'to must not hold whitespace');
+  for (const problem of targetProblems(to)) add(ctx, [], problem);
 });
 
 const rowShape = z.strictObject({
@@ -112,9 +164,11 @@ function acrossRows(rows: readonly LooseRow[]): Problem[] {
   let dynamics = 0;
   rows.forEach((row, index) => {
     if (row.to === undefined) return;
-    const source = sources.get(row.to);
+    // A request for the `to` reaches the server without its fragment, and a rule matches the path alone.
+    const target = targetPath(row.to);
+    const source = sources.get(target);
     if (source !== undefined) {
-      problems.push({ path: [index, 'to'], message: `chain: "${row.to}" is the from of [${source}]` });
+      problems.push({ path: [index, 'to'], message: `chain: "${target}" is the from of [${source}]` });
     }
     if (row.from === undefined) return;
     if (isDynamic(row.from)) dynamics += 1;

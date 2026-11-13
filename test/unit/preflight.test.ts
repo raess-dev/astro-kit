@@ -4,10 +4,15 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { LIMITS, type Options } from '../../src/options.ts';
+import type { Design } from '../../src/context.ts';
+import { parseDesign } from '../../src/design/parse.ts';
+import { renderTokens } from '../../src/design/tokens.ts';
+import { renderWrangler } from '../../src/hosts/cloudflare.ts';
+import { LIMITS, type Options, parseOptions } from '../../src/options.ts';
 import { preflight } from '../../src/preflight.ts';
 import { Report, RULE_BY_ID } from '../../src/registry.ts';
 import { SHIMS } from '../../src/shims.ts';
+import { specBlock } from './spec.ts';
 
 // The project of a case
 
@@ -31,15 +36,88 @@ const SITE = { name: 'Example', legalName: 'Example AG', email: 'info@example.ch
 
 const SCHEDULE = { openingHours: [], closures: [] };
 
+/** The parsed settings of an `astro-kit.json` value. Throws when the value is not valid. */
+function optionsOf(settings: unknown): Options {
+  const report = new Report();
+  const options = parseOptions(settings, report);
+  if (options === undefined) throw new Error(report.format());
+  return options;
+}
+
+/** The parsed design of a `docs/design.md` text. Throws when the text does not pass `design-format`. */
+function designOf(text: string): Design {
+  const report = new Report();
+  const design = parseDesign(text, report);
+  if (design === undefined) throw new Error(report.format());
+  return design;
+}
+
+const WRANGLER = 'wrangler.jsonc';
+const DESIGN = 'docs/design.md';
+const TOKENS = 'src/styles/tokens.css';
+
+/**
+ * The smallest design document that passes `design-format`: the theme `light`, one color, one `--font-`, one
+ * `--text-` and one `--space-` row, no breakpoint, and one pair. The one mode option `auto` needs no other theme.
+ */
+const DESIGN_MD = [
+  '## Themes',
+  '',
+  '| Theme | Use |',
+  '|---|---|',
+  '| light | The one theme. |',
+  '',
+  '## Color',
+  '',
+  '| Token | light | Use |',
+  '|---|---|---|',
+  '| `--color-text` | `#222222` | Text. |',
+  '',
+  '## Typography',
+  '',
+  '| Token | Value | Use |',
+  '|---|---|---|',
+  '| `--font-body` | `system-ui, sans-serif` | Body text. |',
+  '| `--text-m` | `1rem` | Body text. |',
+  '',
+  '## Spacing',
+  '',
+  '| Token | Value | Use |',
+  '|---|---|---|',
+  '| `--space-2` | `0.5rem` | A small gap. |',
+  '',
+  '## Breakpoints',
+  '',
+  '| Name | Width | Use |',
+  '|---|---|---|',
+  '',
+  '## Contrast pairs',
+  '',
+  '| Foreground | Background | Role | For |',
+  '|---|---|---|---|',
+  '| `--color-text` | `--color-text` | text | body |',
+  '',
+].join('\n');
+
+/** The text of `tokens.css` that the kit renders for the smallest design and the smallest settings. */
+const TOKENS_CSS = renderTokens(designOf(DESIGN_MD), optionsOf(SETTINGS));
+
+/** The text of `wrangler.jsonc` that the kit renders for the smallest settings: a static site. */
+const WRANGLER_JSONC = renderWrangler(optionsOf(SETTINGS));
+
 /**
  * The smallest project that passes preflight with no finding: the settings, the two facts files that must exist,
- * and the three source shims. A later milestone adds the files that its rules need.
+ * the three source shims, `wrangler.jsonc`, the design document and the `tokens.css` that the kit renders from it.
+ * A later milestone adds the files that its rules need.
  */
 const SMALLEST: Files = {
   'astro-kit.json': json(SETTINGS),
   'site.json': json(SITE),
   'schedule.json': json(SCHEDULE),
   ...SHIMS,
+  [WRANGLER]: WRANGLER_JSONC,
+  [DESIGN]: DESIGN_MD,
+  [TOKENS]: TOKENS_CSS,
 };
 
 /** The smallest project with some files added or replaced. */
@@ -111,7 +189,7 @@ const fileOf = (place: string): string => place.split(':')[0] ?? place;
 
 // The order of the specification
 
-/** The rules that preflight runs at milestone M2, in the order of 6.1, step 2. */
+/** The rules that preflight runs at milestone M3, in the order of 6.1, step 2. */
 const ORDER: readonly string[] = [
   // 1. options and facts
   'config-options',
@@ -133,8 +211,14 @@ const ORDER: readonly string[] = [
   'images-public',
   // 6.
   'images-original',
+  // 7.
+  'config-wrangler',
   // 8.
   'routes-redirects',
+  // 9. design
+  'design-format',
+  'modes-themes',
+  'design-tokens',
 ];
 
 /** The rule ids that the sub-steps of 6.1, step 2 name, in the order of the document. */
@@ -148,6 +232,21 @@ function specOrder(): string[] {
 // Cases
 
 const PAGE = 'src/pages/index.astro';
+
+/** The mode options of the settings with the option `dark` on. It needs the theme `dark` (7.12). */
+const WITH_DARK = { auto: true, light: false, dark: true, contrast: false };
+
+/** The smallest design document with a color value that 7.4 does not accept. */
+const DESIGN_WITH_COLOR_MIX = DESIGN_MD.replace('`#222222`', '`color-mix(in oklch, #222222, #ffffff)`');
+
+/** The rendered `tokens.css` with one value changed by hand (the drift matrix of 14.1, row 32). */
+const TOKENS_CHANGED_BY_HAND = TOKENS_CSS.replace('0.5rem', '0.75rem');
+
+/** The rendered `wrangler.jsonc` with another compatibility date. */
+const WRANGLER_CHANGED_BY_HAND = WRANGLER_JSONC.replace(
+  /"compatibility_date": "[^"]*"/,
+  '"compatibility_date": "2020-01-01"',
+);
 
 /** A waiver that names a waivable rule and ended long ago. */
 const OLD_WAIVER = {
@@ -247,12 +346,30 @@ const FAILING: readonly Case[] = [
     withFiles({ 'src/assets/photo.png': png(LIMITS.imageMaxPx + 1, 1) }),
     ['images-original'],
   ],
-  // 8.
   [
     'images-original: in a folder that Biome skips, with config-suppression for the folder',
     withFiles({ 'src/assets/dist/photo.png': png(LIMITS.imageMaxPx + 1, 1) }),
     ['config-suppression', 'images-original'],
   ],
+  // 7.
+  ['config-wrangler: no `wrangler.jsonc`', withoutFile(WRANGLER), ['config-wrangler']],
+  [
+    'config-wrangler: a `wrangler.toml` too',
+    withFiles({ 'wrangler.toml': 'name = "example-ch"\n' }),
+    ['config-wrangler'],
+  ],
+  ['config-wrangler: a `wrangler.json` too', withFiles({ 'wrangler.json': WRANGLER_JSONC }), ['config-wrangler']],
+  [
+    'config-wrangler: a compatibility date changed by hand',
+    withFiles({ [WRANGLER]: WRANGLER_CHANGED_BY_HAND }),
+    ['config-wrangler'],
+  ],
+  [
+    'config-wrangler: the settings have another `site` than the file',
+    withSettings({ site: 'https://www.example.ch' }),
+    ['config-wrangler'],
+  ],
+  // 8.
   [
     'routes-redirects: a `to` that leaves the site',
     withFiles({ 'redirects.json': json([{ from: '/alt/', to: '//example.org/' }]) }),
@@ -263,11 +380,43 @@ const FAILING: readonly Case[] = [
     withFiles({ 'redirects.json': json([{ from: 'alt/', to: '/neu/' }]) }),
     ['routes-redirects'],
   ],
+  // 9. design
+  ['design-format: no `docs/design.md`', withoutFile(DESIGN), ['design-format']],
+  ['design-format: a color with `color-mix()`', withFiles({ [DESIGN]: DESIGN_WITH_COLOR_MIX }), ['design-format']],
+  ['modes-themes: the option `dark` without the theme `dark`', withSettings({ modes: WITH_DARK }), ['modes-themes']],
+  ['design-tokens: no `tokens.css`', withoutFile(TOKENS), ['design-tokens']],
+  [
+    'design-tokens: one value changed by hand in `tokens.css`',
+    withFiles({ [TOKENS]: TOKENS_CHANGED_BY_HAND }),
+    ['design-tokens'],
+  ],
 ];
 
-/** A project that fails every rule of `ORDER` and still has valid settings. */
-const EVERY_RULE: Files = {
-  ...withSettings({ waivers: [OLD_WAIVER], processing: ['cdn'] }),
+/**
+ * The three rules of sub-step 9. The dependency rule of 6.1 lets at most one of them report in one run:
+ * `modes-themes` runs only when `design-format` passes, and `design-tokens` only when `modes-themes` passes too.
+ */
+const DESIGN_RULES = ['design-format', 'modes-themes', 'design-tokens'] as const;
+
+type DesignRule = (typeof DESIGN_RULES)[number];
+
+/** The settings of the project that fails every rule. They are valid. */
+const EVERY_RULE_SETTINGS = { ...SETTINGS, waivers: [OLD_WAIVER], processing: ['cdn'] };
+
+/** What one design rule needs to fail, on top of the project that fails every other rule. */
+const DESIGN_PLANTS: Readonly<Record<DesignRule, Files>> = {
+  'design-format': { [DESIGN]: DESIGN_WITH_COLOR_MIX },
+  'modes-themes': { 'astro-kit.json': json({ ...EVERY_RULE_SETTINGS, modes: WITH_DARK }) },
+  'design-tokens': { [TOKENS]: TOKENS_CHANGED_BY_HAND },
+};
+
+/**
+ * A project that fails every rule of `ORDER` outside sub-step 9, and one rule of sub-step 9. Its settings are
+ * valid. It fails both parts of `config-wrangler`: a second wrangler file, and a text that the kit did not render.
+ */
+const everyRule = (design: DesignRule): Files => ({
+  ...SMALLEST,
+  'astro-kit.json': json(EVERY_RULE_SETTINGS),
   'site.json': json({}),
   'glossary.json': json({ de: {} }),
   'schedule.json': json({}),
@@ -277,14 +426,21 @@ const EVERY_RULE: Files = {
   'public/robots.txt': 'User-agent: *\n',
   'public/photo.png': png(1, 1),
   'src/assets/photo.png': png(LIMITS.imageMaxPx + 1, 1),
+  'wrangler.toml': 'name = "example-ch"\n',
+  [WRANGLER]: WRANGLER_CHANGED_BY_HAND,
   'redirects.json': json([{ from: 'alt/', to: '/neu/' }]),
-};
+  ...DESIGN_PLANTS[design],
+});
 
 /** The same project with settings that are not valid. */
-const EVERY_RULE_NO_SETTINGS: Files = {
-  ...EVERY_RULE,
-  'astro-kit.json': json({ ...SETTINGS, site: 'http://example.ch' }),
-};
+const everyRuleNoSettings = (design: DesignRule): Files => ({
+  ...everyRule(design),
+  'astro-kit.json': json({ ...EVERY_RULE_SETTINGS, site: 'http://example.ch' }),
+});
+
+/** `ORDER` without the rules of sub-step 9 that cannot report next to the given one. */
+const orderWith = (design: DesignRule): string[] =>
+  ORDER.filter((id) => id === design || !DESIGN_RULES.some((rule) => rule === id));
 
 const idsOf = (cases: readonly Case[]): { name: string; ids: readonly string[] }[] =>
   cases.map(([name, files]) => ({ name, ids: run(files).ids }));
@@ -305,10 +461,22 @@ test('the smallest project passes preflight, and preflight returns its settings'
     'astro-kit.json',
     'astro.config.mjs',
     'biome.json',
+    'docs/design.md',
     'schedule.json',
     'site.json',
+    'src/styles/tokens.css',
     'tsconfig.json',
+    'wrangler.jsonc',
   ]);
+});
+
+test('the wrangler.jsonc of the smallest project is the static text of 10.4 for its site', () => {
+  const block = specBlock('**Exact text of a static site**', 'jsonc');
+  assert.equal(block.split('<worker>').length, 3, 'the block names the worker twice');
+  assert.equal(
+    WRANGLER_JSONC,
+    `${block.replaceAll('<worker>', 'example-ch').replaceAll('<the host of site>', 'example.ch')}\n`,
+  );
 });
 
 test('each file of the smallest project is needed: without it, preflight has a finding', () => {
@@ -320,6 +488,9 @@ test('each file of the smallest project is needed: without it, preflight has a f
     { file: 'astro.config.mjs', ids: ['config-shim'] },
     { file: 'biome.json', ids: ['config-shim'] },
     { file: 'tsconfig.json', ids: ['config-shim'] },
+    { file: 'wrangler.jsonc', ids: ['config-wrangler'] },
+    { file: 'docs/design.md', ids: ['design-format'] },
+    { file: 'src/styles/tokens.css', ids: ['design-tokens'] },
   ]);
 });
 
@@ -350,21 +521,56 @@ test('the order of the rules is that of 6.1, step 2', () => {
 });
 
 test('the findings come in the order of 6.1, step 2, each rule in one run', () => {
-  const seen = run(EVERY_RULE);
-  assert.deepEqual(runsOf(seen.rules), ORDER);
-  assert.deepEqual(seen.ids, [...ORDER].sort());
-  assert.equal(seen.options?.site, SETTINGS.site, 'the settings are valid, so preflight returns them');
-  assert.deepEqual(runsOf(seen.places.filter((_, index) => seen.rules[index] === 'config-options').map(fileOf)), [
-    'site.json',
-    'glossary.json',
-  ]);
+  const seen = DESIGN_RULES.map((design) => ({ design, ...run(everyRule(design)) }));
+  assert.deepEqual(
+    seen.map(({ design, rules }) => ({ design, rules: runsOf(rules) })),
+    DESIGN_RULES.map((design) => ({ design, rules: orderWith(design) })),
+  );
+  assert.deepEqual(
+    seen.map(({ design, ids }) => ({ design, ids })),
+    DESIGN_RULES.map((design) => ({ design, ids: orderWith(design).sort() })),
+  );
+  assert.deepEqual(
+    [...new Set(seen.flatMap(({ ids }) => ids))].sort(),
+    [...ORDER].sort(),
+    'the three runs together fail every rule of preflight',
+  );
+  assert.deepEqual(
+    seen.map(({ options }) => options?.site),
+    DESIGN_RULES.map(() => SETTINGS.site),
+    'the settings are valid, so preflight returns them',
+  );
+  const first = seen[0];
+  assert.deepEqual(
+    runsOf((first?.places ?? []).filter((_, index) => first?.rules[index] === 'config-options').map(fileOf)),
+    ['site.json', 'glossary.json'],
+  );
+  assert.deepEqual(
+    (first?.places ?? []).filter((_, index) => first?.rules[index] === 'config-wrangler').map(fileOf),
+    ['wrangler.toml', 'wrangler.jsonc'],
+    'both parts of config-wrangler report',
+  );
 });
 
 /** The rules whose checks read the settings (6.1, the settings rule). */
-const NEEDS_SETTINGS: readonly string[] = ['config-waiver', 'legal-processing', 'config-dep-allowlist'];
+const NEEDS_SETTINGS: readonly string[] = [
+  'config-waiver',
+  'legal-processing',
+  'config-dep-allowlist',
+  'modes-themes',
+  'design-tokens',
+];
+
+/**
+ * Says whether a finding, as the line `<rule> <where>`, comes from a check that reads the settings. Such a rule is
+ * in `NEEDS_SETTINGS`. `config-wrangler` has two parts: its file part reads no setting, and its comparison of
+ * `wrangler.jsonc` with the rendering reports a line of that file.
+ */
+const needsSettings = (line: string): boolean =>
+  NEEDS_SETTINGS.some((id) => line.startsWith(`${id} `)) || line.startsWith(`config-wrangler ${WRANGLER}:`);
 
 test('without valid settings, every check that reads no setting still runs', () => {
-  const seen = run(EVERY_RULE_NO_SETTINGS);
+  const seen = run(everyRuleNoSettings('design-format'));
   const others = ORDER.filter((id) => !NEEDS_SETTINGS.includes(id));
   assert.equal(seen.options, undefined);
   assert.deepEqual(runsOf(seen.rules), others);
@@ -378,13 +584,71 @@ test('without valid settings, every check that reads no setting still runs', () 
   ]);
 
   // Apart from the finding on the settings, the run gives what the run with valid settings gives.
-  const valid = run(EVERY_RULE);
+  const valid = run(everyRule('design-format'));
   const rest = (from: Run): string[] =>
     from.rules.map((rule, index) => `${rule} ${from.places[index]}`).filter((line) => !line.includes('astro-kit.json'));
   assert.deepEqual(
     rest(seen),
-    rest(valid).filter((line) => !NEEDS_SETTINGS.some((id) => line.startsWith(`${id} `))),
+    rest(valid).filter((line) => !needsSettings(line)),
   );
+  assert.deepEqual(
+    rest(valid).filter((line) => line.startsWith('config-wrangler ')),
+    ['config-wrangler wrangler.toml', 'config-wrangler wrangler.jsonc:5'],
+  );
+  assert.deepEqual(
+    rest(seen).filter((line) => line.startsWith('config-wrangler ')),
+    ['config-wrangler wrangler.toml'],
+    'without settings, only the file part of config-wrangler runs',
+  );
+});
+
+test('without valid settings, modes-themes and design-tokens do not run', () => {
+  const others = ORDER.filter((id) => !NEEDS_SETTINGS.includes(id) && id !== 'design-format');
+  const seen = (['modes-themes', 'design-tokens'] as const).map((design) => ({
+    design,
+    rules: runsOf(run(everyRuleNoSettings(design)).rules),
+  }));
+  assert.deepEqual(seen, [
+    { design: 'modes-themes', rules: others },
+    { design: 'design-tokens', rules: others },
+  ]);
+});
+
+test('the dependency rule: a design rule runs only when the rules before it pass', () => {
+  const cases: readonly Case[] = [
+    [
+      'design-format fails: no modes-themes and no design-tokens',
+      { ...withSettings({ modes: WITH_DARK }), [DESIGN]: DESIGN_WITH_COLOR_MIX, [TOKENS]: TOKENS_CHANGED_BY_HAND },
+      ['design-format'],
+    ],
+    [
+      'no design document: the missing tokens.css is not reported',
+      Object.fromEntries(Object.entries(SMALLEST).filter(([name]) => name !== DESIGN && name !== TOKENS)),
+      ['design-format'],
+    ],
+    [
+      'modes-themes fails: no design-tokens',
+      { ...withSettings({ modes: WITH_DARK }), [TOKENS]: TOKENS_CHANGED_BY_HAND },
+      ['modes-themes'],
+    ],
+    ['both pass: design-tokens runs', withFiles({ [TOKENS]: TOKENS_CHANGED_BY_HAND }), ['design-tokens']],
+  ];
+  assert.deepEqual(idsOf(cases), expected(cases));
+});
+
+test('each new finding names its place', () => {
+  const places = (files: Files): string[] => run(files).places;
+  assert.deepEqual(places(withoutFile(WRANGLER)), ['wrangler.jsonc']);
+  assert.deepEqual(places(withFiles({ 'wrangler.toml': '' })), ['wrangler.toml']);
+  assert.deepEqual(places(withFiles({ [WRANGLER]: WRANGLER_CHANGED_BY_HAND })), ['wrangler.jsonc:5']);
+  assert.deepEqual(places(withSettings({ site: 'https://www.example.ch' })), ['wrangler.jsonc:9']);
+  assert.deepEqual(places(withoutFile(DESIGN)), ['docs/design.md']);
+  assert.deepEqual(places(withFiles({ [DESIGN]: DESIGN_WITH_COLOR_MIX })), ['docs/design.md:11']);
+  assert.deepEqual(places(withSettings({ modes: WITH_DARK })), ['astro-kit.json: modes.dark']);
+  assert.deepEqual(places(withoutFile(TOKENS)), ['src/styles/tokens.css']);
+  const line = TOKENS_CSS.split('\n').findIndex((text) => text.includes('0.5rem')) + 1;
+  assert.ok(line > 1, 'the rendering holds the value');
+  assert.deepEqual(places(withFiles({ [TOKENS]: TOKENS_CHANGED_BY_HAND })), [`src/styles/tokens.css:${line}`]);
 });
 
 test('an empty folder gives the findings of the files that must exist, and no error', () => {
@@ -397,6 +661,8 @@ test('an empty folder gives the findings of the files that must exist, and no er
     'astro.config.mjs',
     'biome.json',
     'tsconfig.json',
+    'wrangler.jsonc',
+    'docs/design.md',
   ]);
-  assert.deepEqual(seen.ids, ['config-options', 'config-shim', 'facts-schedule']);
+  assert.deepEqual(seen.ids, ['config-options', 'config-shim', 'config-wrangler', 'design-format', 'facts-schedule']);
 });

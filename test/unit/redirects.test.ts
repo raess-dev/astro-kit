@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
+  FRAGMENT_MESSAGE,
   findRedirect,
   isDynamic,
   loadRedirects,
@@ -19,6 +20,7 @@ import {
   redirectRowSchema,
   redirectsSchema,
   sourceMatches,
+  targetPath,
 } from '../../src/redirects.ts';
 import { getRule, Report } from '../../src/registry.ts';
 
@@ -102,6 +104,13 @@ test('the fixed values are those of the specification', () => {
 
   const limits = 'Limits: 2,000 static, 100 dynamic, 1,000 characters per line.';
   assert.ok(SPEC_ROW.includes(`("${QUERY_MESSAGE}")`), 'the rule table quotes the message');
+  assert.equal(FRAGMENT_MESSAGE, 'fragments cannot be matched: a browser never sends the text after #');
+  assert.ok(SPEC_ROW.includes(`("${FRAGMENT_MESSAGE}")`), 'the rule table quotes the message for a fragment');
+  const stored =
+    'Neither `from` nor `to` holds a backslash, and neither path holds a `.` or `..` segment, also not as `%2e`';
+  assert.ok(SPEC_ROW.includes(stored), 'the rule table holds the rule on the stored path');
+  assert.ok(getRule(RULE).standard.includes(stored));
+  assert.ok(getRule(RULE).standard.includes(`("${FRAGMENT_MESSAGE}")`));
   assert.ok(SPEC_ROW.includes(limits), 'the rule table holds the limits');
   const shape = `Lines are \`\${from} \${to} ${REDIRECT_STATUS}\` from \`${REDIRECTS_FILE}\``;
   assert.ok(SPEC.includes(shape), '6.3 holds the line shape');
@@ -157,12 +166,26 @@ test('routes-redirects: rows are {from, to} or {from, gone: true}', () => {
   for (const { name, actual, expected } of outcomes(cases)) assert.deepEqual(actual, expected, name);
 });
 
-test('routes-redirects: from starts with / and has no whitespace and no ?', () => {
+const dots = (field: string): string =>
+  `${field} must not hold a . or .. segment, also not as %2e: Cloudflare removes it`;
+const backslash = (field: string): string => `${field} must not hold a backslash: a browser reads it as /`;
+
+test('routes-redirects: from starts with / and has no whitespace, no ?, no # and no dot segment', () => {
   const cases: Case[] = [
     ['a path with a file name', [{ from: '/alt.html', to: '/neu/' }], []],
     ['a splat', [{ from: '/blog/*', to: '/news/:splat' }], []],
     ['a placeholder', [{ from: '/team/:name/', to: '/ueber-uns/' }], []],
-    ['a gone from with a fragment sign', [{ from: '/alt/#teil', gone: true }], []],
+    ['a from with dots that are no dot segment', [{ from: '/a/.b/..c/d../.../e.f/', to: '/neu/' }], []],
+    ['a from with two slashes', [{ from: '/a//b/', to: '/neu/' }], []],
+    // Cloudflare keeps only the path of a `from`: `/#old` would redirect the home page.
+    ['a fragment', [{ from: '/#old-anchor', to: '/neu/' }], [at('[0].from', FRAGMENT_MESSAGE)]],
+    ['a fragment on a gone row', [{ from: '/alt/#teil', gone: true }], [at('[0].from', FRAGMENT_MESSAGE)]],
+    // Cloudflare removes a dot segment: `/x/../c/` is the rule `/c/`, and no check across rows would see it.
+    ['a .. segment', [{ from: '/x/../c/', to: '/neu/' }], [at('[0].from', dots('from'))]],
+    ['a . segment', [{ from: '/a/./b/', gone: true }], [at('[0].from', dots('from'))]],
+    ['a .. segment at the end', [{ from: '/a/..', to: '/neu/' }], [at('[0].from', dots('from'))]],
+    ['a dot segment as %2e', [{ from: '/a/%2e%2E/b/', to: '/neu/' }], [at('[0].from', dots('from'))]],
+    ['a backslash', [{ from: '/a\\b/', to: '/neu/' }], [at('[0].from', backslash('from'))]],
     ['no leading slash', [{ from: 'alt/', to: '/neu/' }], [at('[0].from', 'from must start with /')]],
     ['an absolute URL', [{ from: 'https://example.ch/alt/', gone: true }], [at('[0].from', 'from must start with /')]],
     ['an empty from', [{ from: '', gone: true }], [at('[0].from', 'from must start with /')]],
@@ -232,8 +255,61 @@ test('routes-redirects: to starts with /, stays on the site and has no whitespac
       [at('[0].to', space)],
     ],
     ['all three at once', [{ from: '/alt/', to: '//evil.example/ 302' }], [at('[0].to', leaves), at('[0].to', space)]],
+    // Cloudflare removes a dot segment, so it stores each of these as `//evil.example/…` or `/\evil.example/`.
+    ['a . segment before two slashes', [{ from: '/alt/', to: '/.//evil.example/' }], [at('[0].to', dots('to'))]],
+    [
+      'a .. segment before two slashes',
+      [{ from: '/alt/', to: '/x/..//evil.example/path' }],
+      [at('[0].to', dots('to'))],
+    ],
+    ['a dot segment as %2e', [{ from: '/alt/', to: '/%2e//evil.example/' }], [at('[0].to', dots('to'))]],
+    ['a dot segment as %2E%2e', [{ from: '/alt/', to: '/x/%2E%2e//evil.example/' }], [at('[0].to', dots('to'))]],
+    ['a dot segment in a pattern', [{ from: '/alt/*', to: '/.//evil.example/:splat' }], [at('[0].to', dots('to'))]],
+    ['a dot segment that stays on the site', [{ from: '/alt/', to: '/a/../neu/' }], [at('[0].to', dots('to'))]],
+    ['a backslash after a dot segment', [{ from: '/alt/', to: '/./\\evil.example/' }], [at('[0].to', backslash('to'))]],
+    ['a backslash in the path', [{ from: '/alt/', to: '/a\\b/' }], [at('[0].to', backslash('to'))]],
+    ['a backslash in the query string', [{ from: '/alt/', to: '/a/?b=\\c' }], [at('[0].to', backslash('to'))]],
+    ['dots that are no dot segment', [{ from: '/alt/', to: '/a/.b/..c/d../.../e.f' }], []],
+    ['a dot segment in the query string and in the fragment', [{ from: '/alt/', to: '/neu/?next=/../x#/./y' }], []],
   ];
   for (const { name, actual, expected } of outcomes(cases)) assert.deepEqual(actual, expected, name);
+});
+
+/** Every text of up to `length` parts. */
+function textsOf(parts: readonly string[], length: number): string[] {
+  let texts = [''];
+  const all: string[] = [];
+  for (let size = 0; size < length; size += 1) {
+    texts = texts.flatMap((text) => parts.map((part) => text + part));
+    all.push(...texts);
+  }
+  return all;
+}
+
+test('Cloudflare stores a from and a to that pass as written, and the to stays on the host', () => {
+  // The parser of Cloudflare, from workers-shared/utils/configuration/validateURL.ts.
+  const stored = (text: string, more: boolean): string => {
+    const url = new URL(`//${text}`, 'relative://');
+    return more ? url.pathname + url.search + url.hash : url.pathname;
+  };
+  const check = (row: unknown): boolean => redirectsSchema.safeParse([row]).success;
+  const paths = textsOf(['/', '.', '\\', '%2e', '%2E', 'a', '?', '#'], 5).map((text) => `/${text}`);
+  const targets = paths.filter((to) => check({ from: '/from/', to }));
+  const sources = paths.filter((from) => check({ from, gone: true }));
+  assert.ok(targets.length > 1000 && sources.length > 1000, 'the lists hold many texts that pass');
+  // The path is what Cloudflare can change. It keeps the query string and the fragment of a `to`.
+  assert.deepEqual(
+    targets.filter((to) => stored(to, false) !== targetPath(to)),
+    [],
+  );
+  assert.deepEqual(
+    targets.filter((to) => new URL(stored(to, true), 'https://example.ch/x/').host !== 'example.ch'),
+    [],
+  );
+  assert.deepEqual(
+    sources.filter((from) => stored(from, false) !== from),
+    [],
+  );
 });
 
 test('routes-redirects: no chains, no to is a from', () => {
@@ -253,6 +329,14 @@ test('routes-redirects: no chains, no to is a from', () => {
     [
       'a to that is a gone from',
       [moved, { from: '/neu/', gone: true }],
+      [at('[0].to', 'chain: "/neu/" is the from of [1]')],
+    ],
+    [
+      'a to whose path is a from: the query string and the fragment do not count',
+      [
+        { from: '/alt/', to: '/neu/?von=alt#teil' },
+        { from: '/neu/', to: '/ziel/' },
+      ],
       [at('[0].to', 'chain: "/neu/" is the from of [1]')],
     ],
     [

@@ -380,7 +380,8 @@ const shape = z.strictObject({
     .array(z.enum(PROCESSING_KEYS))
     .superRefine((values, ctx) => uniqueValues(values, ctx))
     .default((): ProcessingKey[] => ['cdn', 'previews']),
-  securityContact: z.string().regex(/^(mailto:|https:\/\/)/),
+  // Anchored at both ends, with no white space: the value is one line of `security.txt` (6.3).
+  securityContact: z.string().regex(/^(mailto:[^\s@]+@[^\s@]+\.[^\s@]+|https:\/\/\S+)$/),
   dependencies: z.array(z.string().max(214).regex(PACKAGE_NAME)).default(() => []),
   origins: originsSchema.default(() => []),
   waivers: z

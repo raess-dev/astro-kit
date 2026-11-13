@@ -159,12 +159,16 @@ function outcomes(cases: readonly Case[]): Outcome[] {
 
 const text = (length: number): string => 'x'.repeat(length);
 
-test('the registry holds the rules of milestone M2 in the order of section 8', () => {
+test('the registry holds the rules of milestones M2 and M3 in the order of section 8', () => {
   assert.deepEqual(
     RULES.map((rule) => [rule.id, rule.group, rule.stage]),
     [
       ['config-options', 'config', 'config'],
       ['config-shim', 'config', 'config'],
+      ['config-locked', 'config', 'config'],
+      ['config-adapter', 'config', 'config'],
+      ['config-experimental', 'config', 'config'],
+      ['config-i18n', 'config', 'config'],
       ['config-imports', 'config', 'config'],
       ['config-suppression', 'config', 'config'],
       ['config-server', 'config', 'config'],
@@ -173,10 +177,18 @@ test('the registry holds the rules of milestone M2 in the order of section 8', (
       ['config-dep-spec', 'config', 'config'],
       ['config-dep-allowlist', 'config', 'config'],
       ['config-public-shadow', 'config', 'config'],
+      ['config-wrangler', 'config', 'config'],
+      ['routes-on-demand', 'routes', 'config'],
+      ['routes-slug', 'routes', 'config + build'],
       ['routes-redirects', 'routes', 'config + build'],
       ['images-public', 'images', 'config'],
       ['images-original', 'images', 'config'],
       ['facts-schedule', 'facts', 'config'],
+      ['design-format', 'design', 'config'],
+      ['design-tokens', 'design', 'config + build'],
+      ['modes-themes', 'modes', 'config'],
+      ['edge-headers', 'edge', 'build'],
+      ['edge-redirects', 'edge', 'build'],
       ['legal-processing', 'legal', 'config'],
     ],
   );
@@ -400,6 +412,39 @@ test('the top-level fields: $schema, site, codeOwner, securityContact, dependenc
     ],
     ['securityContact with http', single, [[['securityContact'], 'http://example.ch/security']], [['securityContact']]],
     ['securityContact as an https page', single, [[['securityContact'], 'https://example.ch/security/']], []],
+    // The value is one line of security.txt: a line break would add a field, and a space gives no URI.
+    [
+      'securityContact with a line break and a second field',
+      single,
+      [[['securityContact'], 'mailto:a@example.ch\nCanonical: https://evil.example/.well-known/security.txt']],
+      [['securityContact']],
+    ],
+    [
+      'securityContact with a line break at its end',
+      single,
+      [[['securityContact'], 'mailto:a@example.ch\n']],
+      [['securityContact']],
+    ],
+    [
+      'securityContact with a space',
+      single,
+      [[['securityContact'], 'https://example.ch/sec urity']],
+      [['securityContact']],
+    ],
+    [
+      'securityContact with a comment',
+      single,
+      [[['securityContact'], 'mailto:a@example.ch # x']],
+      [['securityContact']],
+    ],
+    ['securityContact as a bare mailto:', single, [[['securityContact'], 'mailto:']], [['securityContact']]],
+    ['securityContact as a bare https://', single, [[['securityContact'], 'https://']], [['securityContact']]],
+    [
+      'securityContact as mailto: without a domain',
+      single,
+      [[['securityContact'], 'mailto:security']],
+      [['securityContact']],
+    ],
     [
       'securityContact with words before the address',
       single,

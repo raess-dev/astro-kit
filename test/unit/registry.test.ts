@@ -17,6 +17,7 @@ import {
   type Waiver,
   waives,
 } from '../../src/registry.ts';
+import { SPEC } from './spec.ts';
 
 /** Three rules for these tests: one that can be waived, one that cannot, and one warning. */
 const title = r(
@@ -250,4 +251,19 @@ test('a report collects findings, applies waivers and throws once with all failu
     },
   );
   assert.throws(() => report.add('no-such-rule', '/'), /unknown rule id/);
+});
+
+test('the rules of milestone M3 carry the exact texts of the specification', () => {
+  const hint = (id: string): string => getRule(id).hint;
+  assert.equal(hint('design-tokens'), 'run npx --no astro-kit tokens');
+  assert.ok(
+    SPEC.includes(`The hint is \`${hint('design-tokens')}\`.`),
+    'the hint of design-tokens is that of section 8',
+  );
+  assert.ok(
+    SPEC.includes(`The hint says: \`${hint('config-wrangler')}\``),
+    'the hint of config-wrangler is that of 10.6',
+  );
+  assert.ok(getRule('config-shim').hint.endsWith(hint('config-wrangler')), 'config-shim ends with the same hint');
+  assert.ok(getRule('config-locked').standard.includes('`<actual> instead of <expected>`'));
 });
