@@ -1,178 +1,218 @@
-import { readFileSync } from 'node:fs';
+/**
+ * The integration: the four hooks of the kit, in the order of the specification (section 6.1).
+ *
+ * - `astro:config:setup` runs preflight, checks the shape of the project's config, and sets the locked config.
+ * - `astro:config:done` compares the resolved config with the locked values.
+ * - `astro:routes:resolved` checks the routes of the project.
+ * - `astro:build:done` puts the two inserts into the built pages, writes the edge files and runs the build audits.
+ *
+ * A site uses it through the shim `astro.config.mjs`: `defineConfig({ integrations: [astroKit()] })`. Every setting
+ * of a site is in `astro-kit.json`, so the function takes no argument.
+ */
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AstroIntegration } from 'astro';
 import { runAudits } from './audit/index.ts';
 import { loadBuild } from './build.ts';
-import { cspConfig, prefetchGateScript } from './csp.ts';
-import { loadMessages } from './facts.ts';
+import {
+  checkConfigShape,
+  checkResolvedConfig,
+  FORMS_ADAPTER,
+  FORMS_ADAPTER_OPTIONS,
+  globalCssCode,
+  kitScriptHashes,
+  lockedConfig,
+  rootProblem,
+  WATCH_FILES,
+} from './config.ts';
+import { prefetchGateScript, type Sha256 } from './csp.ts';
+import { loadDesign } from './design/parse.ts';
+import { loadGlossary, loadSchedule, loadSite } from './facts.ts';
 import { writeEdgeFiles } from './hosts/cloudflare.ts';
-import { solidHydrationHash } from './islands.ts';
-import { buildManifest, type Manifest } from './manifest.ts';
-import type { KitOptions } from './options.ts';
+import { injectBuild, missingMetaMessage } from './inject.ts';
+import { ISLANDS_MISSING, solidHydrationHash } from './islands.ts';
+import type { Options } from './options.ts';
 import { preflight } from './preflight.ts';
+import { KIT_PACKAGE } from './project.ts';
 import { loadRedirects } from './redirects.ts';
 import { FindingError, formatFindings, Report } from './registry.ts';
-import { virtualModulePlugin } from './virtual.ts';
+import { checkResolvedRoutes } from './routes.ts';
+import { KIT_VERSION, virtualModulePlugin } from './virtual.ts';
 
-export type { KitOptions } from './options.ts';
-export { RULES } from './registry.ts';
+export type { Options } from './options.ts';
 
-const KIT_VERSION = (
-  JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
-).version;
+// Feature packages
 
-/** Values the kit locks; config:done fails when anything changed them. */
-const LOCKED = {
-  output: 'static',
-  trailingSlash: 'always',
-  compressHTML: true,
-  buildFormat: 'directory',
-  inlineStylesheets: 'always',
-} as const;
+const FORMS_MISSING = `astro-kit: features.forms needs ${FORMS_ADAPTER} installed; see node_modules/@raess/astro-kit/docs/forms.md.`;
 
-/** Non-false defaults of Astro's experimental block; anything else that is truthy was switched on. */
-const EXPERIMENTAL_DEFAULTS: Record<string, unknown> = { collectionStorage: 'single-file' };
-
-const CSS_TARGET = ['chrome123', 'edge123', 'firefox120', 'safari17.5'];
-
-function fail(report: Report): never {
-  throw new FindingError(report.findings);
+/** Says whether an import failed because Node did not find the package. */
+function isMissingModule(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ERR_MODULE_NOT_FOUND';
 }
 
+/** Step 6: the Solid renderer of an islands site, as an integration. */
+async function solidIntegration(): Promise<AstroIntegration> {
+  try {
+    return (await import('@astrojs/solid-js')).default();
+  } catch (cause) {
+    if (isMissingModule(cause)) throw new Error(ISLANDS_MISSING, { cause });
+    throw cause;
+  }
+}
+
+/** Step 7: the Cloudflare adapter of a forms site. The two options are fixed (6.1). */
+async function formsAdapter(): Promise<AstroIntegration> {
+  try {
+    return (await import('@astrojs/cloudflare')).default(FORMS_ADAPTER_OPTIONS);
+  } catch (cause) {
+    if (isMissingModule(cause)) throw new Error(FORMS_MISSING, { cause });
+    throw cause;
+  }
+}
+
+// The integration
+
+/** What `astro:config:setup` keeps for the later hooks. */
+interface State {
+  /** The project root, an absolute path. */
+  root: string;
+  options: Options;
+  /** The kit's script hashes of the CSP, as `lockedConfig` got them. */
+  scriptHashes: Sha256[];
+}
+
+/** The integration of the kit. Each call has its own state, so each Astro run starts fresh. */
 export default function astroKit(): AstroIntegration {
-  let root = '';
-  let options: KitOptions | undefined;
-  let manifest: Manifest | undefined;
+  let state: State | undefined;
+
+  /** The state of this run. Astro calls `astro:config:setup` first, so a missing state is an error of the caller. */
+  const started = (): State => {
+    if (state === undefined) throw new Error('astro-kit: astro:config:setup did not run before this hook.');
+    return state;
+  };
 
   return {
-    name: '@raess/astro-kit',
+    name: KIT_PACKAGE,
     hooks: {
-      'astro:config:setup': async ({ config, updateConfig, addWatchFile, injectScript, command, logger }) => {
-        root = fileURLToPath(config.root);
+      'astro:config:setup': async ({ config, command, updateConfig, injectScript, addWatchFile, logger }) => {
+        // 1. Root. A root that loses the global CSS stops every command, before any check.
+        const root = fileURLToPath(config.root);
+        const problem = rootProblem(root);
+        if (problem !== undefined) throw new Error(problem);
+
+        // 2. Preflight: the config-stage rules that read the project files.
         const report = new Report();
-        const checked = preflight(root, report);
-        if (!checked) fail(report);
-        const { options: kit, site, schedule, messages } = checked;
-        options = kit;
-        manifest = checked.manifest;
-        if (config.adapter) report.add('config-adapter', 'astro.config.mjs', config.adapter.name);
-        if (config.i18n) report.add('config-i18n', 'astro.config.mjs');
-        for (const [flag, value] of Object.entries(config.experimental ?? {})) {
-          if (value && value !== EXPERIMENTAL_DEFAULTS[flag])
-            report.add('config-experimental', 'astro.config.mjs', flag);
-        }
-        // Pre-build findings stop a build. Dev and check print them and keep running, so the page stays visible.
-        if (!report.ok) {
-          if (command === 'build') fail(report);
-          logger.warn(formatFindings(report.findings));
-        }
+        const options = preflight(root, report);
 
-        for (const file of [
-          'astro-kit.json',
-          'src/content/site.json',
-          'src/content/schedule.json',
-          'src/content/redirects.json',
-        ]) {
-          addWatchFile(new URL(file, config.root));
-        }
+        // 3. Config shape. It runs also without valid settings, so one run reports every finding.
+        checkConfigShape(config, report);
 
-        const scriptHashes: string[] = [];
+        // 4. Findings. Without valid settings the kit cannot go on. Any other finding stops a build; `astro dev`
+        // and `astro check` print it and go on, so that the page stays visible.
+        if (options === undefined || report.findings.some((finding) => finding.rule === 'config-options')) {
+          throw new FindingError(report.findings);
+        }
+        if (command === 'build') report.throwIfFailed();
+        if (report.findings.length > 0) logger.warn(formatFindings(report.findings));
+
+        // 5. Watch files.
+        for (const file of WATCH_FILES) addWatchFile(join(root, file));
+
+        // 6. Islands: the Solid renderer, and the hash of its hydration script.
         const integrations: AstroIntegration[] = [];
-        if (kit.features.islands) {
-          const solid = (await import('@astrojs/solid-js')).default;
-          integrations.push(solid());
-          scriptHashes.push(await solidHydrationHash(root));
+        let solidHash: Sha256 | undefined;
+        if (options.features.islands) {
+          integrations.push(await solidIntegration());
+          solidHash = await solidHydrationHash(root);
         }
-        let adapter: AstroIntegration | undefined;
-        if (kit.features.forms) {
-          const cloudflare = (await import('@astrojs/cloudflare')).default;
-          adapter = cloudflare({ imageService: 'compile', prerenderEnvironment: 'node' });
-        }
-        if (kit.prefetch.astroPrefetch) injectScript('page', prefetchGateScript(kit));
+        const scriptHashes = kitScriptHashes(options, solidHash);
 
+        // 7. Forms: the Cloudflare adapter. Astro reads `config.adapter` to accept an on-demand route, and it runs
+        // the hooks of an adapter only from `integrations` (13.1, item 7). So the adapter goes into both.
+        const adapter = options.features.forms ? await formsAdapter() : undefined;
+        if (adapter !== undefined) integrations.push(adapter);
+
+        // 8. Prefetch gate.
+        if (options.prefetch.astroPrefetch) injectScript('page', prefetchGateScript(options));
+
+        // 9. Global CSS: one call. Astro and Vite bundle the four files into every page.
+        injectScript('page-ssr', globalCssCode(root));
+
+        // 10. Config: the values of the table, in one call.
+        const locked = lockedConfig(options, scriptHashes);
         updateConfig({
-          site: kit.site,
-          output: LOCKED.output,
-          trailingSlash: LOCKED.trailingSlash,
-          compressHTML: LOCKED.compressHTML,
-          build: { format: LOCKED.buildFormat, inlineStylesheets: LOCKED.inlineStylesheets },
-          image: {
-            layout: 'constrained',
-            responsiveStyles: true,
-            breakpoints: [640, 960, 1280, 1920],
-            domains: [],
-            remotePatterns: [],
-          },
-          security: { checkOrigin: true, csp: cspConfig(kit, scriptHashes) },
-          prefetch: kit.prefetch.astroPrefetch ? { prefetchAll: false } : false,
-          markdown: { syntaxHighlight: false },
-          ...(adapter ? { adapter } : {}),
-          // Astro only registers an adapter from the user's config; one added here must also be an integration.
-          integrations: adapter ? [...integrations, adapter] : integrations,
-          vite: {
-            plugins: [
-              virtualModulePlugin(
-                { root, options: kit, site, schedule, messages, manifest, kitVersion: KIT_VERSION },
-                () => {
-                  const scratch = new Report();
-                  return { manifest: buildManifest(root, kit, scratch), messages: loadMessages(root, kit, scratch) };
-                },
-              ),
-            ],
-            build: { cssTarget: CSS_TARGET },
-            ssr: { noExternal: ['@raess/astro-kit'] },
-          },
-        } as Parameters<typeof updateConfig>[0]);
+          ...locked,
+          vite: { ...locked.vite, plugins: [virtualModulePlugin({ options, kitVersion: KIT_VERSION })] },
+          ...(adapter === undefined ? {} : { adapter }),
+          ...(integrations.length === 0 ? {} : { integrations }),
+        });
+
+        state = { root, options, scriptHashes };
       },
 
       'astro:config:done': ({ config }) => {
+        const { options, scriptHashes } = started();
         const report = new Report();
-        const locked: [string, unknown, unknown][] = [
-          ['output', config.output, LOCKED.output],
-          ['trailingSlash', config.trailingSlash, LOCKED.trailingSlash],
-          ['compressHTML', config.compressHTML, LOCKED.compressHTML],
-          ['build.format', config.build.format, LOCKED.buildFormat],
-          ['build.inlineStylesheets', config.build.inlineStylesheets, LOCKED.inlineStylesheets],
-          ['image.layout', config.image.layout, 'constrained'],
-        ];
-        for (const [key, actual, expected] of locked) {
-          if (actual !== expected) report.add('config-locked', key, `${String(actual)} instead of ${String(expected)}`);
-        }
-        if (config.i18n) report.add('config-i18n', 'astro config');
-        if (!config.security.csp || typeof config.security.csp !== 'object')
-          report.add('config-locked', 'security.csp', 'CSP disabled');
-        if (options && !options.features.forms && config.adapter)
-          report.add('config-adapter', 'astro config', config.adapter.name);
+        checkResolvedConfig(config, options, scriptHashes, report);
         report.throwIfFailed();
       },
 
+      // Astro calls this hook more than once in a build. Each call checks its own list on a new report.
       'astro:routes:resolved': ({ routes }) => {
-        if (!options) return;
+        const { root, options } = started();
         const report = new Report();
-        for (const route of routes) {
-          if (route.origin !== 'project' || route.type === 'redirect') continue;
-          if (!route.isPrerendered) {
-            const declared = options.features.forms && route.pattern.startsWith('/api/');
-            if (!declared) report.add('routes-on-demand', route.entrypoint, route.pattern);
-          }
-        }
+        checkResolvedRoutes(routes, options, root, report);
         report.throwIfFailed();
       },
 
-      'astro:build:done': async ({ dir }) => {
-        if (!options || !manifest) return;
-        const report = new Report();
+      // `dir` is the client directory: `dist/`, or `dist/client/` with the adapter.
+      'astro:build:done': async ({ dir, logger }) => {
+        const { root, options } = started();
+        const dist = fileURLToPath(dir);
+        const report = new Report({ waivers: options.waivers });
+
+        // 1. Inserts: the mode script and the speculation block, right after the CSP meta of every page. These
+        // are the only edits to built pages. M5: a page without a CSP meta becomes a `csp-meta` finding.
+        const injected = injectBuild(dist, options);
+        if (injected.missing.length > 0) throw new Error(missingMetaMessage(injected.missing));
+
+        // 2. Load. The facts, the redirects and the design passed preflight when this build started.
+        const site = loadSite(root, report);
+        const schedule = loadSchedule(root, report);
+        const glossary = loadGlossary(root, report);
+        const redirects = loadRedirects(root, report);
+        const design = loadDesign(root, report);
+        if (
+          site === undefined ||
+          schedule === undefined ||
+          glossary === undefined ||
+          redirects === undefined ||
+          design === undefined
+        ) {
+          throw new FindingError(report.findings);
+        }
         const ctx = loadBuild({
           root,
-          dist: fileURLToPath(dir),
+          dist,
           options,
-          manifest,
+          kitVersion: KIT_VERSION,
+          facts: { site, schedule, glossary },
+          redirects,
+          design,
           report,
-          redirects: loadRedirects(root, report),
+          env: process.env,
+          now: new Date(),
         });
-        writeEdgeFiles(ctx, KIT_VERSION);
+
+        // 3. Edge files.
+        writeEdgeFiles(ctx);
+
+        // 4. Audits.
         await runAudits(ctx);
+
+        // 5. Result. A finding that fails nothing, such as a waived one, is printed.
         report.throwIfFailed();
+        if (report.findings.length > 0) logger.warn(report.format());
       },
     },
   };

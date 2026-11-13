@@ -1,70 +1,54 @@
-import { existsSync } from 'node:fs';
-import { join, sep } from 'node:path';
-import type { Plugin } from 'vite';
-import { MESSAGES_DIR, type Schedule, type SiteFacts } from './facts.ts';
-import { type Manifest, PAGES_DIR } from './manifest.ts';
-import { type KitOptions, OPTIONS_FILE } from './options.ts';
+/**
+ * The virtual module `virtual:astro-kit` (specification, 3.2 and the `vite.plugins` row of 6.1). It gives the code
+ * of a site the settings and the kit version. The plugin is a plain object: this module imports no `vite`.
+ */
+import { readFileSync } from 'node:fs';
+import type { Options } from './options.ts';
 
+/** The id that a site imports. */
 export const VIRTUAL_ID = 'virtual:astro-kit';
-/** The project's src/styles/theme.css, or an empty stylesheet when the project has none. */
-export const THEME_ID = 'virtual:astro-kit/theme.css';
-const RESOLVED = `\0${VIRTUAL_ID}`;
-const EMPTY_THEME = '\0astro-kit-empty-theme.css';
 
+/** The id that the plugin loads. The NUL byte keeps other plugins away from it. */
+const RESOLVED_ID = `\0${VIRTUAL_ID}`;
+
+/** Reads `version` from the kit's `package.json`. The file is one folder above `src/` and above `dist/`. */
+function readKitVersion(): string {
+  const manifest: unknown = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const version = typeof manifest === 'object' && manifest !== null && 'version' in manifest ? manifest.version : null;
+  if (typeof version !== 'string' || version === '') throw new Error('astro-kit: its package.json has no version');
+  return version;
+}
+
+/** The version in the kit's `package.json`. */
+export const KIT_VERSION: string = readKitVersion();
+
+/** What the virtual module exports. */
 export interface VirtualData {
-  root: string;
-  options: KitOptions;
-  site: SiteFacts | undefined;
-  schedule: Schedule;
-  messages: Record<string, Record<string, string>>;
-  manifest: Manifest;
+  options: Options;
   kitVersion: string;
 }
 
-/** The data that depends on page and message files; dev rebuilds it on every change there. */
-export type Refresh = () => Pick<VirtualData, 'manifest' | 'messages'>;
+/** The code of the virtual module: one line for each export, each value as JSON. */
+export function virtualModuleCode(data: VirtualData): string {
+  return `export const options = ${JSON.stringify(data.options)};\nexport const kitVersion = ${JSON.stringify(data.kitVersion)};\n`;
+}
 
-/** Serialises the kit's config, facts and manifest for components and content helpers. */
-export function virtualModulePlugin(data: VirtualData, refresh?: Refresh): Plugin {
-  const snapshot = (d: Pick<VirtualData, 'manifest' | 'messages'>) => JSON.stringify([d.manifest, d.messages]);
+/** The part of a Vite plugin that the virtual module needs. It fits an entry of Astro's `vite.plugins`. */
+export interface VirtualPlugin {
+  name: 'astro-kit:virtual';
+  resolveId(id: string): string | undefined;
+  load(id: string): string | undefined;
+}
+
+/**
+ * The Vite plugin for `virtual:astro-kit`. `resolveId` answers only the virtual id, and `load` answers only the
+ * resolved id. Every other id gives `undefined`, so Vite asks the next plugin.
+ */
+export function virtualModulePlugin(data: VirtualData): VirtualPlugin {
+  const code = virtualModuleCode(data);
   return {
     name: 'astro-kit:virtual',
-    // In dev, a new page or a changed slug, title or message needs a new manifest. Astro restarts and reruns the
-    // kit's config hook when a watched file changes, so the plugin reports astro-kit.json as changed. Edits that
-    // leave the manifest as it is (page bodies) keep Astro's normal reload.
-    configureServer(server) {
-      if (!refresh) return;
-      const dirs = [PAGES_DIR, MESSAGES_DIR].map((d) => `${join(data.root, d)}${sep}`);
-      let last = snapshot(data);
-      const onFile = (file: string) => {
-        if (!dirs.some((d) => file.startsWith(d))) return;
-        const next = snapshot(refresh());
-        if (next === last) return;
-        last = next;
-        server.watcher.emit('change', join(data.root, OPTIONS_FILE));
-      };
-      for (const event of ['add', 'change', 'unlink'] as const) server.watcher.on(event, onFile);
-    },
-    resolveId(id) {
-      if (id === VIRTUAL_ID) return RESOLVED;
-      if (id === THEME_ID) {
-        const theme = join(data.root, 'src/styles/theme.css');
-        return existsSync(theme) ? theme : EMPTY_THEME;
-      }
-      return undefined;
-    },
-    load(id) {
-      if (id === EMPTY_THEME) return '';
-      if (id !== RESOLVED) return undefined;
-      const json = (v: unknown) => JSON.stringify(v ?? null);
-      return [
-        `export const options = ${json(data.options)};`,
-        `export const site = ${json(data.site)};`,
-        `export const schedule = ${json(data.schedule)};`,
-        `export const messages = ${json(data.messages)};`,
-        `export const manifest = ${json(data.manifest)};`,
-        `export const kitVersion = ${json(data.kitVersion)};`,
-      ].join('\n');
-    },
+    resolveId: (id) => (id === VIRTUAL_ID ? RESOLVED_ID : undefined),
+    load: (id) => (id === RESOLVED_ID ? code : undefined),
   };
 }

@@ -1,214 +1,133 @@
 #!/usr/bin/env node
 /**
- * The astro-kit command line, run in the project root as `npx --no astro-kit <command>`.
- * Heavy modules load per command, so `feedback send` runs with node built-ins only.
+ * The astro-kit command line (specification, 6.4). Run it in the project root: `npx --no astro-kit <command>`.
+ *
+ * This file loads no other module of the kit until a command needs it. So `help` and a usage error start fast, and
+ * a command loads only what it uses.
+ *
+ * This milestone has the commands `build` and `tokens`. Every other command of 6.4 is an unknown command until
+ * its milestone adds it (M6 and M9).
  */
-import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { parseArgs } from 'node:util';
+import type { ToolIo } from './ci.ts';
 import type { Finding } from './registry.ts';
 
-const USAGE = `astro-kit <command>
-  init [--features forms,islands,scripts] [--site https://host] [--locales de,fr] [--shims] [--force]
-  check                          the kit's project checks, Biome, then astro check
-  build                          astro build with every build audit
-  test [--all] [--outline <url>] the browser checks
-  smoke <url> [--probe]          the production checks
-  ci                             check, build, test --all, then the base-branch and live-sitemap route checks
-  routes import <sitemap.xml|urls.txt>   adds {from, gone: true} for old URLs that are not built
-  provision zone --check|--apply the Cloudflare zone settings
-  feedback send                  files new KIT-FEEDBACK.md entries (needs KIT_FEEDBACK_TOKEN)`;
+/** The usage text: the commands that exist. */
+export const USAGE = `Usage: npx --no astro-kit <command>
+Run it in the project root.
 
-const ext = import.meta.url.endsWith('.ts') ? '.ts' : '.js';
-/** Loads a sibling module by URL, so this file compiles before browser.ts, smoke.ts and provision.ts exist. */
-const sibling = <T>(name: string): Promise<T> => import(new URL(`./${name}${ext}`, import.meta.url).href) as Promise<T>;
+  build             Runs astro build. The kit checks the project and the built site inside it.
+  tokens [--check]  Writes src/styles/tokens.css from docs/design.md and the mode options.
+                    With --check it writes nothing and compares the file.
+  help              Prints this text.`;
 
-interface Browser {
-  runBrowserTests: (opts: { root: string; all: boolean; outline?: string }) => Promise<unknown>;
-}
-interface Smoke {
-  runSmoke: (url: string, opts: { root: string; probe: boolean }) => Promise<unknown>;
-}
-interface Provision {
-  runProvision: (args: string[]) => Promise<unknown>;
+/** Where the command line writes, and the environment it reads. `out` and `err` write a text as it is. */
+export type Io = ToolIo;
+
+/** The streams and the environment of the process. */
+const processIo = (): Io => ({
+  out: (text) => {
+    process.stdout.write(text);
+  },
+  err: (text) => {
+    process.stderr.write(text);
+  },
+  env: process.env,
+});
+
+const isFinding = (value: unknown): value is Finding =>
+  typeof value === 'object' &&
+  value !== null &&
+  'rule' in value &&
+  typeof value.rule === 'string' &&
+  'where' in value &&
+  typeof value.where === 'string';
+
+/** The findings of a command result: a findings array, or the `findings` of an object. Else `undefined`. */
+function findingsOf(value: unknown): Finding[] | undefined {
+  const list = typeof value === 'object' && value !== null && 'findings' in value ? value.findings : value;
+  if (!Array.isArray(list)) return undefined;
+  const findings = list.filter(isFinding);
+  if (findings.length !== list.length) throw new Error('astro-kit: a command returned a list that is not findings');
+  return findings;
 }
 
-/** A run passes when it returns no findings, true or 0; findings are printed with their fixes. */
-async function outcome(result: Promise<unknown>): Promise<number> {
-  const value = await result;
-  const findings = Array.isArray(value) ? value : (value as { findings?: unknown } | undefined)?.findings;
-  if (Array.isArray(findings)) {
-    if (!findings.length) return 0;
-    const [{ formatFindings }, { summary }] = await Promise.all([import('./registry.ts'), import('./ci.ts')]);
-    const text = formatFindings(findings as Finding[]);
-    console.error(text);
-    summary(text);
+/**
+ * The outcome mapping of 6.4: the exit code of a command result.
+ *
+ * - A findings array, or an object with `findings`: an empty list gives 0 and prints nothing. Else the text of
+ *   `formatFindings` goes to stderr and to the job summary. The code is 1 when a finding fails the command, and 0
+ *   when every finding is a warning or waived.
+ * - A number is the code.
+ * - `false` gives 1. Anything else gives 0.
+ */
+export async function outcome(value: unknown, io: Io = processIo()): Promise<number> {
+  const findings = findingsOf(value);
+  if (findings === undefined) {
+    if (typeof value === 'number') return value;
+    return value === false ? 1 : 0;
+  }
+  if (findings.length === 0) return 0;
+  const [{ failures, formatFindings }, { fenced, summary }] = await Promise.all([
+    import('./registry.ts'),
+    import('./ci.ts'),
+  ]);
+  const text = formatFindings(findings);
+  io.err(`${text}\n`);
+  summary(fenced(text), io.env);
+  return failures(findings).length > 0 ? 1 : 0;
+}
+
+/** The flags of a command. `undefined` when an argument is not one of the flags that the command knows. */
+function flagsOf(args: readonly string[], known: readonly string[]): ReadonlySet<string> | undefined {
+  return args.every((arg) => known.includes(arg)) ? new Set(args) : undefined;
+}
+
+/** Runs one command. `undefined` means a usage error: an unknown command, flag or argument. */
+async function dispatch(argv: readonly string[], root: string, io: Io): Promise<number | undefined> {
+  const [command, ...rest] = argv;
+  if (command === undefined || command === 'help' || command === '--help') {
+    if (rest.length > 0) return undefined;
+    io.out(`${USAGE}\n`);
+    return 0;
+  }
+  if (command === 'build') {
+    if (rest.length > 0) return undefined;
+    const { build } = await import('./ci.ts');
+    return outcome(await build(root, io), io);
+  }
+  if (command === 'tokens') {
+    const flags = flagsOf(rest, ['--check']);
+    if (flags === undefined) return undefined;
+    const { tokens, TOKENS_FILE } = await import('./ci.ts');
+    const result = tokens(root, { check: flags.has('--check') });
+    const code = await outcome(result, io);
+    if (result.written) io.out(`astro-kit tokens: wrote ${TOKENS_FILE}\n`);
+    return code;
+  }
+  return undefined;
+}
+
+/**
+ * Runs the command line in a project root and returns the exit code.
+ *
+ * - `help`, `--help` or no command: the usage on stdout, 0.
+ * - An unknown command, flag or argument: the usage on stderr, 2.
+ * - A thrown error: its message on stderr, 1.
+ */
+export async function main(
+  argv: readonly string[],
+  root: string = process.cwd(),
+  io: Io = processIo(),
+): Promise<number> {
+  try {
+    const code = await dispatch(argv, root, io);
+    if (code !== undefined) return code;
+    io.err(`${USAGE}\n`);
+    return 2;
+  } catch (error) {
+    io.err(`${error instanceof Error ? error.message : String(error)}\n`);
     return 1;
   }
-  if (typeof value === 'number') return value;
-  return value === false ? 1 : 0;
 }
 
-const browserTests = (root: string, all: boolean, outline?: string): Promise<number> =>
-  outcome(
-    sibling<Browser>('browser').then((m) =>
-      m.runBrowserTests(outline === undefined ? { root, all } : { root, all, outline }),
-    ),
-  );
-
-async function main(argv: string[]): Promise<number> {
-  const [command, ...rest] = argv;
-  const root = process.cwd();
-  switch (command) {
-    case 'init': {
-      const { values } = parseArgs({
-        args: rest,
-        options: {
-          features: { type: 'string' },
-          site: { type: 'string' },
-          locales: { type: 'string' },
-          shims: { type: 'boolean' },
-          force: { type: 'boolean' },
-        },
-      });
-      const { FEATURES, init } = await import('./init.ts');
-      const list = (s?: string) =>
-        s
-          ? s
-              .split(',')
-              .map((x) => x.trim())
-              .filter(Boolean)
-          : [];
-      const features = list(values.features);
-      const unknown = features.filter((f) => !(FEATURES as readonly string[]).includes(f));
-      if (unknown.length)
-        throw new Error(`astro-kit init: unknown feature ${unknown.join(', ')} (${FEATURES.join(', ')})`);
-      if (existsSync(join(root, 'astro-kit.json')) && (values.features || values.site || values.locales)) {
-        console.log(
-          'astro-kit init: astro-kit.json exists and decides site, locales and features; the flags are ignored.',
-        );
-      }
-      const { written, kept } = init({
-        root,
-        features: features as ('forms' | 'islands' | 'scripts')[],
-        locales: list(values.locales),
-        ...(values.site ? { site: values.site } : {}),
-        shims: values.shims === true,
-        force: values.force === true,
-      });
-      for (const path of written) console.log(`  wrote ${path}`);
-      for (const path of kept) console.log(`  kept  ${path} (exists; --force overwrites)`);
-      if (!values.shims) {
-        console.log('\nNext: npm install --ignore-scripts, then npx --no astro-kit ci.');
-        console.log('The owner supplies docs/spec.md, src/content/site.json and the legal text.');
-        console.log(
-          'The build fails head-og until the owner adds src/assets/og.jpg (1200×630, the default share image).',
-        );
-      }
-      return 0;
-    }
-    case 'check':
-      return (await import('./ci.ts')).check(root);
-    case 'build':
-      return (await import('./ci.ts')).build(root);
-    case 'test': {
-      const { values } = parseArgs({ args: rest, options: { all: { type: 'boolean' }, outline: { type: 'string' } } });
-      return browserTests(root, values.all === true, values.outline);
-    }
-    case 'smoke': {
-      const { values, positionals } = parseArgs({
-        args: rest,
-        allowPositionals: true,
-        options: { probe: { type: 'boolean' } },
-      });
-      const url = positionals[0];
-      if (!url?.startsWith('https://'))
-        throw new Error('astro-kit smoke: give the production origin, e.g. https://example.ch');
-      return outcome(
-        sibling<Smoke>('smoke').then((m) =>
-          m.runSmoke(url.replace(/\/+$/, ''), { root, probe: values.probe === true }),
-        ),
-      );
-    }
-    case 'ci':
-      return (await import('./ci.ts')).runCi(root, () => browserTests(root, true));
-    case 'routes': {
-      if (rest[0] !== 'import' || !rest[1]) break;
-      const { importRoutes } = await import('./ci.ts');
-      const { added, rejected } = importRoutes(root, rest[1]);
-      console.log(`astro-kit routes import: ${added.length} row(s) added to src/content/redirects.json as gone.`);
-      if (added.length) console.log('Turn a row into {from, to} where the page moved.');
-      for (const line of rejected) console.error(`  rejected ${line}`);
-      return rejected.length ? 1 : 0;
-    }
-    case 'provision':
-      return outcome(sibling<Provision>('provision').then((m) => m.runProvision(rest)));
-    case 'feedback': {
-      if (rest[0] !== 'send') break;
-      const fb = await import('./feedback.ts');
-      const file = join(root, fb.FEEDBACK_FILE);
-      const { entries, errors } = fb.parseFeedback(existsSync(file) ? readFileSync(file, 'utf8') : '');
-      for (const error of errors) console.error(`  ${fb.FEEDBACK_FILE}: ${error}`);
-      const token = process.env.KIT_FEEDBACK_TOKEN;
-      if (!token) {
-        console.log(
-          `astro-kit feedback: no KIT_FEEDBACK_TOKEN; ${entries.length} entr${entries.length === 1 ? 'y stays' : 'ies stay'} in ${fb.FEEDBACK_FILE}.`,
-        );
-        return errors.length ? 1 : 0;
-      }
-      const version = (
-        JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
-      ).version;
-      const { sent, skipped } = await fb.sendFeedback(entries, {
-        token,
-        key: process.env.KIT_FEEDBACK_AUTO_KEY || undefined,
-        userAgent: `astro-kit/${version} feedback`,
-      });
-      console.log(
-        `astro-kit feedback: sent ${sent.join(', ') || 'none'}; already filed ${skipped.join(', ') || 'none'}.`,
-      );
-      return errors.length ? 1 : 0;
-    }
-    case undefined:
-    case 'help':
-    case '--help':
-      console.log(USAGE);
-      return 0;
-  }
-  console.error(USAGE);
-  return 2;
-}
-
-/**
- * Commands that call remote hosts. Not ci: inside a session, its live-sitemap check skips a host that does not
- * resolve, while the proxy would refuse a site host that is not allowed, which is not a broken URL. GitHub runs it
- * in full.
- */
-const NETWORK = new Set(['smoke', 'provision', 'feedback']);
-
-/**
- * Node's fetch ignores HTTPS_PROXY unless NODE_USE_ENV_PROXY=1 is set when Node starts. Behind a proxy (a Claude
- * cloud session), a network command therefore runs again in a child process with it on. NO_PROXY still applies.
- */
-function rerunBehindProxy(command: string | undefined, env = process.env): number | undefined {
-  if (!command || !NETWORK.has(command) || !(env.HTTPS_PROXY || env.https_proxy) || env.NODE_USE_ENV_PROXY) return;
-  const child = spawnSync(process.execPath, [...process.execArgv, ...process.argv.slice(1)], {
-    stdio: 'inherit',
-    // NODE_NO_WARNINGS hides Node's notice that the proxy agent is experimental.
-    env: { ...env, NODE_USE_ENV_PROXY: '1', NODE_NO_WARNINGS: env.NODE_NO_WARNINGS ?? '1' },
-  });
-  return child.status ?? 1;
-}
-
-const rerun = rerunBehindProxy(process.argv[2]);
-const run = rerun === undefined ? main(process.argv.slice(2)) : Promise.resolve(rerun);
-run.then(
-  (code) => {
-    process.exitCode = code;
-  },
-  (error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 1;
-  },
-);
+if (import.meta.main) process.exitCode = await main(process.argv.slice(2));

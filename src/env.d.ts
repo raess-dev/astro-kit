@@ -1,18 +1,17 @@
-/// <reference types="astro/client" />
+/**
+ * Ambient types for the two modules that no package on disk provides (specification, 3.2).
+ * This file is a script: it has no top-level import or export, so its declarations are global.
+ */
 
-/** Provided by src/virtual.ts at build time; content.ts narrows the types. */
+/** The kit's virtual module. `virtualModulePlugin` of `src/virtual.ts` provides it in a build. */
 declare module 'virtual:astro-kit' {
-  export const options: unknown;
-  export const site: unknown;
-  export const schedule: unknown;
-  export const messages: unknown;
-  export const manifest: unknown;
+  /** The settings of `astro-kit.json`, with every default. */
+  export const options: import('./options.ts').Options;
+  /** The version of the kit that builds the site. */
   export const kitVersion: string;
 }
 
-declare module 'virtual:astro-kit/theme.css';
-
-/** Provided by workerd; the contact endpoint narrows env to its bindings. */
+/** The module of the Workers runtime. The form endpoint narrows `env` to its bindings (9.1). */
 declare module 'cloudflare:workers' {
   export const env: unknown;
 }

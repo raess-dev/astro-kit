@@ -1,84 +1,194 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
-import { parse } from 'node-html-parser';
-import type { BuildContext, BuiltCss, BuiltPage, RedirectRow } from './context.ts';
-import { loadMessages, loadSchedule, loadSite } from './facts.ts';
-import type { Manifest } from './manifest.ts';
-import { effectiveLimits, type KitOptions } from './options.ts';
-import { checkWrangler } from './project.ts';
-import { Report } from './registry.ts';
+/**
+ * Loads a built site into a `BuildContext` (specification, 6.1, `astro:build:done`, step 2).
+ *
+ * - `loadBuild` reads the client directory on disk: `dist/`, or `dist/client/` with an adapter (13.1, item 16).
+ * - `memoryContext` builds the same context from a map of paths to texts or bytes. A unit test of a build audit
+ *   uses it, so that it needs no disk (14.1).
+ *
+ * Neither function adds a finding, and neither throws for the content of a file.
+ */
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { type HTMLElement, parse } from 'node-html-parser';
+import {
+  addFile,
+  type BuildContext,
+  type BuiltCss,
+  type BuiltPage,
+  type Design,
+  type Env,
+  type Facts,
+  isHtmlFile,
+  isNotFoundPath,
+  pagePathOf,
+  readText,
+} from './context.ts';
+import { effectiveLimits, type Options } from './options.ts';
+import type { RedirectRow } from './redirects.ts';
+import type { Report } from './registry.ts';
+import { localeOfPath } from './routes.ts';
 
-function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) walk(path, out);
-    else out.push(path);
-  }
-  return out;
+// HTML
+
+/**
+ * Parses one HTML text. Comments are dropped. The text of `script`, `noscript`, `style` and `pre` stays raw: it is
+ * one text node, and nothing inside it becomes an element. Every audit parses with this function, so that all of
+ * them see the same document.
+ */
+export function parseHtml(html: string): HTMLElement {
+  return parse(html, { comment: false, blockTextElements: { script: true, noscript: true, style: true, pre: true } });
 }
 
-/** dist/fr/contact/index.html → /fr/contact/; dist/404.html → /404.html */
-export function urlPathOf(dist: string, file: string): string {
-  const rel = relative(dist, file).split(sep).join('/');
-  if (rel === 'index.html') return '/';
-  if (rel.endsWith('/index.html')) return `/${rel.slice(0, -'index.html'.length)}`;
-  return `/${rel}`;
+// Files
+
+/**
+ * Every file under `dist`, as a sorted list of paths with `/` and no leading `/`. A folder that does not exist
+ * gives an empty list. An entry that is no folder counts as a file.
+ */
+export function listDist(dist: string): string[] {
+  if (!existsSync(dist)) return [];
+  const files: string[] = [];
+  const visit = (folder: string, prefix: string): void => {
+    for (const entry of readdirSync(folder, { withFileTypes: true })) {
+      if (entry.isDirectory()) visit(join(folder, entry.name), `${prefix}${entry.name}/`);
+      else files.push(`${prefix}${entry.name}`);
+    }
+  };
+  visit(dist, '');
+  return files.sort();
 }
 
-export function parseHtml(html: string) {
-  return parse(html, { comment: false, blockTextElements: { script: true, style: true, noscript: true, pre: true } });
+const isCssFile = (file: string): boolean => file.endsWith('.css');
+
+/**
+ * Says whether the text is a path inside the client directory, as `files` of a context lists it: segments joined
+ * with `/`, no leading `/`, and no empty, `.` or `..` segment.
+ */
+function isDistPath(file: string): boolean {
+  return !file.includes('\\') && file.split('/').every((part) => part !== '' && part !== '.' && part !== '..');
 }
 
-export interface LoadInput {
+/** Throws for a path that would leave the client directory. This is an error in the calling code, not a finding. */
+function requireDistPath(file: string): void {
+  if (!isDistPath(file))
+    throw new Error(`astro-kit: ${JSON.stringify(file)} is not a path inside the client directory`);
+}
+
+// The context
+
+/** What a context is built from, next to the files of the client directory. */
+export interface ContextInput {
+  /** The project root. */
   root: string;
+  /** The client directory. */
   dist: string;
-  options: KitOptions;
-  manifest: Manifest;
-  report: Report;
+  options: Options;
+  kitVersion: string;
+  facts: Facts;
   redirects: RedirectRow[];
-  env?: Record<string, string | undefined>;
+  design: Design;
+  report: Report;
+  /** The environment variables. The default is an empty object. */
+  env?: Env;
+  /** The build time. The default is the time of the call. */
+  now?: Date;
 }
 
-/** Reads every built file into an audit context. */
-export function loadBuild(input: LoadInput): BuildContext {
-  const { root, dist, options, manifest, report } = input;
-  const scratch = new Report();
-  const all = walk(dist);
-  const byPath = new Map(manifest.pages.map((p) => [p.path, p]));
-  const codes = new Map(options.locales.map((l) => [l.tag.toLowerCase(), l.code]));
-  const pages: BuiltPage[] = [];
+/** The files of a client directory: on disk, or in memory. */
+type Store = Pick<BuildContext, 'files' | 'read' | 'write'>;
+
+function textOf(store: Store, file: string): string {
+  const text = readText(store, file);
+  if (text === undefined) throw new Error(`astro-kit: ${file} is not in the client directory`);
+  return text;
+}
+
+/** The page of one HTML file. The locale comes from the URL path, and only `/404.html` is the 404 page. */
+function pageOf(file: string, html: string, options: Options): BuiltPage {
+  const path = pagePathOf(file);
+  return { file, path, locale: localeOfPath(path, options), is404: isNotFoundPath(path), html, root: parseHtml(html) };
+}
+
+/** Reads every `.html` and `.css` file of the store once, and puts the context together. */
+function contextOf(input: ContextInput, store: Store): BuildContext {
+  const { options } = input;
+  const pages = store.files
+    .filter(isHtmlFile)
+    .map((file) => pageOf(file, textOf(store, file), options))
+    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   const css: BuiltCss[] = [];
-  for (const file of all) {
-    if (file.endsWith('.html')) {
-      const html = readFileSync(file, 'utf8');
-      const doc = parseHtml(html);
-      const path = urlPathOf(dist, file);
-      const record = byPath.get(path);
-      const lang = (doc.querySelector('html')?.getAttribute('lang') ?? '').toLowerCase();
-      const locale = record?.locale ?? codes.get(lang) ?? lang.split('-')[0] ?? options.defaultLocale;
-      const built: BuiltPage = { file, path, html, doc, locale, is404: path === '/404.html' };
-      if (record) built.record = record;
-      pages.push(built);
-      for (const style of doc.querySelectorAll('style')) css.push({ where: path, text: style.textContent });
-    } else if (file.endsWith('.css')) {
-      css.push({ where: `/${relative(dist, file).split(sep).join('/')}`, text: readFileSync(file, 'utf8') });
+  for (const page of pages) {
+    for (const style of page.root.querySelectorAll('style')) {
+      css.push({ kind: 'style', where: page.path, text: style.rawText });
     }
   }
+  for (const file of store.files.filter(isCssFile)) {
+    css.push({ kind: 'file', where: `/${file}`, text: textOf(store, file) });
+  }
   return {
-    root,
-    dist,
+    root: input.root,
+    dist: input.dist,
     options,
     limits: effectiveLimits(options),
-    manifest,
-    site: loadSite(root, scratch),
-    schedule: loadSchedule(root, scratch),
-    messages: loadMessages(root, options, scratch),
+    kitVersion: input.kitVersion,
     pages,
     css,
-    files: all.map((f) => relative(dist, f).split(sep).join('/')),
+    files: store.files,
+    read: store.read,
+    write: store.write,
+    facts: input.facts,
     redirects: input.redirects,
-    wrangler: checkWrangler(root, options, scratch),
-    report,
-    env: input.env ?? process.env,
+    design: input.design,
+    report: input.report,
+    env: input.env ?? {},
+    now: input.now ?? new Date(),
   };
+}
+
+/**
+ * The context of a built site on disk. It reads every `.html` and `.css` file once. `read` reads any other file
+ * when an audit asks for it, and it gives `undefined` for a path that `files` does not list. `write` writes under
+ * `dist` and creates the folders. A page that is written later is not parsed again: the kit writes no page.
+ */
+export function loadBuild(input: ContextInput): BuildContext {
+  const { dist } = input;
+  const files = listDist(dist);
+  const known = new Set(files);
+  return contextOf(input, {
+    files,
+    read: (file) => (known.has(file) ? readFileSync(join(dist, file)) : undefined),
+    write: (file, text) => {
+      requireDistPath(file);
+      const path = join(dist, file);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, text);
+      known.add(file);
+      addFile(files, file);
+    },
+  });
+}
+
+/**
+ * The same context from a map of client directory paths to texts or bytes. Nothing touches the disk: `root` and
+ * `dist` are plain strings, and `write` puts the text into the map of the context. A text is stored as UTF-8.
+ */
+export function memoryContext(
+  input: ContextInput & { files: Readonly<Record<string, string | Uint8Array>> },
+): BuildContext {
+  const encoder = new TextEncoder();
+  const store = new Map<string, Uint8Array>();
+  for (const [file, content] of Object.entries(input.files)) {
+    requireDistPath(file);
+    store.set(file, typeof content === 'string' ? encoder.encode(content) : content);
+  }
+  const files = [...store.keys()].sort();
+  return contextOf(input, {
+    files,
+    read: (file) => store.get(file),
+    write: (file, text) => {
+      requireDistPath(file);
+      store.set(file, encoder.encode(text));
+      addFile(files, file);
+    },
+  });
 }

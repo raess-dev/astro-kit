@@ -1,605 +1,589 @@
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { createServer, type IncomingMessage } from 'node:http';
-import type { AddressInfo } from 'node:net';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import type { Duplex } from 'node:stream';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
-import { inflateSync } from 'node:zlib';
-import { parse as parseYaml } from 'yaml';
-import { checkRoutes, droppedSources, importRoutes, isBuilt, liveSitemap, parseUrlList, pathOf } from '../../src/ci.ts';
-import { loadSchedule, loadSite } from '../../src/facts.ts';
-import { changedFeatureShims, KIT_VERSION, PINS, render } from '../../src/init.ts';
-import { buildManifest } from '../../src/manifest.ts';
-import { type KitOptions, LIMITS, loadOptions } from '../../src/options.ts';
-import { checkPackage, checkPublic, checkShims, checkSources, checkWrangler, imageSize } from '../../src/project.ts';
-import { Report } from '../../src/registry.ts';
-import { SHIMS } from '../../src/shims.ts';
+import { fileURLToPath } from 'node:url';
+import { findBin } from '../../src/ci.ts';
+import { type Io, main, outcome, USAGE } from '../../src/cli.ts';
+import { type Finding, getRule } from '../../src/registry.ts';
+import { type Files, inTemp, inTempAsync, json, SMALLEST } from './fixtures.ts';
+import { SPEC, specBlock } from './spec.ts';
 
-const CLI = new URL('../../src/cli.ts', import.meta.url).pathname;
-const temp = (): string => mkdtempSync(join(tmpdir(), 'kit-cli-'));
-const cli = (cwd: string, ...args: string[]) => spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: 'utf8' });
-const read = (root: string, path: string): string => readFileSync(join(root, path), 'utf8');
-const write = (root: string, path: string, text: string): void => {
-  mkdirSync(dirname(join(root, path)), { recursive: true });
-  writeFileSync(join(root, path), text);
-};
+/** The source of the command line. The bin of the package is its build, `dist/cli.js`. */
+const CLI = fileURLToPath(new URL('../../src/cli.ts', import.meta.url));
 
-function options(root: string): KitOptions {
-  const report = new Report();
-  const loaded = loadOptions(root, report);
-  assert.deepEqual(report.findings, []);
-  assert.ok(loaded);
-  return loaded;
+const SUMMARY_VARIABLE = 'GITHUB_STEP_SUMMARY';
+const SUMMARY_FILE = 'summary.md';
+const TOKENS_FILE = 'src/styles/tokens.css';
+
+/** The text of a file, or `undefined` when it does not exist. */
+const textOf = (file: string): string | undefined => (existsSync(file) ? readFileSync(file, 'utf8') : undefined);
+
+/** The sorted, unique rule ids in the output of a command, parsed as 6.4 says. */
+const idsIn = (output: string): string[] =>
+  [...new Set([...output.matchAll(/✗ \[([a-z0-9-]+)\]/g)].map((match) => match[1] ?? ''))].sort();
+
+/** A text inside the fence of the job summary, as the summary file holds it. */
+const inSummary = (text: string): string => `\n\`\`\`text\n${text}\n\`\`\`\n`;
+
+/** An `io` that records what the command line writes. */
+function recorder(env: Io['env'] = {}): { io: Io; out: () => string; err: () => string } {
+  const out: string[] = [];
+  const err: string[] = [];
+  return {
+    io: { out: (text) => out.push(text), err: (text) => err.push(text), env },
+    out: () => out.join(''),
+    err: () => err.join(''),
+  };
 }
 
-/** Every pre-build check the integration runs, on the files init wrote. */
-function preBuildFindings(root: string) {
-  const report = new Report();
-  const o = options(root);
-  checkShims(root, report);
-  checkPackage(root, o, report);
-  checkSources(root, o, report);
-  checkPublic(root, report);
-  checkWrangler(root, o, report);
-  loadSite(root, report);
-  loadSchedule(root, report);
-  const manifest = buildManifest(root, o, report, {});
-  return { findings: report.findings, manifest, options: o };
+// The usage
+
+/** The commands of 6.4 that a later milestone adds (M6 and M9). */
+const LATER = ['init', 'check', 'test', 'ci', 'smoke', 'routes', 'provision', 'feedback', 'settings', 'legal'] as const;
+
+test('the usage names the commands of this milestone and no later one', () => {
+  assert.equal(USAGE.includes('npx --no astro-kit <command>'), true);
+  assert.equal(SPEC.includes('In the project root: `npx --no astro-kit <command>`.'), true);
+  const commands = [...USAGE.matchAll(/^ {2}(\S+(?: \[--[a-z]+\])?) {2,}\S/gm)].map((match) => match[1]);
+  assert.deepEqual(commands, ['build', 'tokens [--check]', 'help']);
+  assert.equal(USAGE.endsWith('\n'), false);
+});
+
+test('the exit codes of the usage are the ones of the table of 6.4', () => {
+  assert.equal(SPEC.includes('| `help`, `--help`, none | | Usage on stdout | 0 | |'), true);
+  assert.equal(SPEC.includes('| unknown, or a bad subcommand | | Usage on stderr | 2 | |'), true);
+  assert.equal(SPEC.includes('| `build` | | `astro build` | tool code | no |'), true);
+});
+
+for (const argv of [[], ['help'], ['--help']]) {
+  test(`astro-kit ${argv.join(' ')}: the usage on stdout, 0`, async () => {
+    const seen = recorder();
+    const code = await main(argv, '/no/such/folder', seen.io);
+    assert.deepEqual({ code, out: seen.out(), err: seen.err() }, { code: 0, out: `${USAGE}\n`, err: '' });
+  });
 }
 
-// ── init ─────────────────────────────────────────────────────────────────────
+const USAGE_ERRORS: readonly (readonly string[])[] = [
+  ['nope'],
+  ...LATER.map((command) => [command]),
+  ['routes', 'import', 'sitemap.xml'],
+  ['feedback', 'send'],
+  ['-h'],
+  ['--check'],
+  ['Build'],
+  [''],
+  ['help', 'tokens'],
+  ['--help', '--check'],
+  ['build', '--check'],
+  ['build', 'extra'],
+  ['tokens', '--x'],
+  ['tokens', 'extra'],
+  ['tokens', '--check', 'extra'],
+  ['tokens', '--check=true'],
+  ['tokens', '-c'],
+];
 
-test('init with forms and islands writes a project that passes every pre-build check', () => {
-  const root = temp();
-  const run = cli(
-    root,
-    'init',
-    '--features',
-    'forms,islands',
-    '--locales',
-    'de,fr,it,en',
-    '--site',
-    'https://www.muster-beratung.ch',
-  );
-  assert.equal(run.status, 0, run.stderr);
-  for (const [path, text] of Object.entries(SHIMS)) assert.equal(read(root, path), text, path);
-  for (const path of [
-    '.npmrc',
-    '.node-version',
-    '.gitignore',
-    '.mcp.json',
-    'AGENTS.md',
-    'CLAUDE.md',
-    'KIT-FEEDBACK.md',
-    'docs/spec.md',
-    'eslint.config.mjs',
-  ]) {
-    assert.ok(existsSync(join(root, path)), path);
-  }
-  for (const path of [
-    'src/content.config.ts',
-    'src/pages/[...path].astro',
-    'src/pages/404.astro',
-    'src/pages/api/contact.ts',
-    'src/styles/theme.css',
-  ]) {
-    assert.ok(existsSync(join(root, path)), path);
-  }
-  assert.ok(!existsSync(join(root, 'src/assets/og.jpg')), 'the owner supplies the share image');
-
-  const { findings, manifest, options: o } = preBuildFindings(root);
-  assert.deepEqual(findings, []);
-  assert.equal(manifest.pages.length, 4 * 5);
-  for (const code of ['de', 'fr', 'it', 'en']) {
-    const pages = manifest.pages.filter((p) => p.locale === code);
-    assert.equal(new Set(pages.map((p) => p.title)).size, pages.length, `${code} titles are unique`);
-    for (const p of pages) {
-      assert.ok(
-        p.title.length >= LIMITS.titleMin && p.title.length <= LIMITS.titleMax,
-        `${p.file} title ${p.title.length}`,
-      );
-      assert.ok(
-        p.description.length >= LIMITS.descriptionMin && p.description.length <= LIMITS.descriptionMax,
-        `${p.file} description ${p.description.length}`,
-      );
-    }
-  }
-  assert.deepEqual(manifest.byId.privacy?.fr?.processing, ['cdn', 'previews', 'forms', 'server']);
-  assert.equal(manifest.byId.contact?.fr?.path, '/fr/contact/');
-  assert.deepEqual(changedFeatureShims(root, o.features), []);
-  assert.match(read(root, 'src/pages/[...path].astro'), /<ContactForm locale=\{page.locale\} \/>/);
-  assert.equal(o.contact?.to, 'info@muster-beratung.ch');
-
-  const pkg = JSON.parse(read(root, 'package.json')) as {
-    dependencies: Record<string, string>;
-    devDependencies: Record<string, string>;
-    scripts: Record<string, string>;
-  };
-  assert.deepEqual(pkg.dependencies, {
-    '@astrojs/cloudflare': '14.4.6',
-    '@astrojs/solid-js': '7.1.2',
-    '@raess/astro-kit': KIT_VERSION,
-    astro: '7.4.8',
-    'solid-js': '1.9.18',
-    wrangler: '4.160.0',
+for (const argv of USAGE_ERRORS) {
+  test(`astro-kit ${argv.join(' ')}: the usage on stderr, 2`, async () => {
+    const seen = recorder();
+    const code = await main(argv, '/no/such/folder', seen.io);
+    assert.deepEqual({ code, out: seen.out(), err: seen.err() }, { code: 2, out: '', err: `${USAGE}\n` });
   });
-  assert.deepEqual(pkg.devDependencies, {
-    eslint: '10.14.0',
-    'eslint-plugin-solid': '0.19.0',
-    'typescript-eslint': '8.72.2',
-  });
-  assert.deepEqual(pkg.scripts, {
-    check: 'astro-kit check',
-    build: 'astro-kit build',
-    test: 'astro-kit test',
-    ci: 'astro-kit ci',
-  });
-  assert.equal(read(root, '.npmrc'), 'ignore-scripts=true\nsave-exact=true\n');
-  assert.equal(read(root, 'CLAUDE.md'), '@AGENTS.md\n');
-  assert.ok(read(root, 'AGENTS.md').split('\n').length <= 21);
-  assert.match(read(root, 'wrangler.jsonc'), /"pattern": "www\.muster-beratung\.ch"/);
-
-  const png = readFileSync(join(root, 'public/apple-touch-icon.png'));
-  assert.deepEqual(imageSize(png), { width: 180, height: 180 });
-  const ico = readFileSync(join(root, 'public/favicon.ico'));
-  assert.deepEqual(
-    [ico.readUInt16LE(2), ico.readUInt16LE(4), ico[6], ico[7], ico.readUInt32LE(18)],
-    [1, 1, 32, 32, 22],
-  );
-  assert.deepEqual(imageSize(ico.subarray(22)), { width: 32, height: 32 });
-  const idat = png.indexOf('IDAT');
-  assert.equal(inflateSync(png.subarray(idat + 4, idat + 4 + png.readUInt32BE(idat - 4))).length, 180 * (1 + 180 * 4));
-});
-
-test('init without features writes a static site with no form route', () => {
-  const root = temp();
-  assert.equal(cli(root, 'init').status, 0);
-  const { findings, manifest, options: o } = preBuildFindings(root);
-  assert.deepEqual(findings, []);
-  assert.equal(o.site, 'https://example.ch');
-  assert.deepEqual(Object.keys(manifest.byId).sort(), ['home', 'imprint', 'privacy', 'sitemap']);
-  assert.deepEqual(manifest.byId.privacy?.de?.processing, ['cdn', 'previews']);
-  assert.ok(!existsSync(join(root, 'src/pages/api/contact.ts')));
-  assert.ok(!existsSync(join(root, 'eslint.config.mjs')));
-  assert.doesNotMatch(read(root, 'src/pages/[...path].astro'), /ContactForm|\{\{/);
-  assert.doesNotMatch(read(root, 'wrangler.jsonc'), /send_email/);
-  assert.deepEqual(Object.keys((JSON.parse(read(root, 'package.json')) as { dependencies: object }).dependencies), [
-    '@raess/astro-kit',
-    'astro',
-  ]);
-});
-
-test('init never overwrites without --force, and --shims restores the fixed files', () => {
-  const root = temp();
-  assert.equal(cli(root, 'init', '--features', 'islands').status, 0);
-  writeFileSync(join(root, 'AGENTS.md'), 'mine\n');
-  writeFileSync(join(root, 'biome.json'), '{}\n');
-  writeFileSync(join(root, 'eslint.config.mjs'), 'export default [];\n');
-  const again = cli(root, 'init');
-  assert.equal(again.status, 0);
-  assert.match(again.stdout, /kept {2}AGENTS\.md/);
-  assert.equal(read(root, 'AGENTS.md'), 'mine\n');
-  const changed = new Report();
-  checkShims(root, changed);
-  assert.deepEqual(changed.findings, [{ rule: 'config-shim', where: 'biome.json', detail: 'content differs' }]);
-  assert.deepEqual(changedFeatureShims(root, options(root).features), ['eslint.config.mjs']);
-
-  assert.equal(cli(root, 'init', '--shims').status, 0);
-  assert.equal(read(root, 'biome.json'), SHIMS['biome.json']);
-  assert.deepEqual(changedFeatureShims(root, options(root).features), []);
-  assert.equal(read(root, 'AGENTS.md'), 'mine\n', '--shims touches only the fixed files');
-
-  assert.equal(cli(root, 'init', '--force').status, 0);
-  assert.match(read(root, 'AGENTS.md'), /^# Example/);
-});
-
-test('init keeps an existing astro-kit.json and rejects an unknown feature', () => {
-  const root = temp();
-  write(
-    root,
-    'astro-kit.json',
-    JSON.stringify({
-      site: 'https://kanzlei.ch',
-      locales: [{ code: 'it', tag: 'it-CH', name: 'Italiano' }],
-      defaultLocale: 'it',
-      securityContact: 'mailto:s@kanzlei.ch',
-    }),
-  );
-  const run = cli(root, 'init', '--features', 'forms');
-  assert.equal(run.status, 0, run.stderr);
-  assert.match(run.stdout, /flags are ignored/);
-  assert.ok(existsSync(join(root, 'src/content/pages/it/privacy.md')));
-  assert.ok(!existsSync(join(root, 'src/pages/api/contact.ts')));
-  assert.deepEqual(preBuildFindings(root).findings, []);
-  const bad = cli(temp(), 'init', '--features', 'forms,blog');
-  assert.equal(bad.status, 1);
-  assert.match(bad.stderr, /unknown feature blog/);
-});
-
-test('render keeps flagged blocks, fills names and leaves GitHub expressions alone', () => {
-  const text = 'a {{NAME}}\n{{#forms}}\nform\n{{/forms}}\n${{ github.sha }} {{OTHER}}';
-  assert.equal(render(text, { NAME: 'x' }, { forms: true }), 'a x\nform\n${{ github.sha }} {{OTHER}}');
-  assert.equal(render(text, { NAME: 'x' }, { forms: false }), 'a x\n${{ github.sha }} {{OTHER}}');
-});
-
-// ── the files init writes for CI and agents ─────────────────────────────────
-
-test('site.yml pins every action by SHA, grants nothing at the top and names the required check', () => {
-  const root = temp();
-  assert.equal(cli(root, 'init').status, 0);
-  const text = read(root, '.github/workflows/site.yml');
-  assert.doesNotMatch(text, /\{\{[A-Z_]+\}\}/);
-  assert.match(text, new RegExp(`wrangler@${PINS.wrangler.replace(/\./g, '\\.')}`));
-  const flow = parseYaml(text) as {
-    permissions: unknown;
-    jobs: Record<
-      string,
-      {
-        name?: string;
-        permissions?: unknown;
-        'timeout-minutes'?: number;
-        steps: { uses?: string; with?: Record<string, unknown> }[];
-      }
-    >;
-  };
-  assert.deepEqual(flow.permissions, {});
-  assert.equal(flow.jobs.ci?.name, 'site / ci');
-  assert.deepEqual(Object.keys(flow.jobs), ['ci', 'merge', 'build', 'deploy', 'preview', 'smoke', 'feedback']);
-  for (const [id, job] of Object.entries(flow.jobs)) {
-    assert.ok(job.permissions, `${id} grants its own permissions`);
-    assert.ok(job['timeout-minutes'], `${id} has a timeout`);
-    for (const step of job.steps) {
-      if (!step.uses) continue;
-      assert.match(step.uses, /^actions\/[a-z-]+@[0-9a-f]{40}$/, `${id}: ${step.uses}`);
-      if (step.uses.startsWith('actions/checkout')) assert.equal(step.with?.['persist-credentials'], false, id);
-    }
-  }
-  for (const line of text.split('\n').filter((l) => /uses: /.test(l)))
-    assert.match(line, /@[0-9a-f]{40} # v\d+\.\d+\.\d+$/);
-  // Smoke proves production serves main's commit, and that workers.dev does not answer.
-  const smoke = (flow.jobs.smoke?.steps ?? []) as { name?: string; env?: Record<string, string> }[];
-  const env = smoke.find((s) => s.name === 'Smoke production')?.env ?? {};
-  assert.equal(env.KIT_RELEASE_SHA, '${{ github.sha }}');
-  assert.equal(env.KIT_WORKERS_DEV, '${{ vars.KIT_WORKERS_DEV }}');
-  const rulesets = JSON.parse(
-    readFileSync(new URL('../../templates/github-org-rulesets.json', import.meta.url), 'utf8'),
-  ) as {
-    rulesets: { rules: { type: string; parameters?: { required_status_checks?: { context: string }[] } }[] }[];
-  };
-  const checks = rulesets.rulesets.flatMap((r) => r.rules).flatMap((r) => r.parameters?.required_status_checks ?? []);
-  assert.deepEqual(
-    checks.map((c) => c.context),
-    ['site / ci'],
-  );
-  const dependabot = parseYaml(read(root, '.github/dependabot.yml')) as {
-    updates: { 'package-ecosystem': string; groups?: object; cooldown: { exclude?: string[] } }[];
-  };
-  assert.deepEqual(
-    dependabot.updates.map((u) => u['package-ecosystem']),
-    ['npm', 'github-actions'],
-  );
-  assert.deepEqual(Object.keys(dependabot.updates[0]?.groups ?? {}), ['kit', 'astro', 'other']);
-  assert.deepEqual(dependabot.updates[0]?.cooldown.exclude, ['@raess/astro-kit']);
-  const mcp = JSON.parse(read(root, '.mcp.json')) as { mcpServers: Record<string, { type: string; url: string }> };
-  assert.deepEqual(mcp.mcpServers['astro-docs'], { type: 'http', url: 'https://mcp.docs.astro.build/mcp' });
-  assert.deepEqual(mcp.mcpServers['cloudflare-docs'], { type: 'http', url: 'https://docs.mcp.cloudflare.com/mcp' });
-});
-
-test('the deploy job refuses a built mail binding that differs from wrangler.jsonc', () => {
-  const root = temp();
-  assert.equal(cli(root, 'init', '--features', 'forms').status, 0);
-  const flow = parseYaml(read(root, '.github/workflows/site.yml')) as {
-    jobs: { deploy: { steps: { name?: string; run?: string }[] } };
-  };
-  const script = flow.jobs.deploy.steps.find((s) => s.name?.startsWith('The built mail binding'))?.run ?? '';
-  const step = () => spawnSync('bash', ['-c', script], { cwd: root, encoding: 'utf8' });
-  assert.match(step().stdout, /static site/, 'no adapter output, nothing to compare');
-  const binding = (to: string[]) =>
-    JSON.stringify({ main: 'entry.mjs', send_email: [{ name: 'EMAIL', allowed_destination_addresses: to }] });
-  write(root, 'dist/server/wrangler.json', binding(['info@example.ch']));
-  assert.equal(step().status, 0, step().stderr);
-  write(root, 'dist/server/wrangler.json', binding(['info@example.ch', 'someone@elsewhere.example']));
-  assert.match(step().stderr, /send_email differs/);
-});
-
-test('the SessionStart hook installs only when the lockfile changes, then prints INDEX.md', () => {
-  const root = temp();
-  assert.equal(cli(root, 'init').status, 0);
-  const settings = JSON.parse(read(root, '.claude/settings.json')) as {
-    hooks: { SessionStart: { matcher: string; hooks: { timeout: number; command: string }[] }[] };
-    permissions: { deny: string[] };
-  };
-  const hook = settings.hooks.SessionStart[0];
-  assert.equal(hook?.matcher, 'startup|resume');
-  assert.equal(hook?.hooks[0]?.timeout, 300);
-  assert.deepEqual(settings.permissions.deny, ['Edit(/node_modules/**)', 'Write(/node_modules/**)']);
-  const command = hook?.hooks[0]?.command ?? '';
-  // A stand-in npm on PATH records each call, so the test never installs anything.
-  const bin = join(root, 'fake-bin');
-  write(root, 'fake-bin/npm', '#!/bin/sh\necho "$*" >> "$CLAUDE_PROJECT_DIR/npm-calls"\n');
-  chmodSync(join(bin, 'npm'), 0o755);
-  const env = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}`, CLAUDE_PROJECT_DIR: root };
-  const start = () => spawnSync('sh', ['-c', command], { cwd: tmpdir(), env, encoding: 'utf8' });
-  assert.match(start().stdout, /No package-lock\.json yet/);
-  write(root, 'package-lock.json', '{"lockfileVersion":3}');
-  write(root, 'node_modules/@raess/astro-kit/docs/INDEX.md', '# Kit index\n');
-  const first = start();
-  assert.equal(first.status, 0, first.stderr);
-  assert.equal(first.stdout, '# Kit index\n');
-  assert.equal(start().stdout, '# Kit index\n');
-  assert.equal(read(root, 'npm-calls'), 'ci --ignore-scripts --no-audit --no-fund\n', 'one install for one lockfile');
-  write(root, 'package-lock.json', '{"lockfileVersion":3,"x":1}');
-  start();
-  assert.equal(read(root, 'npm-calls').split('\n').filter(Boolean).length, 2);
-});
-
-test('the kit identity step fails on a non-registry, unhashed or downgraded kit', () => {
-  const root = temp();
-  assert.equal(cli(root, 'init').status, 0);
-  const lock = (version: string, resolved: string, integrity = 'sha512-abc') =>
-    JSON.stringify({
-      lockfileVersion: 3,
-      packages: { 'node_modules/@raess/astro-kit': { version, resolved, integrity } },
-    });
-  const registry = (v: string) => `https://registry.npmjs.org/@raess/astro-kit/-/astro-kit-${v}.tgz`;
-  const identity = () =>
-    spawnSync('bash', ['.github/kit-identity.sh'], {
-      cwd: root,
-      encoding: 'utf8',
-      env: { ...process.env, BASE_REF: 'main' },
-    });
-  const git = (...args: string[]) =>
-    spawnSync('git', ['-c', 'user.name=kit', '-c', 'user.email=kit@example.invalid', ...args], {
-      cwd: root,
-      encoding: 'utf8',
-    });
-  write(root, 'package-lock.json', lock('0.2.0', registry('0.2.0')));
-  assert.equal(identity().status, 0);
-  write(root, 'package-lock.json', lock('0.2.0', 'file:../astro-kit-0.2.0.tgz'));
-  assert.match(identity().stdout, /\[config-kit-identity\] the kit must resolve from/);
-  write(root, 'package-lock.json', lock('0.2.0', registry('0.2.0'), ''));
-  assert.equal(identity().status, 1);
-  // A registry prefix that walks to another package, through the URL or through the version.
-  write(
-    root,
-    'package-lock.json',
-    lock('0.2.0', 'https://registry.npmjs.org/@raess/astro-kit/-/../../../other/-/other-0.2.0.tgz'),
-  );
-  assert.match(identity().stdout, /the kit must resolve from/);
-  write(
-    root,
-    'package-lock.json',
-    lock('0.2.0/../../../other/-/other-0.2.0', registry('0.2.0/../../../other/-/other-0.2.0')),
-  );
-  assert.match(identity().stdout, /is not a plain version/);
-  // npm-shrinkwrap.json wins over package-lock.json, so it would bypass this check.
-  write(root, 'package-lock.json', lock('0.2.0', registry('0.2.0')));
-  write(root, 'npm-shrinkwrap.json', lock('0.2.0', 'file:../evil.tgz'));
-  assert.match(identity().stdout, /npm-shrinkwrap\.json/);
-  rmSync(join(root, 'npm-shrinkwrap.json'));
-  assert.equal(identity().status, 0);
-  write(root, 'package-lock.json', lock('0.2.0', registry('0.2.0')));
-  writeFileSync(join(root, '.npmrc'), 'save-exact=true\n');
-  assert.match(identity().stdout, /ignore-scripts=true/);
-  writeFileSync(join(root, '.npmrc'), 'ignore-scripts=true\n');
-  // The base branch, as origin/main of a scratch repository.
-  git('init', '-q');
-  git('add', 'package-lock.json');
-  git('commit', '-q', '-m', 'base');
-  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
-  write(root, 'package-lock.json', lock('0.1.9', registry('0.1.9')));
-  assert.match(identity().stdout, /went down from 0\.2\.0/);
-  write(root, 'package-lock.json', lock('0.10.0', registry('0.10.0')));
-  assert.equal(identity().status, 0);
-});
-
-// ── routes ───────────────────────────────────────────────────────────────────
-
-/** A project with a built dist: /, /a/ and /404.html. */
-function builtProject(redirects?: unknown[]): string {
-  const root = temp();
-  assert.equal(cli(root, 'init').status, 0);
-  for (const page of ['index.html', 'a/index.html', '404.html']) write(root, `dist/${page}`, '<html></html>');
-  write(root, 'dist/robots.txt', '');
-  if (redirects) write(root, 'src/content/redirects.json', JSON.stringify(redirects));
-  return root;
 }
 
-test('url lists: sitemap locs, text lines, paths and the trailing-slash rule', () => {
+// Lazy loading
+
+test('the command line starts with the shebang line of a bin', () => {
+  assert.equal(readFileSync(CLI, 'utf8').startsWith('#!/usr/bin/env node\n'), true);
+});
+
+test('the command line loads no module of the kit at the start: each static import is a type or a Node built-in', () => {
+  const source = readFileSync(CLI, 'utf8');
+  const imports = [
+    ...source.matchAll(/^import\s+(type\s+)?(?:[^;'"]*?\sfrom\s+)?['"]([^'"]+)['"];/gm),
+    ...source.matchAll(/^export\s+(type\s+)?[^;'"]*?\sfrom\s+['"]([^'"]+)['"];/gm),
+  ].map((match) => ({ type: match[1] !== undefined, from: match[2] ?? '' }));
   assert.deepEqual(
-    parseUrlList(
-      '<urlset><url><loc> https://old.ch/a?x=1&amp;y=2 </loc></url><url><loc>https://old.ch/b/</loc></url></urlset>',
-    ),
-    ['https://old.ch/a?x=1&y=2', 'https://old.ch/b/'],
+    imports.filter((entry) => !entry.type && !entry.from.startsWith('node:')),
+    [],
   );
-  assert.deepEqual(parseUrlList('# old site\n/a\n\nhttps://old.ch/b # moved\n'), ['/a', 'https://old.ch/b']);
-  assert.deepEqual(pathOf('https://old.ch/b/?q=1'), { path: '/b/', query: true });
-  assert.deepEqual(pathOf('/c'), { path: '/c', query: false });
-  const built = new Set(['/', '/a/', '/robots.txt']);
-  assert.ok(
-    isBuilt('/a', built) && isBuilt('/a/', built) && isBuilt('/a/index.html', built) && isBuilt('/robots.txt', built),
+  // The pattern finds the imports that the file has, and the file loads the commands with import().
+  assert.equal(
+    imports.some((entry) => entry.from === './ci.ts' && entry.type),
+    true,
   );
-  assert.ok(!isBuilt('/b/', built));
+  assert.equal(source.includes("await import('./ci.ts')"), true);
 });
 
-test('routes-removed: a dropped base-branch source fails unless its path is built again', () => {
-  const built = new Set(['/', '/back/']);
-  assert.deepEqual(droppedSources(['/old/', '/back/', '/kept/'], ['/kept/'], built), ['/old/']);
-  assert.deepEqual(droppedSources(['/old/'], ['/old/'], built), []);
-});
+// The outcome mapping
 
-test('routes-removed: the base branch redirects.json is read through git', async () => {
-  const root = builtProject([
-    { from: '/old/', to: '/a/' },
-    { from: '/gone/', gone: true },
+const LOCKED = getRule('config-locked');
+const FINDING: Finding = { rule: 'config-locked', where: 'build.format', detail: 'file instead of directory' };
+const WAIVED: Finding = { rule: 'config-locked', where: 'site', waived: { until: '2026-12-01', reason: 'a reason' } };
+
+/** The finding format of 6.4, filled in for `FINDING`. */
+const FINDING_TEXT = specBlock('**Finding format** (exact)', 'text')
+  .replace('<n> finding(s)', '1 finding')
+  .replaceAll('<id>', 'config-locked')
+  .replace('<where>', 'build.format')
+  .replace('<message>', LOCKED.message)
+  .replace('<detail>', 'file instead of directory')
+  .replace('<hint>', LOCKED.hint);
+
+const WAIVED_LINE = `~ [config-locked] site: ${LOCKED.message} (waived until 2026-12-01: a reason)`;
+
+test('the finding text of the tests has the four lines of 6.4', () => {
+  assert.deepEqual(FINDING_TEXT.split('\n'), [
+    'astro-kit: 1 finding',
+    `✗ [config-locked] build.format: ${LOCKED.message} (file instead of directory)`,
+    `    fix: ${LOCKED.hint}`,
+    '    rule: node_modules/@raess/astro-kit/docs/standards.md#config-locked',
   ]);
-  const git = (...args: string[]) =>
-    spawnSync('git', ['-c', 'user.name=kit', '-c', 'user.email=kit@example.invalid', ...args], {
-      cwd: root,
-      encoding: 'utf8',
+});
+
+interface OutcomeCase {
+  name: string;
+  value: unknown;
+  code: number;
+  /** The text on stderr and in the job summary, without the final newline. `undefined`: nothing is printed. */
+  text?: string;
+}
+
+const OUTCOME_CASES: readonly OutcomeCase[] = [
+  { name: 'an empty findings array', value: [], code: 0 },
+  { name: 'an object with no findings', value: { findings: [] }, code: 0 },
+  { name: 'a findings array', value: [FINDING], code: 1, text: FINDING_TEXT },
+  { name: 'an object with findings', value: { findings: [FINDING], written: false }, code: 1, text: FINDING_TEXT },
+  {
+    name: 'a waived finding fails nothing',
+    value: [WAIVED],
+    code: 0,
+    text: `${WAIVED_LINE}\nastro-kit: all checks passed.`,
+  },
+  {
+    name: 'a waived finding does not count beside a finding that fails',
+    value: { findings: [WAIVED, FINDING] },
+    code: 1,
+    text: ['astro-kit: 1 finding', WAIVED_LINE, ...FINDING_TEXT.split('\n').slice(1)].join('\n'),
+  },
+  { name: 'the number 0', value: 0, code: 0 },
+  { name: 'the number 1', value: 1, code: 1 },
+  { name: 'the number 7', value: 7, code: 7 },
+  { name: 'false', value: false, code: 1 },
+  { name: 'true', value: true, code: 0 },
+  { name: 'undefined', value: undefined, code: 0 },
+  { name: 'null', value: null, code: 0 },
+  { name: 'a text', value: 'failed', code: 0 },
+  { name: 'an object without findings', value: { written: true }, code: 0 },
+  { name: 'an object whose findings are no list', value: { findings: 3 }, code: 0 },
+];
+
+for (const c of OUTCOME_CASES) {
+  test(`outcome: ${c.name}`, async () => {
+    const seen = await inTempAsync({}, async (root) => {
+      const seenIo = recorder({ [SUMMARY_VARIABLE]: join(root, SUMMARY_FILE) });
+      const code = await outcome(c.value, seenIo.io);
+      return { code, out: seenIo.out(), err: seenIo.err(), summary: textOf(join(root, SUMMARY_FILE)) };
     });
-  git('init', '-q');
-  git('add', 'src/content/redirects.json');
-  git('commit', '-q', '-m', 'base');
-  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
-  const offline = (async () => new Response('', { status: 404 })) as typeof fetch;
-  const run = async () => {
-    const report = new Report();
-    await checkRoutes(root, options(root), report, offline, { GITHUB_BASE_REF: 'main' });
-    return report.findings;
-  };
-  assert.deepEqual(await run(), []);
-  write(root, 'src/content/redirects.json', JSON.stringify([{ from: '/gone/', gone: true }]));
-  assert.deepEqual(await run(), [
-    {
-      rule: 'routes-removed',
-      where: 'src/content/redirects.json',
-      detail: '/old/ is a source on origin/main and is gone',
-    },
-  ]);
-});
-
-test('routes-removed: a page published on the base branch keeps its URL', async () => {
-  const root = temp();
-  assert.equal(cli(root, 'init').status, 0);
-  const git = (...args: string[]) =>
-    spawnSync('git', ['-c', 'user.name=kit', '-c', 'user.email=kit@example.invalid', ...args], {
-      cwd: root,
-      encoding: 'utf8',
+    assert.deepEqual(seen, {
+      code: c.code,
+      out: '',
+      err: c.text === undefined ? '' : `${c.text}\n`,
+      summary: c.text === undefined ? undefined : inSummary(c.text),
     });
-  git('init', '-q');
-  git('add', '-A');
-  git('commit', '-q', '-m', 'base');
-  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
-  // The current build: every page of the base branch, under its base URL.
-  const report = new Report();
-  const paths = buildManifest(root, options(root), report, {}).pages.map((p) => p.path);
-  assert.ok(paths.includes('/impressum/'), paths.join(' '));
-  const build = (list: string[]) => {
-    for (const path of list) write(root, `dist${path}index.html`, '<html></html>');
-  };
-  build(paths);
-  const offline = (async () => new Response('', { status: 404 })) as typeof fetch;
-  const run = async () => {
-    const found = new Report();
-    await checkRoutes(root, options(root), found, offline, { GITHUB_BASE_REF: 'main' });
-    return found.findings;
-  };
-  assert.deepEqual(await run(), []);
-  // The imprint moves to a new slug without a redirect.
-  rmSync(join(root, 'dist'), { recursive: true, force: true });
-  build(paths.map((p) => (p === '/impressum/' ? '/rechtliches/' : p)));
-  assert.deepEqual(await run(), [
-    {
-      rule: 'routes-removed',
-      where: '/impressum/',
-      detail: 'published on origin/main; add a redirects.json row for it',
-    },
-  ]);
-  write(root, 'src/content/redirects.json', JSON.stringify([{ from: '/impressum/', to: '/rechtliches/' }]));
-  assert.deepEqual(await run(), []);
-});
-
-test('routes-removed: every live sitemap URL is built or redirected; 404 and DNS failures skip', async () => {
-  const root = builtProject([{ from: '/blog/*', to: '/a/' }]);
-  const sitemap = (body: string, status = 200) => (async () => new Response(body, { status })) as typeof fetch;
-  const run = async (call: typeof fetch, env: Record<string, string> = {}) => {
-    const report = new Report();
-    await checkRoutes(root, options(root), report, call, env);
-    return report.findings.map((f) => f.detail);
-  };
-  const live =
-    '<urlset><url><loc>https://example.ch/</loc></url><url><loc>https://example.ch/a</loc></url><url><loc>https://example.ch/blog/x/</loc></url></urlset>';
-  assert.deepEqual(await run(sitemap(live)), []);
-  assert.deepEqual(await run(sitemap(live.replace('/a<', '/lost/<'))), [
-    '/lost/ is neither built nor a redirects.json source',
-  ]);
-  assert.deepEqual(await run(sitemap(live.replace('/a<', '/a?page=2<'))), [
-    `https://example.ch/a?page=2: query strings cannot be matched; mark it gone or add a zone Single Redirect`,
-  ]);
-  assert.deepEqual(await run(sitemap('', 404)), []);
-  assert.deepEqual(await run(sitemap('', 503)), ['https://example.ch/sitemap.xml answers 503']);
-  const dns = (async () => {
-    throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ENOTFOUND' } });
-  }) as typeof fetch;
-  assert.deepEqual(await run(dns), []);
-  const refused = (async () => {
-    throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
-  }) as typeof fetch;
-  assert.equal((await run(refused)).length, 1);
-  assert.deepEqual(await run(sitemap(live), { GITHUB_ACTIONS: 'true' }), [
-    'the base branch is not fetched; check out with fetch-depth: 0',
-  ]);
-});
-
-test('liveSitemap follows a sitemap index and sends a descriptive User-Agent', async () => {
-  const agents: string[] = [];
-  const call = (async (url: string | URL | Request, init: RequestInit = {}) => {
-    agents.push((init.headers as Record<string, string>)['user-agent'] ?? '');
-    if (String(url).endsWith('/sitemap.xml'))
-      return new Response(
-        '<sitemapindex><sitemap><loc>https://example.ch/sitemap-0.xml</loc></sitemap></sitemapindex>',
-      );
-    return new Response('<urlset><url><loc>https://example.ch/x/</loc></url></urlset>');
-  }) as typeof fetch;
-  assert.deepEqual(await liveSitemap('https://example.ch', call), { paths: ['https://example.ch/x/'] });
-  assert.ok(
-    agents.every((a) => /^astro-kit\/\S+ \(\+https:\/\/github\.com\/raess-dev\/astro-kit; route check\)$/.test(a)),
-  );
-});
-
-test('routes import adds gone rows for unbuilt paths and rejects query strings', () => {
-  const root = builtProject([{ from: '/kept/', to: '/a/' }]);
-  write(root, 'urls.txt', 'https://old.ch/a\n/kept/\n/old/\nhttps://old.ch/old/\n/list?page=2\n/c\n');
-  const run = cli(root, 'routes', 'import', 'urls.txt');
-  assert.equal(run.status, 1, 'a rejected URL is an error');
-  assert.match(run.stderr, /rejected \/list\?page=2: query strings cannot be matched/);
-  assert.deepEqual(JSON.parse(read(root, 'src/content/redirects.json')), [
-    { from: '/kept/', to: '/a/' },
-    { from: '/old/', gone: true },
-    { from: '/c', gone: true },
-  ]);
-  write(root, 'sitemap.xml', '<urlset><url><loc>https://old.ch/old/</loc></url></urlset>');
-  assert.deepEqual(importRoutes(root, join(root, 'sitemap.xml')), { added: [], rejected: [] });
-  rmSync(join(root, 'dist'), { recursive: true });
-  assert.throws(() => importRoutes(root, join(root, 'sitemap.xml')), /run `npx --no astro-kit build` first/);
-});
-
-test('the CLI prints usage for an unknown command', () => {
-  const run = cli(temp(), 'deploy');
-  assert.equal(run.status, 2);
-  assert.match(run.stderr, /astro-kit <command>/);
-  assert.equal(cli(temp(), 'routes', 'export').status, 2);
-});
-
-test('behind a proxy, a network command reruns with NODE_USE_ENV_PROXY, so its requests use the proxy', async () => {
-  // A proxy that records each CONNECT target, then refuses it.
-  const targets: string[] = [];
-  const proxy = createServer();
-  proxy.on('connect', (req: IncomingMessage, socket: Duplex) => {
-    targets.push(req.url ?? '');
-    socket.end('HTTP/1.1 502 Bad Gateway\r\n\r\n');
   });
-  await new Promise<void>((done) => proxy.listen(0, '127.0.0.1', done));
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    HTTPS_PROXY: `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`,
-    NO_PROXY: 'localhost,127.0.0.1',
-  };
-  for (const name of ['https_proxy', 'no_proxy', 'NODE_USE_ENV_PROXY']) delete env[name];
-  const child = spawn(process.execPath, [CLI, 'smoke', 'https://example.ch'], {
-    cwd: temp(),
-    env,
-    stdio: 'ignore',
+}
+
+test('outcome without GITHUB_STEP_SUMMARY prints the findings and writes no file', async () => {
+  const seen = recorder({ [SUMMARY_VARIABLE]: '' });
+  const code = await outcome([FINDING], seen.io);
+  assert.deepEqual({ code, err: seen.err() }, { code: 1, err: `${FINDING_TEXT}\n` });
+});
+
+test('outcome rejects for a list that holds something else than findings', async () => {
+  await assert.rejects(outcome([FINDING, 'text'], recorder().io), {
+    message: 'astro-kit: a command returned a list that is not findings',
   });
-  const code = await new Promise<number | null>((done) => child.on('exit', done));
-  proxy.close();
-  assert.ok(
-    targets.some((t) => t.startsWith('example.ch:443')),
-    `no CONNECT through the proxy: ${targets.join(' ')}`,
+});
+
+// build
+
+interface Run {
+  args: string[];
+  cwd: string;
+  telemetry: string | null;
+}
+
+/** A fake `astro`: it records its arguments, prints one line on each stream and exits with the code. */
+function fakeAstro(code: number, bin: unknown = { astro: './bin/astro.mjs' }): Files {
+  return {
+    'node_modules/astro/package.json': json({ name: 'astro', version: '1.0.0', bin }),
+    'node_modules/astro/bin/astro.mjs': [
+      "import { writeFileSync } from 'node:fs';",
+      "import { join } from 'node:path';",
+      'const run = {',
+      '  args: process.argv.slice(2),',
+      '  cwd: process.cwd(),',
+      '  telemetry: process.env.ASTRO_TELEMETRY_DISABLED ?? null,',
+      '};',
+      "writeFileSync(join(import.meta.dirname, '../run.json'), JSON.stringify(run));",
+      "process.stdout.write('fake astro: stdout\\n');",
+      "process.stderr.write('fake astro: stderr\\n');",
+      `process.exitCode = ${code};`,
+      '',
+    ].join('\n'),
+  };
+}
+
+function runOf(root: string): Run | undefined {
+  const text = textOf(join(root, 'node_modules/astro/run.json'));
+  if (text === undefined) return undefined;
+  const run: Run = JSON.parse(text);
+  return run;
+}
+
+for (const code of [0, 1, 5]) {
+  test(`astro-kit build runs astro build and gives its code ${code}`, async () => {
+    const seen = await inTempAsync(fakeAstro(code), async (root) => {
+      const seenIo = recorder({ [SUMMARY_VARIABLE]: join(root, SUMMARY_FILE) });
+      const result = await main(['build'], root, seenIo.io);
+      return {
+        result,
+        out: seenIo.out(),
+        err: seenIo.err(),
+        run: runOf(root),
+        root: realpathSync(root),
+        summary: textOf(join(root, SUMMARY_FILE)),
+      };
+    });
+    assert.equal(seen.result, code);
+    assert.equal(seen.out, 'fake astro: stdout\n');
+    assert.equal(seen.err, 'fake astro: stderr\n');
+    assert.deepEqual(seen.run, { args: ['build'], cwd: seen.root, telemetry: '1' });
+    assert.equal(seen.summary, code === 0 ? undefined : '\nastro build failed; see the job log.\n');
+  });
+}
+
+/** What a `build` without astro gave. `above` is an astro in a folder above the temp folder: then nothing ran. */
+interface WithoutAstro {
+  above: string | undefined;
+  result?: unknown;
+}
+
+test('astro-kit build without astro: the message of 6.4, 1', async () => {
+  const seen = await inTempAsync({ 'astro-kit.json': json(SMALLEST) }, async (root): Promise<WithoutAstro> => {
+    // The search for astro walks up from the temp folder. With an astro above it, `build` would run a real build
+    // (14.1 forbids that). So the test stops here, and its failure names the path.
+    const above = findBin(root, 'astro');
+    if (above !== undefined) return { above };
+    const seenIo = recorder();
+    const code = await main(['build'], root, seenIo.io);
+    return { above, result: { code, out: seenIo.out(), err: seenIo.err() } };
+  });
+  assert.equal(SPEC.includes('`astro-kit: <pkg> is not installed; run npm ci --ignore-scripts`'), true);
+  assert.deepEqual(seen, {
+    above: undefined,
+    result: { code: 1, out: '', err: 'astro-kit: astro is not installed; run npm ci --ignore-scripts\n' },
+  });
+});
+
+test('a thrown error prints its message and gives 1', async () => {
+  const seen = await inTempAsync(fakeAstro(0, { other: './bin/astro.mjs' }), async (root) => {
+    const seenIo = recorder();
+    const code = await main(['build'], root, seenIo.io);
+    return { code, out: seenIo.out(), err: seenIo.err(), ran: runOf(root) !== undefined };
+  });
+  assert.deepEqual(seen, { code: 1, out: '', err: 'astro-kit: astro has no bin astro\n', ran: false });
+});
+
+test('a usage error runs no tool', async () => {
+  const seen = await inTempAsync(fakeAstro(0), async (root) => {
+    const code = await main(['build', 'extra'], root, recorder().io);
+    return { code, ran: runOf(root) !== undefined };
+  });
+  assert.deepEqual(seen, { code: 2, ran: false });
+});
+
+// tokens
+
+/** The smallest design document: the theme `light`, one color, and one row of each required kind. */
+const DESIGN_MD = [
+  '## Themes',
+  '',
+  '| Theme | Use |',
+  '|---|---|',
+  '| light | The one theme. |',
+  '',
+  '## Color',
+  '',
+  '| Token | light | Use |',
+  '|---|---|---|',
+  '| `--color-text` | `#222222` | Text. |',
+  '',
+  '## Typography',
+  '',
+  '| Token | Value | Use |',
+  '|---|---|---|',
+  '| `--font-body` | `system-ui, sans-serif` | Body text. |',
+  '| `--text-m` | `1rem` | Body text. |',
+  '',
+  '## Spacing',
+  '',
+  '| Token | Value | Use |',
+  '|---|---|---|',
+  '| `--space-2` | `0.5rem` | A small gap. |',
+  '',
+  '## Breakpoints',
+  '',
+  '| Name | Width | Use |',
+  '|---|---|---|',
+  '',
+  '## Contrast pairs',
+  '',
+  '| Foreground | Background | Role | For |',
+  '|---|---|---|---|',
+  '| `--color-text` | `--color-text` | text | body |',
+  '',
+].join('\n');
+
+/** The text of 7.7 for `DESIGN_MD` and the one option `auto`: the shape of setting 5. */
+const TOKENS_CSS = [
+  '/* Generated by @raess/astro-kit from docs/design.md. Do not edit: run npx --no astro-kit tokens. */',
+  '@layer tokens {',
+  '  :root {',
+  '    color-scheme: light;',
+  '    --color-text: #222222;',
+  '    --font-body: system-ui, sans-serif;',
+  '    --text-m: 1rem;',
+  '    --space-2: 0.5rem;',
+  '  }',
+  '}',
+  '',
+].join('\n');
+
+/** The rendering with one value changed by hand, in line 5. */
+const CHANGED_CSS = TOKENS_CSS.replace('#222222', '#222223');
+
+const PROJECT: Files = { 'astro-kit.json': json(SMALLEST), 'docs/design.md': DESIGN_MD };
+
+const WROTE = 'astro-kit tokens: wrote src/styles/tokens.css\n';
+
+test('astro-kit tokens writes the file; --check passes for it and fails after a change by hand', async () => {
+  const seen = await inTempAsync(PROJECT, async (root) => {
+    const css = join(root, TOKENS_FILE);
+    const run = async (...argv: string[]) => {
+      const seenIo = recorder({ [SUMMARY_VARIABLE]: join(root, SUMMARY_FILE) });
+      const code = await main(argv, root, seenIo.io);
+      return { code, out: seenIo.out(), ids: idsIn(seenIo.err()), css: textOf(css) };
+    };
+    const steps = [await run('tokens'), await run('tokens', '--check')];
+    writeFileSync(css, CHANGED_CSS);
+    steps.push(await run('tokens', '--check'), await run('tokens'), await run('tokens', '--check'));
+    return steps;
+  });
+  assert.deepEqual(seen, [
+    { code: 0, out: WROTE, ids: [], css: TOKENS_CSS },
+    { code: 0, out: '', ids: [], css: TOKENS_CSS },
+    { code: 1, out: '', ids: ['design-tokens'], css: CHANGED_CSS },
+    { code: 0, out: WROTE, ids: [], css: TOKENS_CSS },
+    { code: 0, out: '', ids: [], css: TOKENS_CSS },
+  ]);
+});
+
+test('astro-kit tokens --check prints the finding with its place and its hint, also into the job summary', async () => {
+  const seen = await inTempAsync({ ...PROJECT, [TOKENS_FILE]: CHANGED_CSS }, async (root) => {
+    const seenIo = recorder({ [SUMMARY_VARIABLE]: join(root, SUMMARY_FILE) });
+    const code = await main(['tokens', '--check'], root, seenIo.io);
+    return { code, out: seenIo.out(), err: seenIo.err(), summary: textOf(join(root, SUMMARY_FILE)) };
+  });
+  assert.equal(seen.code, 1);
+  assert.equal(seen.out, '');
+  const lines = seen.err.split('\n');
+  assert.equal(lines.length, 5);
+  assert.equal(lines[0], 'astro-kit: 1 finding');
+  assert.equal(
+    lines[1]?.startsWith(`✗ [design-tokens] src/styles/tokens.css:5: ${getRule('design-tokens').message} (`),
+    true,
   );
-  assert.equal(code, 1);
+  assert.equal(lines[2], '    fix: run npx --no astro-kit tokens');
+  assert.equal(lines[3], '    rule: node_modules/@raess/astro-kit/docs/standards.md#design-tokens');
+  assert.equal(lines[4], '');
+  assert.equal(seen.summary, inSummary(seen.err.slice(0, -1)));
+});
+
+interface TokensCase {
+  name: string;
+  files: Files;
+  argv: readonly string[];
+  ids: readonly string[];
+  /** The text of tokens.css after the run, or `undefined` when the file must not exist. */
+  css: string | undefined;
+}
+
+const BROKEN_MD = DESIGN_MD.replace('`1rem`', '`1 rem`');
+
+const TOKENS_FAILURES: readonly TokensCase[] = [
+  {
+    name: 'a design document that is not valid: design-format, and nothing is written',
+    files: { ...PROJECT, 'docs/design.md': BROKEN_MD },
+    argv: ['tokens'],
+    ids: ['design-format'],
+    css: undefined,
+  },
+  {
+    name: 'a design document that is not valid leaves an existing file as it is',
+    files: { ...PROJECT, 'docs/design.md': BROKEN_MD, [TOKENS_FILE]: CHANGED_CSS },
+    argv: ['tokens'],
+    ids: ['design-format'],
+    css: CHANGED_CSS,
+  },
+  {
+    name: '--check with a design document that is not valid: design-format only',
+    files: { ...PROJECT, 'docs/design.md': BROKEN_MD, [TOKENS_FILE]: CHANGED_CSS },
+    argv: ['tokens', '--check'],
+    ids: ['design-format'],
+    css: CHANGED_CSS,
+  },
+  {
+    name: 'no design document',
+    files: { 'astro-kit.json': json(SMALLEST) },
+    argv: ['tokens'],
+    ids: ['design-format'],
+    css: undefined,
+  },
+  {
+    name: 'no settings',
+    files: { 'docs/design.md': DESIGN_MD },
+    argv: ['tokens'],
+    ids: ['config-options'],
+    css: undefined,
+  },
+  {
+    name: 'a mode option without its theme: modes-themes, and nothing is written',
+    files: { ...PROJECT, 'astro-kit.json': json({ ...SMALLEST, modes: { auto: true, dark: true } }) },
+    argv: ['tokens'],
+    ids: ['modes-themes'],
+    css: undefined,
+  },
+  {
+    name: '--check without the file',
+    files: PROJECT,
+    argv: ['tokens', '--check'],
+    ids: ['design-tokens'],
+    css: undefined,
+  },
+];
+
+for (const c of TOKENS_FAILURES) {
+  test(`astro-kit ${c.argv.join(' ')}: ${c.name}`, async () => {
+    const seen = await inTempAsync(c.files, async (root) => {
+      const seenIo = recorder({ [SUMMARY_VARIABLE]: join(root, SUMMARY_FILE) });
+      const code = await main(c.argv, root, seenIo.io);
+      return {
+        code,
+        out: seenIo.out(),
+        ids: idsIn(seenIo.err()),
+        css: textOf(join(root, TOKENS_FILE)),
+        summaryIds: idsIn(textOf(join(root, SUMMARY_FILE)) ?? ''),
+      };
+    });
+    assert.deepEqual(seen, { code: 1, out: '', ids: [...c.ids], css: c.css, summaryIds: [...c.ids] });
+  });
+}
+
+// The process
+
+interface Exit {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+/** Runs the command line as a process in a folder, as `npx --no astro-kit` does. No test runs a real tool. */
+function spawnCli(root: string, args: readonly string[], summaryFile = ''): Exit {
+  const done = spawnSync(process.execPath, [CLI, ...args], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, NODE_TEST_CONTEXT: undefined, [SUMMARY_VARIABLE]: summaryFile },
+    timeout: 60_000,
+  });
+  return { status: done.status, stdout: done.stdout, stderr: done.stderr };
+}
+
+test('the process: help gives the usage on stdout and the status 0', () => {
+  const seen = inTemp({}, (root) => [spawnCli(root, []), spawnCli(root, ['help']), spawnCli(root, ['--help'])]);
+  const usage: Exit = { status: 0, stdout: `${USAGE}\n`, stderr: '' };
+  assert.deepEqual(seen, [usage, usage, usage]);
+});
+
+test('the process: an unknown command or flag gives the usage on stderr and the status 2', () => {
+  const seen = inTemp({}, (root) => [
+    spawnCli(root, ['nope']),
+    spawnCli(root, ['tokens', '--x']),
+    spawnCli(root, ['check']),
+  ]);
+  const usage: Exit = { status: 2, stdout: '', stderr: `${USAGE}\n` };
+  assert.deepEqual(seen, [usage, usage, usage]);
+});
+
+test('the process: build has the status and the output of the tool, also from a folder below node_modules', () => {
+  const seen = inTemp({ ...fakeAstro(5), 'cases/a/astro-kit.json': '{}' }, (root) => {
+    const exit = spawnCli(join(root, 'cases/a'), ['build'], join(root, SUMMARY_FILE));
+    return {
+      exit,
+      run: runOf(root),
+      cwd: realpathSync(join(root, 'cases/a')),
+      summary: textOf(join(root, SUMMARY_FILE)),
+    };
+  });
+  assert.deepEqual(seen.exit, { status: 5, stdout: 'fake astro: stdout\n', stderr: 'fake astro: stderr\n' });
+  assert.deepEqual(seen.run, { args: ['build'], cwd: seen.cwd, telemetry: '1' });
+  assert.equal(seen.summary, '\nastro build failed; see the job log.\n');
+});
+
+test('the process: build without astro gives the status 1', () => {
+  const seen = inTemp({}, (root): WithoutAstro => {
+    // As above: with an astro in a folder above the temp folder, the process is not started.
+    const above = findBin(root, 'astro');
+    return above === undefined ? { above, result: spawnCli(root, ['build']) } : { above };
+  });
+  assert.deepEqual(seen, {
+    above: undefined,
+    result: { status: 1, stdout: '', stderr: 'astro-kit: astro is not installed; run npm ci --ignore-scripts\n' },
+  });
+});
+
+test('the process: tokens writes the file, and tokens --check has the status 1 after a change by hand', () => {
+  const seen = inTemp(PROJECT, (root) => {
+    const css = join(root, TOKENS_FILE);
+    const summaryFile = join(root, SUMMARY_FILE);
+    const step = (...args: string[]) => {
+      const exit = spawnCli(root, args, summaryFile);
+      return { status: exit.status, stdout: exit.stdout, ids: idsIn(exit.stderr), css: textOf(css) };
+    };
+    const steps = [step('tokens'), step('tokens', '--check')];
+    const before = textOf(summaryFile);
+    writeFileSync(css, CHANGED_CSS);
+    steps.push(step('tokens', '--check'), step('tokens'), step('tokens', '--check'));
+    return { steps, before, summaryIds: idsIn(textOf(summaryFile) ?? '') };
+  });
+  assert.deepEqual(seen.steps, [
+    { status: 0, stdout: WROTE, ids: [], css: TOKENS_CSS },
+    { status: 0, stdout: '', ids: [], css: TOKENS_CSS },
+    { status: 1, stdout: '', ids: ['design-tokens'], css: CHANGED_CSS },
+    { status: 0, stdout: WROTE, ids: [], css: TOKENS_CSS },
+    { status: 0, stdout: '', ids: [], css: TOKENS_CSS },
+  ]);
+  assert.equal(seen.before, undefined);
+  assert.deepEqual(seen.summaryIds, ['design-tokens']);
+});
+
+test('the process: a design document that is not valid gives the status 1 and no file', () => {
+  const seen = inTemp({ ...PROJECT, 'docs/design.md': BROKEN_MD }, (root) => {
+    const exit = spawnCli(root, ['tokens']);
+    return { status: exit.status, stdout: exit.stdout, ids: idsIn(exit.stderr), css: textOf(join(root, TOKENS_FILE)) };
+  });
+  assert.deepEqual(seen, { status: 1, stdout: '', ids: ['design-format'], css: undefined });
 });

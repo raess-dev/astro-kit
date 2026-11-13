@@ -1,22 +1,12 @@
 # Changelog
 
-Each version has one line per change. A major says what breaks and how a site fixes it.
+## Unreleased
 
-## 0.1.0
-
-First release.
-
-- The Astro 7.4 integration: options in `astro-kit.json`, fixed config shims, locked Astro settings, and the
-  supply-chain checks on `package.json`.
-- The rule registry and `docs/standards.md`, generated from it.
-- Build audits: scripts and speculation rules, budgets, images and fonts, head and structured data, headings,
-  hreflang, links and click depth, facts, transcreation and language, the CSS contract, the CSP, HTML validity,
-  forms, legal pages, media and SVG.
-- Browser checks in Chromium: axe in light and dark, focus, targets, reflow, text spacing, forced colours, keyboard,
-  no-JS, contrast pairs, and the performance pass.
-- Cloudflare Workers static assets output: `_headers`, `_redirects`, the sitemap, `robots.txt` and `security.txt`.
-- `features.forms`: the contact endpoint, mail through `send_email`, and the weekly probe.
-- `features.islands`: Solid 1.9 islands with the hydration hash in the CSP.
-- The CLI: `init`, `check`, `build`, `test`, `ci`, `smoke`, `routes import`, `provision zone` and `feedback send`.
-- `Page.astro`, `LocaleLinks.astro`, `ContactForm.astro` and `base.css`.
-- The Biome and TypeScript presets, and the agent docs and recipes.
+- The kit starts again from `docs/spec.md`. Milestone M0: the package skeleton, the rule registry with levels and
+  waivers, the docs generator and the kit workflow.
+- Milestone M2: the schemas of `astro-kit.json`, `site.json`, `schedule.json`, `glossary.json` and `redirects.json`,
+  the three source shims, the checks on `package.json`, `src/` and `public/`, and preflight, which runs the first 15
+  config-stage rules in a fixed order.
+- Milestone M3: the integration with its four hooks, the locked Astro config, the kit CSS, the token generator, the
+  mode script, the seven edge files, and the commands `build` and `tokens`, with 12 more rules on the config, the
+  routes, `docs/design.md`, `tokens.css`, `wrangler.jsonc`, `_headers` and `_redirects`.

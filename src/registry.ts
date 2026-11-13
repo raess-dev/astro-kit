@@ -1,15 +1,22 @@
 /**
  * The rule registry: the single source of every check the kit runs.
- * docs/standards.md is generated from it (`npm run docs`), so docs and checks cannot drift.
- * Each rule: a stable id, a group, the standard in one line, the failure message and a fix hint.
+ * docs/standards.md is generated from it (`npm run docs`), so the docs and the checks cannot differ.
+ * Each rule has a stable id, a group, a stage, a level, the waivable mark, the standard as one decidable sentence,
+ * the failure message and a fix hint (specification, section 8).
  */
 
-export type Stage = 'config' | 'routes' | 'build' | 'browser' | 'ci' | 'smoke' | 'zone';
+export type Stage = 'config' | 'build' | 'config + build' | 'browser' | 'ci' | 'smoke' | 'zone';
+
+/** An `error` finding fails its command. A `warn` finding is printed and fails nothing (11.5). */
+export type Level = 'error' | 'warn';
 
 export interface Rule {
   id: string;
   group: string;
   stage: Stage;
+  level: Level;
+  /** True when the owner may switch this rule off for one place, until a date (section 8, Waivers). */
+  waivable: boolean;
   /** The rule, stated once as a decidable condition. */
   standard: string;
   /** What the failure means, printed with the finding. */
@@ -18,1003 +25,419 @@ export interface Rule {
   hint: string;
 }
 
-const r = (id: string, group: string, stage: Stage, standard: string, message: string, hint: string): Rule => ({
-  id,
-  group,
-  stage,
-  standard,
-  message,
-  hint,
-});
+/**
+ * The waivable rules of section 8. An entry that ends with `-*` covers every rule id with that prefix.
+ * No rule of the config, routes, csp, edge, origins, forms, modes or design groups is here, and no ci, smoke or zone
+ * rule: they protect the trust chain, the visitor's data or the build itself.
+ */
+export const WAIVABLE: readonly string[] = [
+  'budget-*',
+  'js-budget',
+  'images-attrs',
+  'images-format',
+  'images-priority',
+  'fonts-limit',
+  'head-title',
+  'head-description',
+  'head-og',
+  'head-jsonld',
+  'headings-*',
+  'links-generic',
+  'links-same-name',
+  'links-depth',
+  'facts-value',
+  'content-*',
+  'css-element-coverage',
+  'css-unused',
+  'media-*',
+  'svg-name',
+  'html-validate',
+  'legal-statement',
+  'a11y-*',
+  'contrast-pairs',
+  'perf-*',
+];
 
+/** Says whether section 8 lists the rule id as waivable. */
+export function isWaivable(id: string): boolean {
+  return WAIVABLE.some((entry) => (entry.endsWith('-*') ? id.startsWith(entry.slice(0, -1)) : id === entry));
+}
+
+/** Builds one registry entry. The waivable mark comes from the one list above. */
+export const r = (
+  id: string,
+  group: string,
+  stage: Stage,
+  standard: string,
+  message: string,
+  hint: string,
+  level: Level = 'error',
+): Rule => ({ id, group, stage, level, waivable: isWaivable(id), standard, message, hint });
+
+/**
+ * Every rule of the kit, in the order of section 8. Each milestone adds the rules that it delivers (specification,
+ * section 14). A standard holds the whole rule, also where a later milestone adds a part of the check.
+ */
 export const RULES: readonly Rule[] = [
-  // ── config ───────────────────────────────────────────────────────────────
+  // config
   r(
     'config-options',
     'config',
     'config',
-    'astro-kit.json exists and matches the kit schema.',
-    'astro-kit.json is missing or invalid.',
-    'Correct the fields named in the detail. The field table is in docs/standards.md#config-options.',
+    '`astro-kit.json` exists and matches the strict schema of the kit. `site.json` at the root exists and matches its schema, and `glossary.json`, when it exists, matches its schema. Findings name the field path. A looser limit fails.',
+    'The settings, the facts or the glossary are missing or not valid.',
+    'Fix the field that the finding names. `npx --no astro-kit settings --html settings.html` shows every setting with its rule.',
   ),
   r(
     'config-shim',
     'config',
     'config',
-    'astro.config.mjs, biome.json and tsconfig.json equal the kit shims byte for byte.',
-    'A shim file differs from the kit version.',
-    'Restore it with `npx --no astro-kit init --shims`. Put options in astro-kit.json, never in the shims.',
+    "`astro.config.mjs`, `biome.json` and `tsconfig.json` equal the kit shims after CRLF→LF and trimEnd + newline, and no other `astro.config.*` file exists. The root `biome.json` is the only Biome config: no other file named `biome.json`, `biome.jsonc`, `.biome.json` or `.biome.jsonc` exists in any folder of the project, outside `.git` and the folders that Biome skips (`node_modules`, `dist`, `.astro`, `.wrangler`). The rendered protected files equal the kit's rendering for the settings, compared in the same way: `.github/workflows/site.yml`, `.github/workflows/site-merge.yml`, `.github/dependabot.yml`, `.github/kit-identity.sh`, `.github/CODEOWNERS` and `.npmrc` (a file that does not match gets the hint of the protected task). `AGENTS.md` holds the kit block, and `CLAUDE.md` holds the line `@AGENTS.md`. Feature shims (`eslint.config.mjs`, `src/pages/api/forms/[form].ts`) are compared in `check`.",
+    'A file that the kit manages is missing or differs from the text of the kit, or the project holds a second config file.',
+    'For a shim, run `npx --no astro-kit init --shims --force`. Remove every other Astro or Biome config file. For a protected file: The protected files do not match the settings. Say so in the pull request: the owner starts the protected task for this branch.',
   ),
   r(
     'config-locked',
     'config',
     'config',
-    'No integration or config changes a value the kit locks.',
-    'A locked Astro setting was changed after the kit set it.',
-    'Remove the override. The kit owns output, trailingSlash, build, image, security, prefetch, i18n and compressHTML.',
+    'No integration or config changes a value that the kit locks in the Astro config: `site`, `output`, `trailingSlash`, `prerenderConflictBehavior`, `compressHTML`, `build`, `image`, `security`, `prefetch`, `markdown`, `session`, `vite.build.cssTarget` and `vite.ssr.noExternal`. The finding names the key, and its detail is `<actual> instead of <expected>`.',
+    'A value that the kit locks in the Astro config was changed.',
+    'Remove the integration or the setting that changes the value. Every option of a site lives in `astro-kit.json`.',
   ),
   r(
     'config-adapter',
     'config',
     'config',
-    'Projects never set an adapter; the kit adds @astrojs/cloudflare when features.forms is on.',
-    'An adapter is set in the project config.',
-    'Remove it and set features.forms in astro-kit.json instead.',
+    'The project sets no adapter; the kit adds `@astrojs/cloudflare` only with forms.',
+    'The Astro config has an adapter that the kit did not add.',
+    'Remove the adapter. For a form, the owner turns on `features.forms`, and the kit adds the adapter.',
   ),
   r(
     'config-experimental',
     'config',
     'config',
-    'No experimental Astro flag is enabled.',
-    'An experimental flag is on.',
-    'Remove it. clientPrerender in particular breaks the single speculation-rules source.',
+    "No truthy experimental flag other than `collectionStorage: 'single-file'`.",
+    'The Astro config turns on an experimental flag.',
+    'Remove the experimental flag.',
   ),
   r(
     'config-i18n',
     'config',
     'config',
-    'Astro i18n stays unset; the kit manifest builds every URL.',
-    'Astro i18n is configured.',
-    'Remove the i18n block; set locales in astro-kit.json.',
+    "The project sets no `i18n`; the resolved `i18n` equals the kit's.",
+    'The `i18n` of the Astro config is not the one that the kit sets.',
+    'Remove `i18n` from the Astro config. The kit sets it from `locales` and `defaultLocale` in `astro-kit.json`.',
   ),
   r(
     'config-imports',
     'config',
-    'build',
-    'No source imports astro:i18n or astro:transitions.',
-    'A forbidden virtual module is imported.',
-    'Use alternates() and pagePaths() for URLs. Use native CSS view transitions; ClientRouter breaks the CSP.',
+    'config',
+    'No source imports `astro:transitions` or `astro:transitions/client` (regex on `src/**/*.{astro,ts,tsx,js,mjs,jsx,mts,cts,cjs}`). White space and comments may stand between `from`, `import(` or `require(` and the module name.',
+    'A source file imports `astro:transitions`.',
+    'Remove the import and use native CSS view transitions.',
   ),
   r(
     'config-suppression',
     'config',
     'config',
-    'src/ contains no biome-ignore, @ts-ignore, @ts-expect-error or @ts-nocheck.',
-    'A suppression comment hides a check.',
-    'Fix the underlying problem instead of silencing it.',
+    'Nothing takes a file out of the checks. `src/` contains no `biome-ignore`, `@ts-ignore`, `@ts-expect-error` or `@ts-nocheck`, in any letter case (`.astro .ts .tsx .js .mjs .jsx .mts .cts .cjs .css .md .mdx`). Each of these files has at most 1,048,576 B. No folder under `src/` or `public/` is named `node_modules`, `dist`, `.astro` or `.wrangler`, and no symbolic link there leads into such a folder. No symbolic link under `src/` or `public/` leads out of the project, and neither folder is such a link.',
+    'A comment switches a check off, or a file lies where the checks do not read it.',
+    'Remove the comment and fix the cause. Rename the folder, split the large file, or replace the link with a file inside the project. If the check is wrong, add an entry to `KIT-FEEDBACK.md`.',
+  ),
+  r(
+    'config-server',
+    'config',
+    'config',
+    'The project has no server code of its own: no `src/middleware.*` file and no `src/middleware/` folder, no `src/actions/` folder and no `src/actions.*` file, and no `server:defer` in a `.astro` file under `src/`.',
+    'The project has server code of its own.',
+    'Remove the middleware, the actions and `server:defer`. For a form, use the forms feature of the kit.',
+  ),
+  r(
+    'config-waiver',
+    'config',
+    'config',
+    'Each entry of `waivers` names a waivable rule. Its `until` is today or later, and at most 90 days after today (UTC). The message for an old entry: `the waiver for <rule> on <where> ended on <until>: fix the page, or ask the owner for a new date`.',
+    'A waiver is not valid.',
+    'Remove the waiver, or name a waivable rule and ask the owner for an `until` from today to 90 days ahead.',
   ),
   r(
     'config-overrides',
     'config',
     'config',
-    'package.json has no overrides.',
-    'package.json overrides a dependency.',
-    'Remove overrides; dependency versions come from the lockfile and Dependabot.',
+    '`package.json` has no `overrides` or `resolutions`.',
+    '`package.json` changes which package versions npm installs.',
+    'Remove `overrides` and `resolutions` from `package.json`.',
   ),
   r(
     'config-dep-spec',
     'config',
     'config',
-    'Every third-party dependency comes from the npm registry by version.',
-    'A dependency uses a git, URL, file or link spec.',
-    'Install it from npm with an exact version.',
+    'Every dependency other than the kit has a spec of the npm registry: a version, a range or a tag. The trimmed spec matches `^(?!\\.)(?!.*\\.(tgz|tar|tar\\.gz)$)[\\w.*~^<>=|+ -]*$` in any letter case, in dependencies, devDependencies or optionalDependencies.',
+    'A dependency does not come from the npm registry.',
+    'Install the package from the npm registry with an exact version, for example `1.2.3`.',
   ),
   r(
     'config-dep-allowlist',
     'config',
     'config',
-    'Dependencies are limited to astro, the kit, enabled feature packages and astro-kit.json dependencies.',
-    'A dependency is not allowed.',
-    'Remove it, or ask the owner to add it to astro-kit.json dependencies.',
+    'Dependencies are only: `astro`, `@raess/astro-kit`, `wrangler`; with forms `@astrojs/cloudflare`; with islands `@astrojs/solid-js`, `solid-js`, `eslint`, `eslint-plugin-solid`, `typescript-eslint`; plus `dependencies`. The rule reads dependencies, devDependencies, optionalDependencies and peerDependencies. A `package.json` that is not a JSON object fails, and so does a section that is not an object.',
+    'A dependency is not on the allowed list, or `package.json` cannot be read.',
+    'Remove the package, or ask the owner to add it to `dependencies` in `astro-kit.json`. Fix `package.json` when it is not a JSON object with objects as dependency sections.',
   ),
   r(
     'config-public-shadow',
     'config',
     'config',
-    'public/ holds no file the kit generates.',
-    'A public/ file would shadow kit output.',
-    'Delete it. The kit writes robots.txt, sitemap.xml, _headers, _redirects and security.txt.',
+    '`public/` holds none of `robots.txt`, `_headers`, `_redirects`, `.well-known/security.txt`, `_kit`, `sitemap*.xml`.',
+    '`public/` holds a file that the kit writes.',
+    'Delete the file from `public/`. The kit writes it into `dist/` at the end of the build.',
   ),
   r(
     'config-wrangler',
     'config',
     'config',
-    'wrangler.jsonc serves dist as assets, keeps workers.dev and preview URLs off in production, isolates env.preview, and uses only full-line // comments and no trailing commas, so the deploy job can read it.',
-    'wrangler.jsonc does not match the kit shape.',
-    'Compare with templates/wrangler.jsonc; routes must be a custom_domain and env.preview must set routes to [].',
+    "Only `wrangler.jsonc` exists (no `.json` or `.toml`). It equals the kit's rendering for the settings, after CRLF→LF and trimEnd + newline. The rendering has full-line `//` comments only and no trailing commas, because the deploy job reads it with `jq`. A file that does not match gets the hint of the protected task.",
+    '`wrangler.jsonc` is missing or differs from the text that the kit renders for the settings, or the project holds a second wrangler config.',
+    'The protected files do not match the settings. Say so in the pull request: the owner starts the protected task for this branch.',
   ),
-  r(
-    'config-kit-identity',
-    'config',
-    'ci',
-    'The kit in package-lock.json resolves from its exact registry.npmjs.org tarball URL with an integrity hash, no npm-shrinkwrap.json exists, .npmrc sets ignore-scripts=true, and the kit is not older than on the base branch.',
-    'The install source of the kit cannot be trusted.',
-    'Install @raess/astro-kit from npm with an exact version. Never downgrade it.',
-  ),
-
-  // ── routes ───────────────────────────────────────────────────────────────
+  // routes
   r(
     'routes-on-demand',
     'routes',
-    'routes',
-    'Every route is prerendered, except /api/* routes declared by an enabled feature.',
-    'An undeclared on-demand route exists.',
-    'Prerender the page, or enable the feature that owns the route.',
+    'config',
+    'Every project route is prerendered. The one exception, with forms: the route with the pattern `/api/forms/[form]` whose entrypoint is the feature shim `src/pages/api/forms/[form].ts`.',
+    'A route of the project is rendered on demand.',
+    'Remove `export const prerender = false` from the route, or remove the route. For a form, use the forms feature of the kit.',
   ),
   r(
     'routes-slug',
     'routes',
-    'routes',
-    'Slugs use a–z, 0–9 and -, are unique per locale, and avoid reserved segments.',
-    'A slug is invalid, duplicated or reserved.',
-    'Rename the slug. Reserved: locale codes and system paths such as _astro, _actions, api and 404.',
-  ),
-  r(
-    'routes-duplicate',
-    'routes',
-    'routes',
-    'No two pages emit the same path.',
-    'Two pages emit the same path.',
-    'Change one slug.',
-  ),
-  r(
-    'routes-translation',
-    'routes',
-    'routes',
-    'Every page has a default-locale entry, and other locales either have it or declare it missing.',
-    'A page is missing in a locale without being declared missing.',
-    "Transcreate the page, or add the locale to the default entry's `missing` list.",
+    'config + build',
+    'Every built page path other than `/404.html` ends in `/` (`…/index.html`), and each of its segments matches `^[a-z0-9]+(-[a-z0-9]+)*$`. A default-locale path does not start with a locale code or a reserved segment (`_astro`, `_actions`, `_server-islands`, `_image`, `_kit`, `api`, `500`, `.well-known`). A non-default path has no reserved segment after `/<code>/`. A `404` segment is left to `routes-404`, so it reports once. **The endpoint clause,** checked on the resolved routes: a project route of type `endpoint`, other than the form shim, is a static file route. Its pattern ends with a literal file extension `.<ext>` (`[a-z0-9]+`) that is not `html` or `htm`. Its first segment holds no parameter (`[`) and is not a reserved segment. When the first segment is a locale code, the second segment holds no parameter and is not a reserved segment. A parameter can stand for any name, so the kit cannot know which file it writes there. For example, `/[name].txt` and `/[dir]/[file].json` fail, and `/live.json` and `/feeds/[lang].json` pass. Its pattern is none of `/robots.txt`, `/_headers` and `/_redirects`, and no `/sitemap*.xml`. So a project endpoint can never write the file of a page or a file that the kit writes. `routes-on-demand` still requires it to be prerendered.',
+    'A page path is not a clean slug path, or an endpoint is not a static file route.',
+    'Rename the page so that each segment has only lower-case letters, digits and single hyphens, and starts with no reserved segment. Give an endpoint a fixed first segment and a file extension other than `.html`.',
   ),
   r(
     'routes-redirects',
     'routes',
-    'build',
-    'redirects.json has no chains, no target that is itself a source, every target is built, and it fits Cloudflare limits.',
-    'redirects.json is invalid.',
-    'Point every from directly at its final target; mark removed pages `gone`.',
+    'config + build',
+    '`redirects.json` rows are `{from, to}` or `{from, gone: true}`. `from` starts with `/` and has no whitespace, no `?` ("query strings cannot be matched; mark it gone or add a zone Single Redirect") and no `#` ("fragments cannot be matched: a browser never sends the text after #"). No duplicate `from`. `to` starts with `/`, not with `//` or `/\\`, and has no whitespace, so a row writes one line and never leaves the site. Neither `from` nor `to` holds a backslash, and neither path holds a `.` or `..` segment, also not as `%2e`: Cloudflare removes such a segment, so it would store another path, and a `to` such as `/.//host/` would leave the site. The path of a `to` ends before its `?` or `#`. No chains (the path of no `to` is a `from`). Limits: 2,000 static, 100 dynamic, 1,000 characters per line. Every literal `to` is built (patterns, and `/api/` with forms, are skipped).',
+    '`redirects.json` is not valid.',
+    'Fix the row that the finding names. Point each `to` at a built page, or mark the row `gone`.',
   ),
-  r(
-    'routes-removed',
-    'routes',
-    'ci',
-    'A from on the base branch is never dropped, and every URL in the live sitemap is built or redirected.',
-    'A published URL would break.',
-    'Add a redirects.json row: {from, to} for a move, {from, gone: true} for a removal.',
-  ),
-
-  // ── js and speculation ───────────────────────────────────────────────────
-  r(
-    'js-script',
-    'js',
-    'build',
-    'Pages ship no script except the speculation rules, unless features.scripts or features.islands allows it.',
-    'A page ships an unexpected script.',
-    'Use HTML and CSS first. Enable features.scripts or features.islands only when the tier test in docs/recipes/component.md says so.',
-  ),
-  r(
-    'js-prefetch-attr',
-    'js',
-    'build',
-    'No link carries data-astro-prefetch; the kit owns prefetching.',
-    'A data-astro-prefetch attribute was found.',
-    'Remove the attribute. Prefetch is configured in astro-kit.json.',
-  ),
-  r(
-    'js-directive',
-    'js',
-    'build',
-    'Islands hydrate only with client:visible, client:idle or client:media.',
-    'An island uses client:load or client:only.',
-    'Use client:visible; the markup must render on the server.',
-  ),
-  r(
-    'js-budget',
-    'js',
-    'build',
-    'Island JS stays within 20 KB and the prefetch chunk within 2 KB, compressed.',
-    'A script budget is exceeded.',
-    'Split or remove the island; prefer HTML and CSS.',
-  ),
-  r(
-    'speculation-block',
-    'speculation',
-    'build',
-    'With speculationRules on, each page has exactly one kit speculation-rules block whose hash is in the CSP.',
-    'The speculation-rules block is missing, duplicated, changed or unhashed.',
-    'Render pages with the kit Page component and do not add your own block.',
-  ),
-
-  // ── budgets ──────────────────────────────────────────────────────────────
-  r(
-    'budget-head',
-    'budgets',
-    'build',
-    'Each page is 14 KB or less compressed up to </head>.',
-    'The head is over budget.',
-    'Reduce inline CSS or component imports on this layout; the breakdown names the largest part.',
-  ),
-  r(
-    'budget-document',
-    'budgets',
-    'build',
-    'Each page is 30 KB or less compressed.',
-    'The document is over budget.',
-    'Split the page or trim markup.',
-  ),
-  r(
-    'budget-dom',
-    'budgets',
-    'build',
-    'Each page has at most 1,400 elements and a depth of 32.',
-    'The DOM is too large or too deep.',
-    'Flatten wrappers and split long pages.',
-  ),
-  r(
-    'budget-fonts',
-    'budgets',
-    'build',
-    'Font files total 100 KB or less.',
-    'Fonts are over budget.',
-    'Subset the font, drop weights, or use the system stack.',
-  ),
-
-  // ── images and fonts ─────────────────────────────────────────────────────
-  r(
-    'images-src',
-    'images',
-    'build',
-    'Every img comes from the image pipeline under /_astro/.',
-    'An image bypasses the pipeline.',
-    'Import the image from src/assets and use <Picture> or <Image>.',
-  ),
-  r(
-    'images-attrs',
-    'images',
-    'build',
-    'Every img has width, height and alt.',
-    'An image lacks width, height or alt.',
-    'Use the Astro image components and give alt text; decorative images use alt="".',
-  ),
-  r(
-    'images-format',
-    'images',
-    'build',
-    'Every picture offers AVIF sources with a WebP img fallback.',
-    'A picture is not AVIF plus WebP.',
-    'Use <Picture formats={["avif"]} fallbackFormat="webp">.',
-  ),
-  r(
-    'images-priority',
-    'images',
-    'build',
-    'A page has at most one priority image.',
-    'More than one image has fetchpriority high.',
-    'Keep priority on the one LCP image.',
-  ),
+  // images
   r(
     'images-public',
     'images',
     'config',
-    'public/ holds no raster image except the icons and the OG fallback.',
-    'A raster image sits in public/.',
-    'Move it to src/assets and import it.',
+    '`public/` holds no raster file (`.png .jpg .jpeg .gif .webp .avif .bmp .tif .tiff`) except `favicon.ico`, `apple-touch-icon.png`, `og.png`, `og.jpg`.',
+    '`public/` holds an image that Astro does not optimize.',
+    'Move the image to `src/assets/` and render it with `<Picture>`.',
   ),
   r(
     'images-original',
     'images',
     'config',
-    'Source images in src/assets are 2560 px and 3 MB or less.',
-    'A source image is too large.',
-    'Export a smaller original (2560 px on the long edge, under 3 MB). Astro makes every smaller size.',
+    'Every raster file under `src/` is ≤ 2,560 px on its long edge and ≤ 3,145,728 B. The size is read from the PNG, GIF, WebP or JPEG header. A `.png`, `.gif`, `.webp`, `.jpg` or `.jpeg` file without such a header fails. So does a JPEG file with more than 4,096 markers and fill bytes before its frame header. A raster file of another format has the byte limit only.',
+    'An image original is too large, or the kit cannot read its size.',
+    'Scale the file down to at most 2,560 px on its long edge and at most 3,145,728 B. Replace a file that has no image header with the real image.',
   ),
-  r(
-    'fonts-limit',
-    'fonts',
-    'build',
-    'At most two font families, local files only, and at most one font preload.',
-    'Font usage breaks the font limits.',
-    'Use the Astro Fonts API with fontProviders.local() and one preload.',
-  ),
-  r(
-    'origins-third-party',
-    'origins',
-    'build',
-    'No page loads a resource from another origin.',
-    'A third-party resource was found.',
-    'Self-host it, or remove it.',
-  ),
-
-  // ── head, headings, hreflang, indexing ───────────────────────────────────
-  r(
-    'head-canonical',
-    'head',
-    'build',
-    'Each page has one absolute self-canonical with a trailing slash.',
-    'The canonical is missing or not self-referencing.',
-    'Render pages with the kit Page component.',
-  ),
-  r(
-    'head-lang',
-    'head',
-    'build',
-    'html lang equals the locale of the route.',
-    'html lang does not match the route locale.',
-    "Pass the entry's locale to Page.",
-  ),
-  r(
-    'head-title',
-    'head',
-    'build',
-    'Titles are 15–70 characters and unique per locale.',
-    'A title is too short, too long or duplicated.',
-    'Write a distinct title for the page.',
-  ),
-  r(
-    'head-description',
-    'head',
-    'build',
-    'Descriptions are 50–160 characters and unique per locale.',
-    'A description is too short, too long or duplicated.',
-    'Write a distinct description for the page.',
-  ),
-  r(
-    'head-og',
-    'head',
-    'build',
-    'Indexable pages have og:title, og:description, og:url equal to the canonical, og:locale as the locale tag with an underscore (de_CH), and a same-origin 1200×630 og:image of 150 KB or less.',
-    'Open Graph tags are incomplete.',
-    'Give the entry an image, or rely on the site default image.',
-  ),
-  r(
-    'head-icons',
-    'head',
-    'build',
-    'Each page links favicon.ico, icon.svg and apple-touch-icon.png.',
-    'An icon link or file is missing.',
-    'Keep the icons that init wrote in public/.',
-  ),
-  r(
-    'head-jsonld',
-    'head',
-    'build',
-    'JSON-LD parses, uses only Organization or one LocalBusiness type, WebPage (with inLanguage), WebSite and Article, shares one organisation @id, and matches site.json and schedule.json.',
-    'Structured data is invalid or disagrees with the facts.',
-    'Edit site.json or schedule.json; never hand-write JSON-LD.',
-  ),
-  r(
-    'headings-h1',
-    'headings',
-    'build',
-    'Each page has exactly one h1.',
-    'A page has zero or several h1 elements.',
-    'Keep one h1 that states the page topic.',
-  ),
-  r(
-    'headings-order',
-    'headings',
-    'build',
-    'Heading levels never skip.',
-    'A heading level is skipped.',
-    'Use the next level down.',
-  ),
-  r(
-    'hreflang-reciprocal',
-    'hreflang',
-    'build',
-    'Every translation lists itself and its siblings, and every sibling lists it back.',
-    'hreflang is incomplete or not reciprocal.',
-    "Pass alternates() to Page, or fix the custom route's alternates.",
-  ),
-  r(
-    'hreflang-x-default',
-    'hreflang',
-    'build',
-    'x-default points to the default-locale version of the same page.',
-    'x-default is missing or wrong.',
-    'Pass alternates() to Page.',
-  ),
-  r(
-    'indexing-noindex',
-    'indexing',
-    'build',
-    'In production only the 404 page is noindex.',
-    'A page has an unexpected robots noindex.',
-    'Remove noindex; drafts are left out of production builds instead.',
-  ),
-
-  // ── links ────────────────────────────────────────────────────────────────
-  r(
-    'links-resolve',
-    'links',
-    'build',
-    'Every same-origin href equals an emitted path byte for byte, and every anchor exists.',
-    'A link is broken or not canonical.',
-    'Use the path from pagePaths() or alternates(), with the trailing slash.',
-  ),
-  r(
-    'links-generic',
-    'links',
-    'build',
-    'No link text is generic, such as "mehr", "ici", "qui" or "here".',
-    'A link has generic text.',
-    'Name the destination in the link text.',
-  ),
-  r(
-    'links-same-name',
-    'links',
-    'build',
-    'Links with the same accessible name on a page share a target.',
-    'Two links share a name but not a target.',
-    'Add context with a .visually-hidden span.',
-  ),
-  r(
-    'links-target-blank',
-    'links',
-    'build',
-    'No link opens a new window.',
-    'A link has target="_blank".',
-    'Remove target.',
-  ),
-  r(
-    'links-depth',
-    'links',
-    'build',
-    'Every indexable page is within three clicks of its locale home.',
-    'A page is too deep or orphaned.',
-    'Link it from the navigation, a parent page or the sitemap page.',
-  ),
-  r(
-    'links-sitemap-page',
-    'links',
-    'build',
-    "Every indexable page links to its locale's sitemap page.",
-    'The sitemap page is not linked.',
-    'Keep the footer from the kit Page component.',
-  ),
-
-  // ── facts and content ────────────────────────────────────────────────────
-  r(
-    'facts-value',
-    'facts',
-    'build',
-    'Every email, phone number, CHE-UID, IBAN and CHF amount in the HTML equals a value in site.json.',
-    'A fact on the page is not in site.json.',
-    'Facts come only from site.json, which the owner edits.',
-  ),
+  // facts
   r(
     'facts-schedule',
     'facts',
     'config',
-    'schedule.json holds opening hours and closures only.',
-    'schedule.json holds something other than hours.',
-    'Move other data to site.json (owner) or the page content.',
+    '`schedule.json` matches its strict schema.',
+    '`schedule.json` is missing or not valid.',
+    'Fix the field that the finding names. Days are `Mo` to `Su`, times are `HH:MM` and dates are `YYYY-MM-DD`.',
   ),
+  // design
   r(
-    'content-stale',
-    'content',
-    'build',
-    'A translation is current: its transcreatedFrom matches the brief hash, and its h2 sections, facts and internal link targets match the default locale.',
-    'A translation is stale.',
-    'Re-transcreate the page from its brief (docs/recipes/content.md), then set transcreatedFrom.',
-  ),
-  r(
-    'content-language',
-    'content',
-    'build',
-    "Main content is written in the page's language.",
-    'A block reads like another locale.',
-    'Transcreate the block; mark foreign phrases with <span lang>.',
-  ),
-  r(
-    'content-copied',
-    'content',
-    'build',
-    "A translation never reuses the default locale's title, description or h1.",
-    'A translation copies the default locale.',
-    'Transcreate it.',
-  ),
-  r(
-    'content-glossary',
-    'content',
-    'build',
-    "Copy uses the glossary's canonical terms and avoids banned variants (de-CH: no ß, no „ “).",
-    'A banned term or character was found.',
-    'Use the canonical term from the glossary.',
-  ),
-  r(
-    'content-intl',
-    'content',
+    'design-format',
+    'design',
     'config',
-    'Dates and money are formatted only with formatDate() and formatMoney().',
-    'toLocale* or new Intl. is used directly.',
-    'Import formatDate or formatMoney from @raess/astro-kit/content.',
+    '`docs/design.md` exists and has the required sections, the exact table headers, known prefixes in the right section, no duplicate names, values that parse (so no color holds `color-mix()` or `color(display-p3 …)`), at least one of the base themes `light` and `dark`, `light` when `light-contrast` is declared, `dark` when `dark-contrast` is declared, a value or a fallback for every Color cell, ≥ 1 Color row, ≥ 1 `--font-` and ≥ 1 `--text-` row, ≥ 1 Spacing row, and ≥ 1 pair. The other design rules run only when it passes.',
+    '`docs/design.md` is missing or does not have the form that the kit reads.',
+    'Fix the section, the table header, the token name or the value that the finding names. The owner approves each change to `docs/design.md`.',
   ),
   r(
-    'content-messages',
-    'content',
-    'build',
-    'UI messages have the same keys in every locale and are NFC-normalised. A locale without kit UI text (other than de, fr, it, en) defines every kit key itself.',
-    'Message keys differ between locales, or a locale has no UI text.',
-    'Add the missing keys to src/content/messages/<code>.json.',
+    'design-tokens',
+    'design',
+    'config + build',
+    '`src/styles/tokens.css` equals the text that the kit renders from `docs/design.md` and the mode options, after CRLF→LF and trimEnd + newline. The hint is `run npx --no astro-kit tokens`. Built: the built `tokens` layer defines every token and helper parameter of `docs/design.md`, and no other custom property. No rule compares values in built CSS.',
+    '`tokens.css` is not the rendering of `docs/design.md` and the mode options.',
+    'run npx --no astro-kit tokens',
   ),
-
-  // ── css ──────────────────────────────────────────────────────────────────
+  // modes
   r(
-    'css-layer-order',
-    'css',
-    'build',
-    'The kit layer order is declared before any other layer.',
-    'The kit layer order is not first.',
-    'Import base.css only through the kit Page component.',
+    'modes-themes',
+    'modes',
+    'config',
+    'The themes of `docs/design.md` serve the enabled mode options. `auto` and `light` need `light`. `dark` needs `dark`. `contrast` needs `light-contrast` when `light` is declared and `dark-contrast` when `dark` is declared. Each declared theme has an enabled option that reaches it: `light` through `auto` or `light`, `dark` through `auto` or `dark`, `light-contrast` and `dark-contrast` through `auto` or `contrast`. It runs only when `design-format` passes.',
+    'The themes of `docs/design.md` and the mode options of `astro-kit.json` do not fit together.',
+    'Ask the owner: either `modes` in `astro-kit.json` changes, or `docs/design.md` gets the missing theme or loses the theme that no option reaches.',
   ),
-  r(
-    'css-var-undefined',
-    'css',
-    'build',
-    'Every var() refers to a defined custom property.',
-    'An undefined custom property is used.',
-    'Define the token in theme.css or use an existing one.',
-  ),
-  r(
-    'css-literal',
-    'css',
-    'build',
-    'Colour literals appear only in token definitions.',
-    'A colour literal is used outside tokens.',
-    'Add a token to theme.css and use var().',
-  ),
-  r(
-    'css-classes',
-    'css',
-    'build',
-    'Global class selectors come only from the kit list; components use scoped styles.',
-    'An unknown global class was found.',
-    'Use a scoped <style> in the component, or one of the kit classes.',
-  ),
-  r(
-    'css-banned',
-    'css',
-    'build',
-    'No style attribute, is:global, 100vw, 100dvw, forced-color-adjust: none, or overflow-x: hidden on html or body.',
-    'A banned CSS pattern was found.',
-    'Use the layout classes; style attributes break the CSP.',
-  ),
-
-  // ── csp and edge ─────────────────────────────────────────────────────────
-  r(
-    'csp-meta',
-    'csp',
-    'build',
-    "Each page has one CSP meta with 'self' plus hashes, no unsafe or wildcard sources, and no executable script before it.",
-    'The CSP meta is missing, weak or late.',
-    'Do not add scripts to <head>; render pages with the kit Page component.',
-  ),
-  r(
-    'csp-hash',
-    'csp',
-    'build',
-    'Every inline script and style is hashed in the CSP.',
-    'An inline script or style is not covered.',
-    'Do not use is:inline, set:html scripts or define:vars.',
-  ),
-  r('csp-base', 'csp', 'build', 'No page has a <base> element.', 'A <base> element was found.', 'Remove it.'),
+  // edge
   r(
     'edge-headers',
     'edge',
     'build',
-    '_headers sets the security headers on /* and immutable caching on /_astro/* only, within Cloudflare limits.',
-    'The generated _headers is invalid.',
-    'This is a kit bug if public/_headers is absent; report it in KIT-FEEDBACK.md.',
+    '`_headers` has ≤ 100 rules, lines ≤ 2,000 characters and no duplicate pattern. `/*` has the seven headers of the kit: nosniff, referrer and CORP exact; COOP `same-origin`, or `same-origin-allow-popups` with a `frame` or `script` origin; the CSP directive set equal to the header policy (compared sorted); HSTS max-age ≥ 31,536,000 with includeSubDomains; each Permissions-Policy item `name=()`, or `=(self)` only for `autoplay` and `fullscreen`, or `=(self "https://<host>" …)` with the sorted hosts of the origins whose `allow` names it. No `X-Frame-Options` or `Cross-Origin-Embedder-Policy` on any rule. Cache-Control only on `/_astro/*` (= `public, max-age=31536000, immutable`) or, with prefetch, on `/*` (= `public, max-age=120`); with prefetch, `! Cache-Control` is required and `/_astro/*` comes after `/*`.',
+    'The built `_headers` file does not hold the headers of the kit, or holds a header that the kit does not allow.',
+    'Remove the integration or the file that changes `_headers`. The kit writes this file at the end of the build.',
   ),
   r(
     'edge-redirects',
     'edge',
     'build',
-    '_redirects fits Cloudflare limits: 2,000 static rules, 100 dynamic, 1,000 characters each.',
-    'The generated _redirects exceeds a limit.',
-    'Collapse redirects.json rows with a splat.',
+    '`_redirects` has ≤ 2,000 static and ≤ 100 dynamic rules, lines ≤ 1,000 characters, line shape `from to [301|302|303|307|308]` with `from` starting `/` and no extra tokens, and static rules before dynamic ones. Each `from` and each `to` also passes the checks of `routes-redirects` on one path: no `?` and no `#` in `from`; `to` starts with `/` and not with `//` or `/\\`; no backslash and no `.` or `..` segment. So a line that another integration left cannot leave the site either.',
+    'The built `_redirects` file is not valid for Cloudflare.',
+    'Fix the rows of `redirects.json`, and remove the integration or the file that adds other lines to `_redirects`.',
   ),
-
-  // ── html, forms, legal, media, svg ───────────────────────────────────────
-  r(
-    'html-validate',
-    'html',
-    'build',
-    'Every page passes html-validate with the kit rules.',
-    'The HTML is invalid.',
-    'Fix the markup at the reported line.',
-  ),
-  r(
-    'html-shell',
-    'html',
-    'build',
-    'The skip link is the first focusable element and targets the single main.',
-    'The page shell is broken.',
-    'Render pages with the kit Page component.',
-  ),
-  r(
-    'forms-fields',
-    'forms',
-    'build',
-    'Every visible input has a label that says required or optional, an autocomplete value and no placeholder.',
-    'A form field breaks the field rules.',
-    'Use the kit ContactForm, or copy its field pattern.',
-  ),
-  r(
-    'forms-safety',
-    'forms',
-    'build',
-    "No form has a file input or a pre-checked box, and every POST form links its locale's privacy page.",
-    'A form breaks the safety rules.',
-    'Remove the input, uncheck the box, add the privacy link.',
-  ),
-  r(
-    'forms-binding',
-    'forms',
-    'config',
-    'With features.forms, wrangler.jsonc has a send_email binding with allowed_destination_addresses.',
-    'The mail binding is missing.',
-    'Add the binding from templates/wrangler.jsonc; the owner sets the addresses.',
-  ),
-  r(
-    'legal-pages',
-    'legal',
-    'build',
-    'Every locale has an imprint and a privacy page.',
-    'A legal page is missing.',
-    'The owner supplies the legal text; add the page with key imprint or privacy.',
-  ),
+  // legal
   r(
     'legal-processing',
     'legal',
-    'build',
-    'Each privacy page declares processing for every enabled feature.',
-    'The privacy page omits an enabled feature.',
-    'The owner updates the notice and its processing list.',
-  ),
-  r(
-    'legal-statement',
-    'legal',
-    'build',
-    'An accessibility statement claims conformance only with an audit record in site.json.',
-    'A conformance claim lacks an audit record.',
-    'Remove the claim or add the audit record.',
-  ),
-  r(
-    'media-animated',
-    'media',
-    'build',
-    'No animated GIF, APNG, animated WebP or animated AVIF ships.',
-    'An animated image was found.',
-    'Use a still image or a <video> with controls.',
-  ),
-  r(
-    'media-captions',
-    'media',
-    'build',
-    'Every video has captions in the page language, and every audio links a transcript.',
-    'Media lacks captions or a transcript.',
-    'Add a <track kind="captions" srclang> or a transcript link.',
-  ),
-  r(
-    'media-pdf',
-    'media',
-    'build',
-    'A PDF ships only with an HTML page that has the same content.',
-    'A PDF has no HTML equivalent.',
-    'Publish the content as a page, then map the file to its page id in site.json documents, e.g. {"brochure.pdf": "services"}.',
-  ),
-  r(
-    'svg-name',
-    'svg',
-    'build',
-    'An inline SVG is aria-hidden, or has role img and a name.',
-    'An inline SVG is unnamed.',
-    'Add aria-hidden="true", or role="img" with aria-label.',
-  ),
-
-  // ── browser ──────────────────────────────────────────────────────────────
-  r(
-    'a11y-axe',
-    'a11y',
-    'browser',
-    'axe finds no WCAG 2.2 AA or best-practice violation, in light and dark.',
-    'axe reported a violation.',
-    'Fix the element axe names.',
-  ),
-  r(
-    'a11y-focus',
-    'a11y',
-    'browser',
-    'Keyboard focus shows a 2 px outline at 3:1; a mouse click on a link or button shows none.',
-    'The focus indicator is wrong.',
-    'Keep the kit :focus-visible style; do not remove outlines.',
-  ),
-  r(
-    'a11y-targets',
-    'a11y',
-    'browser',
-    'Non-inline controls are at least 44×44 px.',
-    'A control is too small.',
-    'Keep the kit control sizes; avoid fixed small heights.',
-  ),
-  r(
-    'a11y-reflow',
-    'a11y',
-    'browser',
-    'At 320 px wide no element extends past the viewport, menu closed and open.',
-    'Content overflows at 320 px.',
-    'Let the element wrap or shrink.',
-  ),
-  r(
-    'a11y-spacing',
-    'a11y',
-    'browser',
-    'The WCAG text-spacing override causes no overflow or clipping.',
-    'Text clips under increased spacing.',
-    'Remove fixed heights on text containers.',
-  ),
-  r(
-    'a11y-forced-colors',
-    'a11y',
-    'browser',
-    'In forced colours the h1, main, focus ring and button borders stay visible.',
-    'Content disappears in forced colours.',
-    'Use borders, not backgrounds, for boundaries.',
-  ),
-  r(
-    'a11y-keyboard',
-    'a11y',
-    'browser',
-    'Tab reaches every control, with the menu closed and open, and the focused element is never covered.',
-    'A control is unreachable or hidden when focused.',
-    'Remove tabindex values above 0 and overlaps.',
-  ),
-  r(
-    'a11y-no-js',
-    'a11y',
-    'browser',
-    'Without JS the content, navigation and form work.',
-    'The page fails without JS.',
-    'Render content on the server; JS only enhances.',
-  ),
-  r(
-    'contrast-pairs',
-    'contrast',
-    'browser',
-    'Token pairs meet 7:1 (text), 4.5:1 (muted, links, buttons, errors) and 3:1 (borders, focus) in light, dark and more contrast.',
-    'A token pair fails its contrast ratio.',
-    'Adjust the token in theme.css.',
-  ),
-  r(
-    'perf-lcp-priority',
-    'perf',
-    'browser',
-    'An LCP image has fetchpriority high and is not lazy.',
-    'The LCP image is not prioritised.',
-    'Add priority to that image only.',
-  ),
-  r(
-    'perf-cls',
-    'perf',
-    'browser',
-    'CLS is 0.05 or less over load and a full scroll, throttled.',
-    'The layout shifts.',
-    'Give media dimensions; avoid inserting content above the fold.',
-  ),
-  r(
-    'perf-image-oversize',
-    'perf',
-    'browser',
-    'No image loads more than 1.5× its rendered width times the pixel ratio.',
-    'An image is oversized.',
-    'Set sizes for images narrower than the content column.',
-  ),
-  r(
-    'perf-bfcache',
-    'perf',
-    'browser',
-    'Pages restore from the back/forward cache.',
-    'The page is not bfcache-eligible.',
-    'Remove unload handlers and no-store headers.',
-  ),
-  r(
-    'perf-prerender',
-    'perf',
-    'browser',
-    'With speculationRules on, a hovered link is prerendered before the click.',
-    'Prerendering did not happen.',
-    'Keep the kit speculation-rules block; do not exclude the link.',
-  ),
-  r(
-    'perf-prefetch',
-    'perf',
-    'browser',
-    'With astroPrefetch on and speculationRules off, a hovered link is prefetched and reused.',
-    'Prefetch did not reuse the page.',
-    'Check that HTML is served with max-age=120.',
-  ),
-
-  // ── smoke (production) ───────────────────────────────────────────────────
-  r(
-    'smoke-status',
-    'smoke',
-    'smoke',
-    'The root and every locale home answer 200, an unknown path answers 404 with the kit 404 page.',
-    'A status code is wrong.',
-    'Check the deploy and not_found_handling.',
-  ),
-  r(
-    'smoke-headers',
-    'smoke',
-    'smoke',
-    'HTML, an asset and the 404 page carry the kit security headers.',
-    'A security header is missing in production.',
-    'Check _headers in dist and zone transform rules.',
-  ),
-  r(
-    'smoke-cache',
-    'smoke',
-    'smoke',
-    'HTML and /_astro/* carry exactly the kit Cache-Control values.',
-    'Cache-Control differs in production.',
-    'Check _headers and zone cache rules.',
-  ),
-  r(
-    'smoke-transport',
-    'smoke',
-    'smoke',
-    'Responses are compressed (zstd, br or gzip), HTTP/3 is advertised, and http redirects to https in one hop.',
-    'Transport settings differ.',
-    'Run `astro-kit provision zone --check`.',
-  ),
-  r(
-    'smoke-redirects',
-    'smoke',
-    'smoke',
-    'www and apex canonicalise in one 301, and the production workers.dev URL does not answer.',
-    'Host canonicalisation is wrong.',
-    'Set the zone Single Redirect and workers_dev false.',
-  ),
-  r(
-    'smoke-robots',
-    'smoke',
-    'smoke',
-    'The served robots.txt equals the built file.',
-    'robots.txt is rewritten at the edge.',
-    'Turn off managed robots.txt and AI bot blocking in the zone.',
-  ),
-  r(
-    'smoke-injection',
-    'smoke',
-    'smoke',
-    'No response sets cookies, NEL or Report-To, or contains /cdn-cgi/ injections.',
-    'The edge injects content.',
-    'Run `astro-kit provision zone --apply` to turn the feature off.',
-  ),
-  r(
-    'smoke-release',
-    'smoke',
-    'smoke',
-    '/_kit/release.txt equals the deployed main commit.',
-    'Production runs an older or unknown build.',
-    'Re-run the deploy job.',
-  ),
-  r(
-    'smoke-security-txt',
-    'smoke',
-    'smoke',
-    '/.well-known/security.txt is valid for at least 30 more days.',
-    'security.txt is missing or about to expire.',
-    'Redeploy; the build renews Expires.',
-  ),
-  r(
-    'smoke-mail-dns',
-    'smoke',
-    'smoke',
-    'With forms, the domain has one SPF record and a _dmarc record.',
-    'Mail DNS is missing or duplicated.',
-    'The owner fixes the DNS records named in docs/forms.md.',
-  ),
-  r(
-    'smoke-probe',
-    'smoke',
-    'smoke',
-    'With forms, the weekly probe submission answers 303 to #sent.',
-    'The contact form does not deliver.',
-    'Check the send_email binding and the probe secret.',
-  ),
-
-  // ── zone (provision) ─────────────────────────────────────────────────────
-  r(
-    'zone-settings',
-    'zone',
-    'zone',
-    'The zone uses TLS 1.2 or later, TLS 1.3, Always HTTPS and HTTP/3, with Rocket Loader, email obfuscation, Speed Brain, RUM and NEL off.',
-    'A zone setting differs from the kit.',
-    'Run `astro-kit provision zone --apply` with an edit token.',
-  ),
-  r(
-    'zone-rewriters',
-    'zone',
-    'zone',
-    'Page-rewriting features stay off: pre_render, webmcp_enabled, content_converter and search_for_agents.',
-    'A page-rewriting feature is on.',
-    'Turn it off in the dashboard or with provision --apply.',
-  ),
-  r(
-    'zone-bots',
-    'zone',
-    'zone',
-    'Bot management does not block AI crawlers and does not manage robots.txt.',
-    'The zone overrides the robots policy.',
-    'Turn off AI bot blocking and managed robots.txt under Security settings.',
+    'config',
+    '`processing` contains `cdn` and `previews`, and with forms `forms` and `server`; it contains `forms`/`server` only with forms.',
+    '`processing` does not match the features of the site.',
+    'List `cdn` and `previews`. List `forms` and `server` with `features.forms`, and only then.',
   ),
 ];
 
-export const RULE_BY_ID: ReadonlyMap<string, Rule> = new Map(RULES.map((rule) => [rule.id, rule]));
+export type RuleMap = ReadonlyMap<string, Rule>;
+
+export const RULE_BY_ID: RuleMap = new Map(RULES.map((rule) => [rule.id, rule]));
 
 export const DOCS_PATH = 'node_modules/@raess/astro-kit/docs/standards.md';
 
+/** One entry of `waivers` in astro-kit.json (5.2). */
+export interface Waiver {
+  rule: string;
+  where: string;
+  reason: string;
+  /** The end date, `YYYY-MM-DD`. */
+  until: string;
+}
+
 export interface Finding {
   rule: string;
-  /** File, URL or page path where the problem is. */
+  /** A built page path, a project file with a line, or a file with a field path (section 8, Where). */
   where: string;
   /** Specific detail: the value found, the limit, the element. */
   detail?: string;
+  /** Set when a waiver covers the finding. A waived finding fails nothing. */
+  waived?: { until: string; reason: string };
+}
+
+export function getRule(id: string, rules: RuleMap = RULE_BY_ID): Rule {
+  const rule = rules.get(id);
+  if (!rule) throw new Error(`astro-kit: unknown rule id ${id}`);
+  return rule;
+}
+
+/**
+ * Says whether the waiver covers the finding. The rule ids are equal, and the finding's place equals the waiver's
+ * place or starts with it at a boundary: the waiver's place ends with `/`, or the next character of the finding's
+ * place is `/`, `:` or a space.
+ */
+export function waives(waiver: Waiver, finding: Pick<Finding, 'rule' | 'where'>): boolean {
+  if (waiver.rule !== finding.rule || waiver.where === '') return false;
+  if (finding.where === waiver.where) return true;
+  if (!finding.where.startsWith(waiver.where)) return false;
+  if (waiver.where.endsWith('/')) return true;
+  const next = finding.where[waiver.where.length];
+  return next === '/' || next === ':' || next === ' ';
+}
+
+/** Marks each finding that a waiver covers. Only a waivable rule can be waived. */
+export function applyWaivers(
+  findings: readonly Finding[],
+  waivers: readonly Waiver[],
+  rules: RuleMap = RULE_BY_ID,
+): Finding[] {
+  return findings.map((finding) => {
+    if (finding.waived || !getRule(finding.rule, rules).waivable) return finding;
+    const waiver = waivers.find((w) => waives(w, finding));
+    return waiver ? { ...finding, waived: { until: waiver.until, reason: waiver.reason } } : finding;
+  });
+}
+
+/** Says whether the finding fails its command: an `error` rule, and no waiver. */
+export function fails(finding: Finding, rules: RuleMap = RULE_BY_ID): boolean {
+  return !finding.waived && getRule(finding.rule, rules).level === 'error';
+}
+
+/** The findings that fail the command. */
+export function failures(findings: readonly Finding[], rules: RuleMap = RULE_BY_ID): Finding[] {
+  return findings.filter((finding) => fails(finding, rules));
+}
+
+/**
+ * The text of a result (specification, 6.4). A failing finding has `✗`, a `warn` finding has `!`, and a waived
+ * finding has `~` on one line. Only the failing findings count in the first line. With none, the last line says
+ * that all checks passed.
+ */
+export function formatFindings(findings: readonly Finding[], rules: RuleMap = RULE_BY_ID): string {
+  const count = failures(findings, rules).length;
+  const lines: string[] = [];
+  if (count > 0) lines.push(`astro-kit: ${count} finding${count === 1 ? '' : 's'}`);
+  for (const finding of findings) {
+    const rule = getRule(finding.rule, rules);
+    const text = `[${rule.id}] ${finding.where}: ${rule.message}${finding.detail ? ` (${finding.detail})` : ''}`;
+    if (finding.waived) {
+      lines.push(`~ ${text} (waived until ${finding.waived.until}: ${finding.waived.reason})`);
+      continue;
+    }
+    lines.push(`${rule.level === 'warn' ? '!' : '✗'} ${text}`);
+    lines.push(`    fix: ${rule.hint}`);
+    lines.push(`    rule: ${DOCS_PATH}#${rule.id}`);
+  }
+  if (count === 0) lines.push('astro-kit: all checks passed.');
+  return lines.join('\n');
 }
 
 export class FindingError extends Error {
   readonly findings: readonly Finding[];
-  constructor(findings: readonly Finding[]) {
-    super(formatFindings(findings));
+  constructor(findings: readonly Finding[], rules: RuleMap = RULE_BY_ID) {
+    super(formatFindings(findings, rules));
     this.name = 'AstroKitError';
     this.findings = findings;
   }
 }
 
-export function getRule(id: string): Rule {
-  const rule = RULE_BY_ID.get(id);
-  if (!rule) throw new Error(`astro-kit: unknown rule id ${id}`);
-  return rule;
-}
-
-export function formatFindings(findings: readonly Finding[]): string {
-  if (findings.length === 0) return 'astro-kit: all checks passed.';
-  const lines = [`astro-kit: ${findings.length} finding${findings.length === 1 ? '' : 's'}`];
-  for (const f of findings) {
-    const rule = getRule(f.rule);
-    lines.push(`✗ [${rule.id}] ${f.where}: ${rule.message}${f.detail ? ` (${f.detail})` : ''}`);
-    lines.push(`    fix: ${rule.hint}`);
-    lines.push(`    rule: ${DOCS_PATH}#${rule.id}`);
-  }
-  return lines.join('\n');
-}
-
 /** Collects findings; throws once with all of them, so one run reports everything. */
 export class Report {
   readonly findings: Finding[] = [];
+  private readonly waivers: readonly Waiver[];
+  private readonly rules: RuleMap;
+
+  constructor(options: { waivers?: readonly Waiver[]; rules?: RuleMap } = {}) {
+    this.waivers = options.waivers ?? [];
+    this.rules = options.rules ?? RULE_BY_ID;
+  }
+
   add(rule: string, where: string, detail?: string): void {
-    getRule(rule);
-    this.findings.push(detail === undefined ? { rule, where } : { rule, where, detail });
+    const finding: Finding = detail === undefined ? { rule, where } : { rule, where, detail };
+    const [marked] = applyWaivers([finding], this.waivers, this.rules);
+    this.findings.push(marked ?? finding);
   }
+
+  /** True when no finding fails the command. Warnings and waived findings do not count. */
   get ok(): boolean {
-    return this.findings.length === 0;
+    return failures(this.findings, this.rules).length === 0;
   }
+
+  /** The rule ids of the findings that fail the command. */
   ids(): Set<string> {
-    return new Set(this.findings.map((f) => f.rule));
+    return new Set(failures(this.findings, this.rules).map((finding) => finding.rule));
   }
+
+  format(): string {
+    return formatFindings(this.findings, this.rules);
+  }
+
   throwIfFailed(): void {
-    if (!this.ok) throw new FindingError(this.findings);
+    if (!this.ok) throw new FindingError(this.findings, this.rules);
   }
 }
