@@ -21,6 +21,11 @@
  * tokenizer of its own and one small grammar for each family. `tokens.css` is exempt from every `css-*` rule, so
  * this rule is the only check on the text of a value. The tokenizer is strict for that reason: a value holds no
  * control character, no `<`, no backslash and no white space other than a space or a tab.
+ *
+ * The generator writes an accepted value into `tokens.css` as it is. So each grammar accepts only a value that is
+ * valid CSS for the properties of its family (7.3): a browser drops a declaration with any other value, and no rule
+ * sees that. A grammar may refuse a value that is valid CSS. It never accepts one that is not. The acceptance suite
+ * tests this against Chromium, with many values for each family (`test/acceptance/design-values.test.ts`).
  */
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -262,9 +267,13 @@ type NumberNode = Extract<Node, { kind: 'number' }>;
 const SPACE = /^[ \t]+/;
 const STRING = /^(?:"[^"]*"|'[^']*')/;
 const NUMBER = /^[+-]?(?:\d*\.\d+|\d+)(?:e[+-]?\d+)?/i;
-const UNIT = /^(?:%|[a-z][a-z0-9-]*)/i;
+/**
+ * The unit of a number, and the name of a hash: CSS reads every letter, digit, `_` and `-` behind a number or a
+ * `#` as one token with it. So `#000-1px` is one hash, and no color, and `1px_` is a number with the unit `px_`.
+ */
+const UNIT = /^(?:%|--[a-z0-9_-]*|-?[a-z_][a-z0-9_-]*)/i;
 const IDENT = /^(?:--[a-z0-9_-]+|-?[a-z_][a-z0-9_-]*)/i;
-const HASH = /^#[a-z0-9]+/i;
+const HASH = /^#[a-z0-9_-]+/i;
 
 const SINGLE: Readonly<Record<string, Node>> = {
   ',': { kind: 'comma' },
@@ -424,19 +433,33 @@ const isNumber = (node: Node | undefined): node is NumberNode => node?.kind === 
 const isInteger = (node: Node | undefined): node is NumberNode => isNumber(node) && /^[+-]?\d+$/.test(node.text);
 const isPercentage = (node: Node | undefined): node is NumberNode => node?.kind === 'number' && node.unit === '%';
 
-/** A length: a number with a length unit, or `0`. */
-const isLength = (node: Node | undefined): boolean =>
-  node?.kind === 'number' && (LENGTH_UNITS.has(node.unit) || (node.unit === '' && node.value === 0));
+const isZero = (node: Node | undefined): boolean => isNumber(node) && node.value === 0;
+
+/** A length with a unit. */
+const isUnitLength = (node: Node | undefined): boolean => node?.kind === 'number' && LENGTH_UNITS.has(node.unit);
+
+/**
+ * A length as a part of a shadow or of a gradient: a number with a length unit, or `0`. CSS reads a `0` without a
+ * unit as a length only where it stands alone. Inside `calc()` it is a number, and `calc(0 + 1px)` is no value. A
+ * part of a shadow or of a gradient stands in no calculation, so `0` is a length there. A token of the length
+ * families is different: project CSS puts its value into a calculation, so it needs a unit (`isSize`).
+ */
+const isLength = (node: Node | undefined): boolean => isUnitLength(node) || isZero(node);
 
 const isLengthOrPercentage = (node: Node | undefined): boolean => isLength(node) || isPercentage(node);
 
-/** The math functions of 7.4, each with its smallest and its largest count of arguments. */
-const MATH: Readonly<Record<string, readonly [number, number]>> = {
-  calc: [1, 1],
-  clamp: [3, 3],
-  min: [1, Number.POSITIVE_INFINITY],
-  max: [1, Number.POSITIVE_INFINITY],
-};
+/**
+ * The math functions of 7.4, each with its smallest and its largest count of arguments.
+ *
+ * The function tables of this module are maps, never plain objects. The key is the function name of a value, and
+ * an object also has an answer for the names `constructor` and `__proto__`.
+ */
+const MATH: ReadonlyMap<string, readonly [number, number]> = new Map<string, readonly [number, number]>([
+  ['calc', [1, 1]],
+  ['clamp', [3, 3]],
+  ['min', [1, Number.POSITIVE_INFINITY]],
+  ['max', [1, Number.POSITIVE_INFINITY]],
+]);
 
 /** What a calculation gives: a plain number, or a number with a unit. */
 type CalcType = 'number' | 'dimension';
@@ -496,7 +519,7 @@ function sumType(words: readonly Node[], accepts: Accepts): CalcType | undefined
 /** The type of `calc()`, `clamp()`, `min()` or `max()`: the one type of all its arguments. */
 function mathType(node: Node | undefined, accepts: Accepts): CalcType | undefined {
   if (node?.kind !== 'function') return undefined;
-  const [least, most] = MATH[node.name] ?? [1, 0];
+  const [least, most] = MATH.get(node.name) ?? [1, 0];
   const parts = listOf(node.nodes);
   if (parts.length < least || parts.length > most) return undefined;
   const [first, ...others] = parts.map((part) => sumType(part, accepts));
@@ -508,8 +531,48 @@ const isMath = (node: Node | undefined, accepts: Accepts): boolean => mathType(n
 
 const hasLengthUnit = (node: NumberNode): boolean => LENGTH_UNITS.has(node.unit);
 
-/** A length, a percentage or `0`, or a math function of those. */
-const isSize = (node: Node | undefined): boolean => isLengthOrPercentage(node) || isMath(node, isLengthOrPercentage);
+/** A plain number or dimension that is not negative. `-0` is zero. */
+const isNotNegative = (node: Node | undefined): boolean => node?.kind === 'number' && node.value >= 0;
+
+/** A length, a percentage or `0`, of any sign, or a math function of those: a position in a gradient. */
+const isLengthPercentage = (node: Node | undefined): boolean =>
+  isLengthOrPercentage(node) || isMath(node, isLengthOrPercentage);
+
+/**
+ * A size, the value of a token of the length families: a length or a percentage that has a unit and is not
+ * negative, or a math function of lengths and percentages.
+ *
+ * - No `0` without a unit. Project CSS puts a token into a calculation (7.3): `calc(var(--space-2) * -1)`. There
+ *   CSS reads `0` as a number, so the declaration would be lost. `0px` is a length at every place.
+ * - No negative value. `padding`, `width`, `font-size` and `border-radius` refuse one, so their declaration would
+ *   be lost. A calculation always parses: a property that takes no negative value uses 0 for a negative result.
+ */
+const isSize = (node: Node | undefined): boolean =>
+  ((isUnitLength(node) || isPercentage(node)) && isNotNegative(node)) || isMath(node, isLengthOrPercentage);
+
+/**
+ * A width, the value of a `--line-` token: a size without a percentage, also inside a calculation. `border-width`,
+ * `outline-width` and `outline-offset` take no percentage.
+ */
+const isWidth = (node: Node | undefined): boolean =>
+  (isUnitLength(node) && isNotNegative(node)) || isMath(node, hasLengthUnit);
+
+/** The radius of a circle in a gradient: a length or `0` that is not negative, or a math function of lengths. */
+const isCircleRadius = (node: Node | undefined): boolean =>
+  (isLength(node) && isNotNegative(node)) || isMath(node, hasLengthUnit);
+
+const isAngle = (node: Node | undefined): boolean => node?.kind === 'number' && ANGLE_UNITS.includes(node.unit);
+const hasAngleUnit = (node: NumberNode): boolean => ANGLE_UNITS.includes(node.unit);
+
+/** An angle: a number with an angle unit, `0`, or a math function of angles. */
+const isAngleValue = (node: Node | undefined): boolean => isAngle(node) || isZero(node) || isMath(node, hasAngleUnit);
+
+/** An angle, a percentage or `0`, or a math function of those. */
+const isAnglePercentage = (node: Node | undefined): boolean =>
+  isAngle(node) ||
+  isPercentage(node) ||
+  isZero(node) ||
+  isMath(node, (part) => hasAngleUnit(part) || part.unit === '%');
 
 // Values: colors
 
@@ -541,15 +604,15 @@ const PERCENTAGE: readonly Channel[] = ['percentage'];
 const HUE: readonly Channel[] = ['hue'];
 
 /** The color functions of 7.4 that take three channels and an optional alpha, each with its channels. */
-const COLOR_FUNCTIONS: Readonly<Record<string, readonly (readonly Channel[])[]>> = {
-  rgb: [NUMBER_OR_PERCENTAGE, NUMBER_OR_PERCENTAGE, NUMBER_OR_PERCENTAGE],
-  hsl: [HUE, PERCENTAGE, PERCENTAGE],
-  hwb: [HUE, PERCENTAGE, PERCENTAGE],
-  lab: [NUMBER_OR_PERCENTAGE, NUMBER_OR_PERCENTAGE, NUMBER_OR_PERCENTAGE],
-  lch: [NUMBER_OR_PERCENTAGE, NUMBER_OR_PERCENTAGE, HUE],
-  oklab: [NUMBER_OR_PERCENTAGE, NUMBER_OR_PERCENTAGE, NUMBER_OR_PERCENTAGE],
-  oklch: [NUMBER_OR_PERCENTAGE, NUMBER_OR_PERCENTAGE, HUE],
-};
+const COLOR_FUNCTIONS: ReadonlyMap<string, readonly (readonly Channel[])[]> = new Map([
+  ['rgb', [NUMBER_OR_PERCENTAGE, NUMBER_OR_PERCENTAGE, NUMBER_OR_PERCENTAGE]],
+  ['hsl', [HUE, PERCENTAGE, PERCENTAGE]],
+  ['hwb', [HUE, PERCENTAGE, PERCENTAGE]],
+  ['lab', [NUMBER_OR_PERCENTAGE, NUMBER_OR_PERCENTAGE, NUMBER_OR_PERCENTAGE]],
+  ['lch', [NUMBER_OR_PERCENTAGE, NUMBER_OR_PERCENTAGE, HUE]],
+  ['oklab', [NUMBER_OR_PERCENTAGE, NUMBER_OR_PERCENTAGE, NUMBER_OR_PERCENTAGE]],
+  ['oklch', [NUMBER_OR_PERCENTAGE, NUMBER_OR_PERCENTAGE, HUE]],
+]);
 
 /** The color functions that also have the older form with commas. */
 const COMMA_FUNCTIONS: readonly string[] = ['rgb', 'hsl'];
@@ -609,7 +672,7 @@ function isColor(node: Node | undefined): boolean {
   if (node.kind === 'ident') return NAMED_COLORS.has(node.text.toLowerCase()) || isKeyword(node, 'transparent');
   if (node.kind !== 'function') return false;
   const words = wordsOf(node.nodes);
-  const kinds = COLOR_FUNCTIONS[node.name];
+  const kinds = COLOR_FUNCTIONS.get(node.name);
   if (kinds !== undefined) {
     return words.some((word) => word.kind === 'comma')
       ? isCommaChannels(node.name, words, kinds)
@@ -664,16 +727,61 @@ const isRatio = (nodes: readonly Node[]): boolean => {
   );
 };
 
-/** A font-family list: each entry is one string, or one or more identifiers. */
-const isFontList: Grammar = (nodes) =>
-  listOf(nodes).every(
-    (part) =>
-      part.length > 0 &&
-      ((part.length === 1 && part[0]?.kind === 'string') ||
-        part.every((node) => node.kind === 'ident' && !node.text.startsWith('--'))),
+/**
+ * The words that stand for a whole value in every property: the CSS-wide keywords. With `default`, CSS keeps them
+ * out of a name. Every word that starts with `RESERVED_START` is refused too: `revert-layer` and `revert-rule`
+ * are such keywords, and a browser that learns one more of this form reads it as a keyword at once.
+ */
+const RESERVED_WORDS: readonly string[] = ['inherit', 'initial', 'unset', 'revert', 'default'];
+const RESERVED_START = 'revert-';
+
+const isReserved = (node: Node): boolean =>
+  isKeyword(node, ...RESERVED_WORDS) || (node.kind === 'ident' && node.text.toLowerCase().startsWith(RESERVED_START));
+
+/**
+ * The generic font families of CSS, and `-webkit-body` of Chromium. A browser reads such a word as a family of
+ * its own, so a second word behind it ends the declaration.
+ */
+const GENERIC_FAMILIES: readonly string[] = [
+  'serif',
+  'sans-serif',
+  'cursive',
+  'fantasy',
+  'monospace',
+  'system-ui',
+  'math',
+  'emoji',
+  'fangsong',
+  'ui-serif',
+  'ui-sans-serif',
+  'ui-monospace',
+  'ui-rounded',
+  '-webkit-body',
+];
+
+/**
+ * A font name without quotes: one or more words. No word is reserved (`isReserved`): as the whole value, such a
+ * word gives the custom property no value, and as the first word of a name it ends every declaration that uses the
+ * token. A name of two or more words holds no generic family.
+ */
+const isFontName = (words: readonly Node[]): boolean =>
+  words.length > 0 &&
+  words.every(
+    (node) =>
+      node.kind === 'ident' &&
+      !node.text.startsWith('--') &&
+      !isReserved(node) &&
+      (words.length === 1 || !isKeyword(node, ...GENERIC_FAMILIES)),
   );
 
-/** One shadow: two to four lengths in a row, and in any place one color and the keyword `inset`. */
+/** A font-family list: each entry is one string, or a name without quotes. */
+const isFontList: Grammar = (nodes) =>
+  listOf(nodes).every((part) => (part.length === 1 && part[0]?.kind === 'string') || isFontName(part));
+
+/**
+ * One shadow: two to four lengths in a row, and in any place one color and the keyword `inset`. The third length is
+ * the blur radius: a plain length there is not negative.
+ */
 function isShadow(words: readonly Node[], refs: string[]): boolean {
   const lengths: number[] = [];
   let colors = 0;
@@ -684,9 +792,10 @@ function isShadow(words: readonly Node[], refs: string[]): boolean {
     else if (isColor(node) || isColorVar(node, refs)) colors += 1;
     else return false;
   }
-  const [first] = lengths;
+  const [first, , blur] = lengths;
   const last = lengths.at(-1);
   if (first === undefined || last === undefined) return false;
+  if (blur !== undefined && words[blur]?.kind === 'number' && !isNotNegative(words[blur])) return false;
   return (
     lengths.length >= 2 && lengths.length <= 4 && last - first + 1 === lengths.length && colors <= 1 && insets <= 1
   );
@@ -695,21 +804,130 @@ function isShadow(words: readonly Node[], refs: string[]): boolean {
 const isShadowList: Grammar = (nodes, refs) =>
   isKeyword(only(nodes), 'none') || listOf(nodes).every((part) => isShadow(part, refs));
 
-const GRADIENTS: readonly string[] = ['linear-gradient', 'radial-gradient', 'conic-gradient'].flatMap((name) => [
-  name,
-  `repeating-${name}`,
+/** The three shapes of a gradient. Each gradient function has a `repeating-` form with the same grammar. */
+type GradientKind = 'linear' | 'radial' | 'conic';
+
+const GRADIENTS: ReadonlyMap<string, GradientKind> = new Map<string, GradientKind>([
+  ['linear-gradient', 'linear'],
+  ['repeating-linear-gradient', 'linear'],
+  ['radial-gradient', 'radial'],
+  ['repeating-radial-gradient', 'radial'],
+  ['conic-gradient', 'conic'],
+  ['repeating-conic-gradient', 'conic'],
 ]);
 
+/** The color spaces of an interpolation that have a hue, and the ways around the hue circle. */
+const POLAR_SPACES: readonly string[] = ['hsl', 'hwb', 'lch', 'oklch'];
+const HUE_WAYS: readonly string[] = ['shorter', 'longer', 'increasing', 'decreasing'];
+
+/** The color spaces of an interpolation that have no hue. */
+const RECTANGULAR_SPACES: readonly string[] = [
+  'srgb',
+  'srgb-linear',
+  'display-p3',
+  'a98-rgb',
+  'prophoto-rgb',
+  'rec2020',
+  'lab',
+  'oklab',
+  'xyz',
+  'xyz-d50',
+  'xyz-d65',
+];
+
+const EXTENTS: readonly string[] = ['closest-side', 'closest-corner', 'farthest-side', 'farthest-corner'];
+
+const isSideX = (node: Node | undefined): boolean => isKeyword(node, 'left', 'right');
+const isSideY = (node: Node | undefined): boolean => isKeyword(node, 'top', 'bottom');
+const isCenter = (node: Node | undefined): boolean => isKeyword(node, 'center');
+
 /**
- * Every keyword that a gradient may hold: directions, shapes, sizes, and the words of the color interpolation.
- * Any other word fails. So no named color and no system color such as `Canvas` gets into a gradient.
+ * The first part of a gradient without its color interpolation: `in <space>`, or `in <space> <way> hue` for a space
+ * with a hue. The interpolation stands at the start or at the end of the part. The result is `undefined` when the
+ * words after `in` are no interpolation, or when it stands in the middle.
  */
-const GRADIENT_KEYWORDS: ReadonlySet<string> = new Set(
-  `to at from in top bottom left right center circle ellipse
-  closest-side closest-corner farthest-side farthest-corner
-  srgb srgb-linear display-p3 a98-rgb prophoto-rgb rec2020 lab oklab xyz xyz-d50 xyz-d65 hsl hwb lch oklch
-  shorter longer increasing decreasing hue`.split(/\s+/),
-);
+function withoutInterpolation(words: readonly Node[]): Node[] | undefined {
+  const at = words.findIndex((word) => isKeyword(word, 'in'));
+  if (at < 0) return [...words];
+  const hasWay =
+    isKeyword(words[at + 1], ...POLAR_SPACES) &&
+    isKeyword(words[at + 2], ...HUE_WAYS) &&
+    isKeyword(words[at + 3], 'hue');
+  const length = hasWay ? 4 : 2;
+  if (!isKeyword(words[at + 1], ...POLAR_SPACES, ...RECTANGULAR_SPACES)) return undefined;
+  if (at !== 0 && at + length !== words.length) return undefined;
+  return [...words.slice(0, at), ...words.slice(at + length)];
+}
+
+/**
+ * A position of CSS with one, two or four words. With two words the first is the horizontal one, and two keywords
+ * may also stand in the other order. With four words each length follows the side that it starts from.
+ */
+function isPosition(words: readonly Node[]): boolean {
+  const [first, second, third, fourth] = words;
+  if (words.length === 1) return isSideX(first) || isSideY(first) || isCenter(first) || isLengthPercentage(first);
+  if (words.length === 2) {
+    const across = isSideX(first) || isCenter(first) || isLengthPercentage(first);
+    const down = isSideY(second) || isCenter(second) || isLengthPercentage(second);
+    return (across && down) || ((isSideY(first) || isCenter(first)) && (isSideX(second) || isCenter(second)));
+  }
+  if (words.length !== 4 || !isLengthPercentage(second) || !isLengthPercentage(fourth)) return false;
+  return (isSideX(first) && isSideY(third)) || (isSideY(first) && isSideX(third));
+}
+
+/** The line of a linear gradient: an angle, or `to` with one side or with two sides of a corner. */
+function isLinearLine(words: readonly Node[]): boolean {
+  const [first, second, third] = words;
+  if (words.length === 1) return isAngleValue(first);
+  if (!isKeyword(first, 'to')) return false;
+  if (words.length === 2) return isSideX(second) || isSideY(second);
+  return words.length === 3 && ((isSideX(second) && isSideY(third)) || (isSideY(second) && isSideX(third)));
+}
+
+/**
+ * One of the two radii of an ellipse: a length or a percentage that is not negative, or a math function of lengths
+ * only or of percentages only. Chromium refuses a radius that is a calculation of both.
+ */
+const isEllipseRadius = (node: Node | undefined): boolean =>
+  (isLengthOrPercentage(node) && isNotNegative(node)) ||
+  isMath(node, hasLengthUnit) ||
+  isMath(node, (part) => part.unit === '%');
+
+/**
+ * The shape and the size of a radial gradient, in any order: `circle` or `ellipse`, and one size keyword, one
+ * radius or two radii. One radius is a length and makes a circle. Two radii make an ellipse.
+ */
+function isRadialShape(words: readonly Node[]): boolean {
+  const shapes = words.filter((word) => isKeyword(word, 'circle', 'ellipse'));
+  const sizes = words.filter((word) => !isKeyword(word, 'circle', 'ellipse'));
+  if (shapes.length > 1 || sizes.length > 2 || words.length === 0) return false;
+  // The shape stands before or after the size, never between two radii.
+  if (sizes.length === 2 && shapes.length === 1 && shapes[0] === words[1]) return false;
+  const [first, second] = sizes;
+  if (first === undefined) return true;
+  if (second === undefined) {
+    return isKeyword(first, ...EXTENTS) || (isCircleRadius(first) && !isKeyword(shapes[0], 'ellipse'));
+  }
+  return isEllipseRadius(first) && isEllipseRadius(second) && !isKeyword(shapes[0], 'circle');
+}
+
+/**
+ * The first part of a gradient when it holds no color (7.4): the line of a linear gradient, the shape and the
+ * center of a radial one, the start angle and the center of a conic one, and for each the color interpolation.
+ */
+function isGradientLine(kind: GradientKind, part: readonly Node[]): boolean {
+  const words = withoutInterpolation(part);
+  if (words === undefined) return false;
+  // The interpolation alone is a whole first part.
+  if (words.length === 0) return part.length > 0;
+  if (kind === 'linear') return isLinearLine(words);
+  const at = words.findIndex((word) => isKeyword(word, 'at'));
+  const before = at < 0 ? words : words.slice(0, at);
+  if (at >= 0 && !isPosition(words.slice(at + 1))) return false;
+  if (before.length === 0) return at >= 0;
+  if (kind === 'radial') return isRadialShape(before);
+  return before.length === 2 && isKeyword(before[0], 'from') && isAngleValue(before[1]);
+}
 
 /**
  * Says whether the comma-separated parts of a gradient have the shape of a gradient.
@@ -732,21 +950,24 @@ function hasStopStructure(parts: readonly (readonly Node[])[]): boolean {
 }
 
 /**
- * One gradient function. Every color in it is `var(--color-…)`. It has at least two color stops, with a comma
- * between them (`hasStopStructure`). Angles, stop positions and lengths are free: any number, dimension,
- * calculation and keyword of `GRADIENT_KEYWORDS` passes. A `/` has no place in a gradient outside a calculation.
+ * One gradient function (7.4). Every color in it is `var(--color-…)`. It has at least two color stops, with a
+ * comma between them (`hasStopStructure`). A color stop is the color and then at most two positions. A color hint
+ * is one position. A position is a length or a percentage, and in a conic gradient an angle or a percentage. The
+ * first part may hold no color: then it is the line of the gradient (`isGradientLine`).
  */
 const isGradient: Grammar = (nodes, refs) => {
   const gradient = only(nodes);
-  if (gradient?.kind !== 'function' || !GRADIENTS.includes(gradient.name)) return false;
-  const colors: string[] = [];
-  const free = wordsOf(gradient.nodes).every((node) => {
-    if (node.kind === 'number' || node.kind === 'comma') return true;
-    if (node.kind === 'ident') return GRADIENT_KEYWORDS.has(node.text.toLowerCase());
-    return isColorVar(node, colors) || mathType(node, () => true) !== undefined;
+  const kind = gradient?.kind === 'function' ? GRADIENTS.get(gradient.name) : undefined;
+  if (gradient?.kind !== 'function' || kind === undefined) return false;
+  const parts = listOf(gradient.nodes);
+  if (!hasStopStructure(parts)) return false;
+  const isStopPosition = kind === 'conic' ? isAnglePercentage : isLengthPercentage;
+  return parts.every((part, index) => {
+    const [first, ...positions] = part;
+    if (isColorVar(first, refs)) return positions.length <= 2 && positions.every(isStopPosition);
+    if (part.some((node) => varName(node) !== undefined)) return false;
+    return index === 0 ? isGradientLine(kind, part) : part.length === 1 && isStopPosition(first);
   });
-  refs.push(...colors);
-  return free && hasStopStructure(listOf(gradient.nodes));
 };
 
 const EASE_KEYWORDS: readonly string[] = [
@@ -763,7 +984,13 @@ const STEP_POSITIONS: readonly string[] = ['jump-start', 'jump-end', 'jump-none'
 
 const inUnit = (node: Node | undefined): boolean => isNumber(node) && node.value >= 0 && node.value <= 1;
 
-/** `cubic-bezier()` with four numbers, `steps()` with a count and an optional position, or `linear()` with stops. */
+/**
+ * `cubic-bezier()` with four numbers, `steps()` with a count and an optional position, or `linear()` with stops.
+ *
+ * - `steps()` with `jump-none` has two or more steps: the function then has no jump at either end, so one step
+ *   would be no change at all, and CSS refuses it.
+ * - A stop of `linear()` is one number with at most two percentages, all before it or all after it.
+ */
 function isEaseFunction(node: Node | undefined): boolean {
   if (node?.kind !== 'function') return false;
   const parts = listOf(node.nodes);
@@ -775,9 +1002,10 @@ function isEaseFunction(node: Node | undefined): boolean {
     const [count, position] = parts;
     const [steps] = count ?? [];
     if (count?.length !== 1 || !isInteger(steps) || steps.value < 1) return false;
-    return (
-      parts.length === 1 || (parts.length === 2 && position?.length === 1 && isKeyword(position[0], ...STEP_POSITIONS))
-    );
+    if (parts.length === 1) return true;
+    const [word] = position ?? [];
+    if (parts.length !== 2 || position?.length !== 1 || !isKeyword(word, ...STEP_POSITIONS)) return false;
+    return steps.value >= 2 || !isKeyword(word, 'jump-none');
   }
   if (node.name !== 'linear') return false;
   return (
@@ -785,7 +1013,8 @@ function isEaseFunction(node: Node | undefined): boolean {
     parts.every((part) => {
       const numbers = part.filter((stop) => isNumber(stop));
       const positions = part.filter((stop) => isPercentage(stop));
-      return numbers.length === 1 && positions.length <= 2 && numbers.length + positions.length === part.length;
+      if (numbers.length !== 1 || positions.length > 2 || positions.length + 1 !== part.length) return false;
+      return isNumber(part[0]) || isNumber(part.at(-1));
     })
   );
 }
@@ -797,14 +1026,14 @@ const GRAMMARS: Readonly<Record<TokenFamily, Grammar>> = {
   font: isFontList,
   text: one(isSize),
   leading: one(
-    (node) => (isNumber(node) && node.value >= 0) || isLengthOrPercentage(node) || isKeyword(node, 'normal'),
+    (node) => ((isNumber(node) || isLengthOrPercentage(node)) && isNotNegative(node)) || isKeyword(node, 'normal'),
   ),
   weight: one(
     (node) => (isInteger(node) && node.value >= 1 && node.value <= 1000) || isKeyword(node, 'normal', 'bold'),
   ),
-  tracking: one((node) => isLength(node) || isKeyword(node, 'normal')),
+  tracking: one((node) => isUnitLength(node) || isKeyword(node, 'normal')),
   radius: one(isSize),
-  line: one(isSize),
+  line: one(isWidth),
   shadow: isShadowList,
   z: one(isInteger),
   duration: one((node) => node?.kind === 'number' && (node.unit === 'ms' || node.unit === 's') && node.value >= 0),
@@ -817,7 +1046,8 @@ const GRAMMARS: Readonly<Record<TokenFamily, Grammar>> = {
   gradient: isGradient,
 };
 
-const LENGTHS = 'a length, a percentage or `0`, or `calc()`, `clamp()`, `min()` or `max()` of those';
+const LENGTHS =
+  'a length or a percentage that has a unit and is not negative (`0px`, never `0`), or `calc()`, `clamp()`, `min()` or `max()` of lengths and percentages';
 
 /** What a value of each family may be (7.4), for the detail of a finding. */
 const ACCEPTED: Readonly<Record<TokenFamily, string>> = {
@@ -825,20 +1055,21 @@ const ACCEPTED: Readonly<Record<TokenFamily, string>> = {
     'a hex color with 3, 4, 6 or 8 digits, `rgb()`, `hsl()`, `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()`, `color()` in a space other than `display-p3`, a named color or `transparent`',
   space: LENGTHS,
   size: `${LENGTHS}, or a ratio such as \`16 / 9\``,
-  font: 'a font-family list: names in quotes or as plain words, with commas between them',
+  font: 'a font-family list: names in quotes or as plain words, with commas between them. A name needs quotes when it holds `inherit`, `initial`, `unset`, `revert`, `default` or a word that starts with `revert-`, or a generic family such as `serif` beside another word',
   text: LENGTHS,
-  leading: 'a number, a length, a percentage or `normal`',
+  leading: 'a number, a length or a percentage that is not negative, or `normal`',
   weight: 'an integer from 1 to 1000, `normal` or `bold`',
-  tracking: 'a length or `normal`',
+  tracking: 'a length with a unit (`0em`, never `0`) or `normal`',
   radius: LENGTHS,
-  line: LENGTHS,
-  shadow: '`none` or a shadow list: each shadow has two to four lengths, and its color may be `var(--color-…)`',
+  line: 'a length that has a unit and is not negative (`0px`, never `0`), or `calc()`, `clamp()`, `min()` or `max()` of lengths',
+  shadow:
+    '`none` or a shadow list: each shadow has two to four lengths side by side, the third one is not negative, and its color may be `var(--color-…)`',
   z: 'an integer',
-  duration: 'a time in `ms` or `s`',
-  ease: 'an easing keyword, `cubic-bezier()`, `steps()` or `linear()`',
+  duration: 'a time in `ms` or `s` that is not negative',
+  ease: 'an easing keyword, `cubic-bezier()`, `steps()` or `linear()`, each with the arguments of CSS',
   opacity: 'a number from 0 to 1 or a percentage from 0% to 100%',
   gradient:
-    'one `linear-gradient()`, `radial-gradient()` or `conic-gradient()`, or its `repeating-` form, with two or more color stops, in which every color is `var(--color-…)`',
+    'one `linear-gradient()`, `radial-gradient()` or `conic-gradient()`, or its `repeating-` form, with two or more color stops. A color stop is `var(--color-…)` and then at most two positions. The first part may be the line, the shape, the center or the color interpolation of CSS',
 };
 
 /**
@@ -1093,7 +1324,7 @@ function readHelpers(doc: Doc): HelperParameter[] {
   for (const row of readTable(doc, 'Layout helpers', HEADERS.helpers, false)?.rows ?? []) {
     const name = cell(row, 0);
     const token = cell(row, 1);
-    const family = HELPER_PARAMETERS[name];
+    const family = Object.hasOwn(HELPER_PARAMETERS, name) ? HELPER_PARAMETERS[name] : undefined;
     if (family === undefined) {
       doc.fail(row.line, `\`${name}\` is no helper parameter: the parameters are ${known}`);
       continue;

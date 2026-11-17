@@ -71,6 +71,23 @@ One spike alone: `node --test test/acceptance/spikes/s05.ts`.
   milestone M3 the cases are: the site builds
   with the CSP meta, the mode script and the speculation block on every page; `tokens --check` passes; the edge files
   exist; and three planted violations give `design-tokens`, `config-suppression` and `routes-redirects`.
+- `design-values.test.ts`: the differential test of the token values. The kit writes a value of `docs/design.md`
+  into `tokens.css` as it is, so a value that `design-format` accepts must be valid CSS. For each token family the
+  test makes many thousand candidate values.
+  - The seeds are the values of `test/unit/design-values.ts` and more values of the test file.
+  - The words come from the kit under test: every word of the built `dist/design/parse.js` stands in each kind of
+    place of the accepted seeds, as a keyword, as a unit and as a function name. So the test needs no copy of the
+    lists of the kit, and a word that only the kit knows is a candidate.
+  - A generator with a fixed seed changes the seeds, with the words that the kit accepted.
+
+  The packed kit says which candidates it accepts. Chromium then checks each accepted one: the declaration parses
+  for every use of its family (the properties of 7.3, and the calculations that 7.4 promises), the value stands in
+  a sheet like `tokens.css` as a custom property with a value, the declaration with `var()` has the effect of the
+  declaration with the value, and each `var()` in the value names a token of the right family. The test asserts
+  that no accepted value fails. The few values that 7.4 accepts for some uses only are the table `LIMITS` of the
+  file. A kit that accepts a value which is no CSS fails here with the value and the uses: then fix the grammar in
+  `src/design/parse.ts`, add the value to the refused list of the unit test, and correct 7.4. The file takes about
+  a minute.
 - `spikes.test.ts` and `spikes/`: the spikes S1 to S19. `spikes/sNN.ts` holds the tests of one spike. Every other
   file in that folder is a helper of a spike.
 - `kit/`: a small stand-in integration for the spikes. It is not the kit. `kit.test.ts` checks that it holds the
