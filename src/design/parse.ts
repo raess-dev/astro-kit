@@ -708,9 +708,29 @@ const GRADIENT_KEYWORDS: ReadonlySet<string> = new Set(
 );
 
 /**
- * One gradient function. Every color in it is `var(--color-…)`, and it has at least one. Angles, stop positions
- * and lengths are free: any number, dimension, calculation and keyword of `GRADIENT_KEYWORDS` passes. A `/` has
- * no place in a gradient outside a calculation.
+ * Says whether the comma-separated parts of a gradient have the shape of a gradient.
+ *
+ * - No part is empty.
+ * - A part holds at most one color, so two color stops always have a comma between them.
+ * - At least two parts are color stops. One color alone is no gradient.
+ * - A part without a color is the first part (a direction, a shape, a position, the color interpolation), or it is
+ *   a color hint: a position with no word, between two color stops.
+ */
+function hasStopStructure(parts: readonly (readonly Node[])[]): boolean {
+  const colorCount = parts.map((part) => part.filter((node) => varName(node) !== undefined).length);
+  if (parts.some((part) => part.length === 0) || colorCount.some((count) => count > 1)) return false;
+  if (colorCount.filter((count) => count === 1).length < 2) return false;
+  return parts.every((part, index) => {
+    if (colorCount[index] === 1 || index === 0) return true;
+    const betweenStops = colorCount[index - 1] === 1 && colorCount[index + 1] === 1;
+    return betweenStops && part.every((node) => node.kind !== 'ident');
+  });
+}
+
+/**
+ * One gradient function. Every color in it is `var(--color-…)`. It has at least two color stops, with a comma
+ * between them (`hasStopStructure`). Angles, stop positions and lengths are free: any number, dimension,
+ * calculation and keyword of `GRADIENT_KEYWORDS` passes. A `/` has no place in a gradient outside a calculation.
  */
 const isGradient: Grammar = (nodes, refs) => {
   const gradient = only(nodes);
@@ -722,7 +742,7 @@ const isGradient: Grammar = (nodes, refs) => {
     return isColorVar(node, colors) || mathType(node, () => true) !== undefined;
   });
   refs.push(...colors);
-  return free && colors.length > 0;
+  return free && hasStopStructure(listOf(gradient.nodes));
 };
 
 const EASE_KEYWORDS: readonly string[] = [
@@ -814,7 +834,7 @@ const ACCEPTED: Readonly<Record<TokenFamily, string>> = {
   ease: 'an easing keyword, `cubic-bezier()`, `steps()` or `linear()`',
   opacity: 'a number from 0 to 1 or a percentage from 0% to 100%',
   gradient:
-    'one `linear-gradient()`, `radial-gradient()` or `conic-gradient()`, or its `repeating-` form, in which every color is `var(--color-…)`',
+    'one `linear-gradient()`, `radial-gradient()` or `conic-gradient()`, or its `repeating-` form, with two or more color stops, in which every color is `var(--color-…)`',
 };
 
 /**

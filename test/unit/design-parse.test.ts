@@ -1433,6 +1433,8 @@ const ACCEPTED: Readonly<Record<TokenFamily, readonly string[]>> = {
   gradient: [
     'linear-gradient(135deg, var(--color-page) 0%, var(--color-muted) 60%)',
     'linear-gradient(to right, var(--color-page), var(--color-text))',
+    'linear-gradient(var(--color-page), 30%, var(--color-text))',
+    'linear-gradient(90deg, var(--color-page), calc(20% + 1rem), var(--color-muted), var(--color-text))',
     'linear-gradient(in oklch, var(--color-page), var(--color-text))',
     'linear-gradient(var(--color-page) calc(50% - 1px), var(--color-text) 0)',
     'radial-gradient(circle at 30% 20%, var(--color-page), var(--color-muted) 60%)',
@@ -1583,6 +1585,14 @@ const REFUSED: Readonly<Record<TokenFamily, readonly string[]>> = {
   opacity: ['1.5', '-0.1', '101%', '-1%', 'half', '0.5 0.5', '50px'],
   gradient: [
     'linear-gradient(#ffffff, #000000)',
+    'linear-gradient(var(--color-page))',
+    'linear-gradient(to right, var(--color-page))',
+    'linear-gradient(var(--color-page) var(--color-text))',
+    'linear-gradient(,var(--color-page), var(--color-text))',
+    'linear-gradient(var(--color-page), var(--color-text),)',
+    'linear-gradient(var(--color-page), 30%)',
+    'linear-gradient(var(--color-page), to right, var(--color-text))',
+    'linear-gradient(var(--color-page), 30%, 40%, var(--color-text))',
     'linear-gradient(red, var(--color-page))',
     'linear-gradient(var(--color-page), transparent)',
     'linear-gradient(var(--color-page), currentColor)',
