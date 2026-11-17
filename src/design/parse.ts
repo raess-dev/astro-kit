@@ -370,6 +370,10 @@ function lex(text: string): Node[] | undefined {
       }
       const single = SINGLE[char];
       if (single === undefined) return undefined;
+      // CSS wants white space on both sides of `+` and `-` in a calculation. No other value holds these signs alone.
+      if ((char === '+' || char === '-') && !(nodes.at(-1)?.kind === 'space' && SPACE.test(text.slice(at)))) {
+        return undefined;
+      }
       nodes.push(single);
     }
     return nested ? undefined : trimmed(nodes);
@@ -458,8 +462,8 @@ function operandType(node: Node | undefined, accepts: Accepts): CalcType | undef
  * - `*` needs a number on at least one side.
  * - The divisor of `/` is a number.
  *
- * CSS wants spaces around `+` and `-`: the tokenizer reads `1rem -2px` as two operands, so that text is no
- * calculation here either.
+ * CSS wants spaces around `+` and `-`. The tokenizer reads `1rem -2px` as two operands, and it refuses a `+` or a
+ * `-` without a space on both sides (`1rem+ 2px`). So neither text is a calculation here.
  */
 function sumType(words: readonly Node[], accepts: Accepts): CalcType | undefined {
   if (words.length % 2 === 0) return undefined;
