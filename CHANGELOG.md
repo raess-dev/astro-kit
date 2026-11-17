@@ -10,3 +10,7 @@
 - Milestone M3: the integration with its four hooks, the locked Astro config, the kit CSS, the token generator, the
   mode script, the seven edge files, and the commands `build` and `tokens`, with 12 more rules on the config, the
   routes, `docs/design.md`, `tokens.css`, `wrangler.jsonc`, `_headers` and `_redirects`.
+- A command that runs checks and ends with no failing finding prints `astro-kit: all checks passed.` as its last
+  line on stdout: `build` and `tokens --check`. The text of the findings never holds that line.
+- The acceptance suite and the test site are in this repository, under `test/acceptance/` and `test/site/`.
+  `npm run acceptance` runs the suite with the kit of the checkout.

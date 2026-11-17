@@ -23,8 +23,10 @@ const files = (head = ''): Record<string, string> => ({
   'src/styles/components/badge.css': '@layer components {\n  .badge {\n    display: inline-block;\n  }\n}\n',
   'src/styles/components/extra.css': '@layer components {\n  .extra {\n    display: flex;\n  }\n}\n',
   'src/styles/pages/index.css': '@layer page {\n  .card {\n    order: 1;\n  }\n}\n',
-  'src/components/Card.astro': "---\nimport '../styles/components/card.css';\n---\n<div class=\"card\"><slot /></div>\n",
-  'src/components/Badge.astro': "---\nimport '../styles/components/badge.css';\n---\n<span class=\"badge\"><slot /></span>\n",
+  'src/components/Card.astro':
+    '---\nimport \'../styles/components/card.css\';\n---\n<div class="card"><slot /></div>\n',
+  'src/components/Badge.astro':
+    '---\nimport \'../styles/components/badge.css\';\n---\n<span class="badge"><slot /></span>\n',
   'src/pages/index.astro': page(
     'Home',
     '<Card><Badge>b</Badge></Card>',
@@ -68,7 +70,10 @@ test("S3: inlineStylesheets 'always' gives one <style>, and an unused selector s
   // Both parts are larger than the limit, so the default `'auto'` would link them (the next test).
   const global = Buffer.byteLength(styles(read(dir, 'dist/plain/index.html')));
   assert.ok(global > INLINE_LIMIT, `the global CSS has ${global} B`);
-  assert.ok(Buffer.byteLength(css) - global > INLINE_LIMIT, `the CSS of the route has ${Buffer.byteLength(css) - global} B`);
+  assert.ok(
+    Buffer.byteLength(css) - global > INLINE_LIMIT,
+    `the CSS of the route has ${Buffer.byteLength(css) - global} B`,
+  );
 });
 
 test("S3: the control: with inlineStylesheets 'auto', the same project links its style sheets", () => {
@@ -100,7 +105,11 @@ test('S3: a chunk with a remote @import stays in a second <style>', () => {
   for (const part of ['.card{display:block}', '.badge{display:inline-block}', '.card{order:1}']) {
     assert.ok(home[1]?.includes(part), `the second <style> holds ${part}`);
   }
-  assert.equal(/<link\b[^>]*stylesheet/i.test(read(dir, 'dist/index.html')), false, 'separate means inline, not linked');
+  assert.equal(
+    /<link\b[^>]*stylesheet/i.test(read(dir, 'dist/index.html')),
+    false,
+    'separate means inline, not linked',
+  );
   assert.deepEqual(cssFiles(join(dir, 'dist')), [], 'the build writes no .css file');
   assert.equal(sheets(read(dir, 'dist/plain/index.html')).length, 1, 'a page without the chunk keeps one <style>');
   record('S3.remoteImport', 'a second inline <style> that starts with the @import');

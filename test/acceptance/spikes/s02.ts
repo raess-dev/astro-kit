@@ -16,7 +16,7 @@ const NEVER = "Astro.url.pathname === '/never/'";
 const files = {
   ...Object.assign({}, ...NAMES.map(component)),
   'src/layouts/Base.astro':
-    "---\nimport Deep from '../components/Deep.astro';\n---\n<html lang=\"de\"><head><meta charset=\"utf-8\"><title>Layout</title></head><body><Deep /><slot /></body></html>\n",
+    '---\nimport Deep from \'../components/Deep.astro\';\n---\n<html lang="de"><head><meta charset="utf-8"><title>Layout</title></head><body><Deep /><slot /></body></html>\n',
   'src/styles/pages/index.css': '@layer page {\n  .card {\n    order: 1;\n  }\n}\n',
   'src/pages/index.astro': page(
     'Home',

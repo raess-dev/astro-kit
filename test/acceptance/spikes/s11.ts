@@ -5,11 +5,11 @@ import { test } from 'node:test';
 import { astro, read, record } from '../harness.ts';
 import { page, project } from './project.ts';
 
-/** A dynamic route that builds one page for each value and says which route file built it. */
-const dynamic = (who: string, param: string, values: string[]): string =>
+/** A dynamic route that builds one page for each value and says which route file built it. `name` is that file. */
+const dynamic = (name: string, param: string, values: string[]): string =>
   page(
-    who,
-    `<p id="who">${who}</p>`,
+    name,
+    `<p id="who">${name}</p>`,
     `export function getStaticPaths() {\n  return ${JSON.stringify(values)}.map((value) => ({ params: { ${param}: value } }));\n}`,
   );
 
@@ -35,7 +35,9 @@ const CONFLICTS: Conflict[] = [
 /** Every conflict that Astro's output names. The same text is the error and the warning. */
 const conflicts = (output: string): Conflict[] =>
   [
-    ...output.matchAll(/Could not render `([^`]+)` from route `([^`]+)` as it conflicts with higher priority route `([^`]+)`/g),
+    ...output.matchAll(
+      /Could not render `([^`]+)` from route `([^`]+)` as it conflicts with higher priority route `([^`]+)`/g,
+    ),
   ].map((match) => ({ path: match[1] ?? '', from: match[2] ?? '', winner: match[3] ?? '' }));
 
 /** The route file that built a page, or `none` when the page is not in `dist`. */
@@ -48,7 +50,10 @@ test("S11: with prerenderConflictBehavior 'error', a build in which two routes b
   const dir = project('s11', files);
   const run = astro(dir);
   assert.notEqual(run.status, 0, 'the build fails');
-  assert.ok(run.output.includes('[PrerenderRouteConflict]'), `the error names the conflict:\n${run.output.slice(-2000)}`);
+  assert.ok(
+    run.output.includes('[PrerenderRouteConflict]'),
+    `the error names the conflict:\n${run.output.slice(-2000)}`,
+  );
   const found = conflicts(run.output);
   // Astro throws at the first conflict, before it writes any page.
   assert.equal(found.length, 1, 'one conflict stops the build');
@@ -56,7 +61,8 @@ test("S11: with prerenderConflictBehavior 'error', a build in which two routes b
     CONFLICTS.some((conflict) => JSON.stringify(conflict) === JSON.stringify(found[0])),
     `the message names the path and both routes: ${JSON.stringify(found[0])}`,
   );
-  for (const path of ['/', '/kontakt/', '/zimmer/', '/lage/']) assert.equal(who(dir, path), 'none', `${path} is not built`);
+  for (const path of ['/', '/kontakt/', '/zimmer/', '/lage/'])
+    assert.equal(who(dir, path), 'none', `${path} is not built`);
   record('S11.error', { status: run.status, conflict: found[0] });
 });
 
@@ -67,7 +73,11 @@ test("S11: the default 'warn' builds the same project, warns, and skips the lowe
   assert.equal(run.output.includes('[PrerenderRouteConflict]'), false, 'no error');
   assert.deepEqual(conflicts(run.output), CONFLICTS, 'one warning for each conflict, with the path and both routes');
   const built = { '/kontakt/': who(dir, '/kontakt/'), '/zimmer/': who(dir, '/zimmer/'), '/lage/': who(dir, '/lage/') };
-  assert.deepEqual(built, { '/kontakt/': 'static', '/zimmer/': 'slug', '/lage/': 'rest' }, 'the higher-priority route wins');
+  assert.deepEqual(
+    built,
+    { '/kontakt/': 'static', '/zimmer/': 'slug', '/lage/': 'rest' },
+    'the higher-priority route wins',
+  );
   record('S11.warn', { status: run.status, warnings: conflicts(run.output).length, built });
 });
 
@@ -80,7 +90,7 @@ test("S11: a page and a static endpoint that write one file are no conflict for 
       'src/pages/index.astro': page('Home', '<p id="who">home</p>'),
       'src/pages/zimmer.astro': page('Zimmer', '<p id="who">page</p>'),
       'src/pages/zimmer/index.html.ts':
-        "export const GET = () => new Response('<!doctype html><title>Endpoint</title><p id=\"who\">endpoint</p>');\n",
+        'export const GET = () => new Response(\'<!doctype html><title>Endpoint</title><p id="who">endpoint</p>\');\n',
     },
     "{ onRoutes: (routes, root) => writeFileSync(join(root, 'routes.json'), JSON.stringify(routes.filter((route) => route.origin === 'project').map((route) => [route.pattern, route.type, route.isPrerendered]))) }",
     "import { writeFileSync } from 'node:fs';\nimport { join } from 'node:path';",

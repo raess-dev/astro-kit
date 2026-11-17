@@ -8,15 +8,27 @@ pull request that changes a fixed value changes that file too.
 - Has one entry in `src/registry.ts`: a stable id, a group, a stage, a level, the standard as one decidable sentence,
   the failure message and a fix hint. The waivable mark comes from the one list in that file.
 - Has a unit test with one passing and one failing case, under `test/unit/`.
-- Has a planted violation in the acceptance suite of `raess-dev/astro-kit-test`, or a name in its list of rules that
-  the sets do not plant.
+- Has a planted violation in a set of the acceptance suite under `test/acceptance/`, or a name in the list of rules
+  that the sets do not plant (`docs/spec.md`, 14.2).
 - Appears in `docs/standards.md`. Run `npm run docs` after a registry change and commit the result. CI runs
   `node src/docs.ts --check`.
 
 ## Tests
 
-The kit has unit tests only. No kit test installs, builds, serves or checks an Astro project. Every real build runs
-in the test repository.
+The tests are in this repository, in three folders. Nothing under `test/` is in the npm package.
+
+- `test/unit/`: the unit tests. Run them with `npm test`. They use strings and small temp folders. No unit test
+  installs, builds, serves or checks an Astro project.
+- `test/acceptance/`: the acceptance suite. Run it with `npm run acceptance`. It builds and packs the kit of the
+  checkout, installs the packed kit into a temp copy of the test site, and runs the kit CLI there. Every real build
+  runs here: the cases on the test site, and the platform spikes.
+- `test/site/`: the test site, the fictitious Hotel Lärchenwald. It is one complete kit project, and it is test
+  data for the suite. A change of the kit that changes what a site must do changes the test site in the same pull
+  request.
+
+`npm run check` covers `test/unit/` and `test/acceptance/` like all other kit code. It leaves `test/site/` out: the
+site has its own `biome.json` and `tsconfig.json`, and the kit checks it in the suite. `test/README.md` says how to
+run one test file, which variables the suite reads, and how to build the test site by hand.
 
 ## The version rule
 
@@ -42,8 +54,9 @@ not change `version`. A release pull request sets `version` and moves those line
 
 ## Who merges
 
-CI merges a green pull request of an agent account. It never merges a pull request that changes `.github/` or
-`.npmrc`: the owner approves such a pull request and merges it by hand. Agents never approve and never merge.
+CI merges a green pull request of an agent account: the jobs `kit / test`, `kit / acceptance` and `kit / scan` must
+pass. It never merges a pull request that changes the root `.github/` or the root `.npmrc`: the owner approves such
+a pull request and merges it by hand. Agents never approve and never merge.
 
 ## Before you push
 
@@ -53,7 +66,10 @@ npm run build
 npm run check
 npm test
 node src/docs.ts --check
+npm run acceptance
 ```
+
+`npm run acceptance` needs a Chromium: run `npx --no playwright-core install chromium` once, or set `CHROME_PATH`.
 
 ## Code
 

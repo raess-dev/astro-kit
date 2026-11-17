@@ -3,42 +3,42 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
+  type Browser,
   browse,
   build,
-  KIT_DIR,
+  type Files,
   launch,
+  type Page,
   PIXEL_SOURCE,
+  type Pixel,
   pixelDistance,
   read,
   record,
+  STAND_IN,
   samePixel,
   serve,
   styles,
-  type Browser,
-  type Files,
-  type Page,
-  type Pixel,
 } from '../harness.ts';
 import { page, project } from './project.ts';
-import { cases, REFUSED, SETTINGS, SYNTAX, type Setting } from './s16-designs.ts';
+import { cases, REFUSED, SETTINGS, type Setting, SYNTAX } from './s16-designs.ts';
 import {
+  type Design,
   defaultOf,
   designValue,
   enabledOf,
   MEDIA_SELECTOR,
-  problems,
-  renderTokens,
-  scheme,
-  SYSTEMS,
-  themeOf,
-  type Design,
   type Modes,
   type Option,
+  problems,
+  renderTokens,
+  SYSTEMS,
   type System,
+  scheme,
+  themeOf,
 } from './s16-tokens.ts';
 
 /** The text of setting 1, as 7.7 prints it. */
-const SETTING_1 = readFileSync(join(KIT_DIR, 'tokens-setting-1.css'), 'utf8');
+const SETTING_1 = readFileSync(join(STAND_IN, 'tokens-setting-1.css'), 'utf8');
 const textOf = (setting: Setting): string => setting.text ?? SETTING_1;
 
 /** A media selector that leaves `data-mode="auto"` out. No text of 7.7 has it: the controls use it. */
@@ -54,14 +54,17 @@ const probeCss = (tokens: string[]): string => {
 const probePage = (title: string, tokens: string[], frontmatter = ''): string =>
   page(title, tokens.map((token) => `<span data-probe="${token}"></span>`).join(''), frontmatter);
 
-/** The `@layer tokens{…}` block of built CSS. */
-function tokensBlock(css: string): string {
+/** The `@layer tokens{…}` block of built CSS. `undefined` when the CSS has no tokens layer: the caller asserts it. */
+function tokensBlock(css: string): string | undefined {
   const start = css.indexOf('@layer tokens{');
-  assert.notEqual(start, -1, 'the built CSS has a tokens layer');
+  if (start === -1) return undefined;
   let depth = 0;
   for (let at = start; at < css.length; at += 1) {
     if (css[at] === '{') depth += 1;
-    if (css[at] === '}' && (depth -= 1) === 0) return css.slice(start, at + 1);
+    if (css[at] === '}') {
+      depth -= 1;
+      if (depth === 0) return css.slice(start, at + 1);
+    }
   }
   throw new Error('the tokens layer does not end');
 }
@@ -81,7 +84,8 @@ async function emulate(tab: Page, system: System): Promise<void> {
   await tab.emulateMedia({ colorScheme: system.scheme, contrast: system.contrast });
   await tab.waitForFunction(
     (s: System) =>
-      matchMedia(`(prefers-color-scheme: ${s.scheme})`).matches && matchMedia(`(prefers-contrast: ${s.contrast})`).matches,
+      matchMedia(`(prefers-color-scheme: ${s.scheme})`).matches &&
+      matchMedia(`(prefers-contrast: ${s.contrast})`).matches,
     system,
     { timeout: 30_000 },
   );
@@ -118,7 +122,9 @@ function readState(arg: { mode: string | null; expected: Record<string, string> 
     const element = document.querySelector(`[data-probe="${token}"]`);
     colors[token] = {
       probe: paint(element ? getComputedStyle(element).backgroundColor : 'no probe'),
-      reference: paint(reference.style.backgroundColor === '' ? 'no color' : getComputedStyle(reference).backgroundColor),
+      reference: paint(
+        reference.style.backgroundColor === '' ? 'no color' : getComputedStyle(reference).backgroundColor,
+      ),
     };
   }
   reference.remove();
@@ -143,6 +149,8 @@ class Tally {
   states = 0;
   readings = 0;
   misses: Miss[] = [];
+  /** The readings that `check` cannot compare: no reading for a token, or a side that is no color. */
+  unreadable: string[] = [];
 }
 
 /** The mode states of 7.12: the no-attribute state, and with two or more options each of them as `data-mode`. */
@@ -155,6 +163,8 @@ const modeStates = (modes: Modes): (Option | null)[] => {
  * Checks the loaded page in each of the mode states `states` and each system state: every probe shows the design
  * value of `T(M, S)` (7.12), and `html` has the `color-scheme` `scheme(M)`, with `D` for the no-attribute state.
  * A probe shows the design value when each of the four canvas channels is equal within 1 of 255 (`modes-behavior`).
+ * The function asserts nothing. It adds to `tally`, and the test asserts that `tally.unreadable` is empty and what
+ * `tally.misses` holds.
  */
 async function check(
   tab: Page,
@@ -179,9 +189,18 @@ async function check(
       }
       for (const token of tokens) {
         const color = got.colors[token];
-        assert.ok(color, `${name}: a reading for ${token}`);
-        assert.equal(color.reference.pixel.length, 4, `${name}: the design value of ${token} is a color`);
-        assert.equal(color.probe.pixel.length, 4, `${name}: the probe of ${token} has a color`);
+        if (!color) {
+          tally.unreadable.push(`${name}: no reading for ${token}`);
+          continue;
+        }
+        const before = tally.unreadable.length;
+        if (color.reference.pixel.length !== 4) {
+          tally.unreadable.push(`${name}: the design value of ${token} is no color: ${color.reference.text}`);
+        }
+        if (color.probe.pixel.length !== 4) {
+          tally.unreadable.push(`${name}: the probe of ${token} has no color: ${color.probe.text}`);
+        }
+        if (tally.unreadable.length > before) continue;
         tally.readings += 1;
         if (!samePixel(color.probe.pixel, color.reference.pixel)) {
           tally.misses.push({
@@ -239,7 +258,8 @@ function settingDir(setting: Setting): string {
 }
 
 /** The built `tokens` layer of setting 1, from the build that injects `src/styles/tokens.css`. */
-const injectedSetting1 = (): string => tokensBlock(styles(read(settingDir(SETTINGS[0] as Setting), 'dist/index.html')));
+const injectedSetting1 = (): string | undefined =>
+  tokensBlock(styles(read(settingDir(SETTINGS[0] as Setting), 'dist/index.html')));
 
 test('S16: in Chromium, the five texts of 7.7 show T(M, S) and scheme(M) in every mode state and system state', async () => {
   const dirs = SETTINGS.map((setting) => {
@@ -249,7 +269,9 @@ test('S16: in Chromium, the five texts of 7.7 show T(M, S) and scheme(M) in ever
     assert.equal(css.includes('light-dark('), setting.id !== 5, 'light-dark() reaches the page, but not in setting 5');
     return dir;
   });
-  record('S16.builtTokens.setting1', injectedSetting1());
+  const injected = injectedSetting1();
+  assert.ok(injected, 'the built CSS of setting 1 has a tokens layer');
+  record('S16.builtTokens.setting1', injected);
 
   const inside = new Tally();
   const outside = new Tally();
@@ -293,6 +315,7 @@ test('S16: in Chromium, the five texts of 7.7 show T(M, S) and scheme(M) in ever
     await browser.close();
   }
 
+  assert.deepEqual(inside.unreadable, []);
   assert.deepEqual(inside.misses, [], 'every state shows T(M, S) and scheme(M)');
   // 20 states for setting 1, 4 for 2, 16 for 3, 16 for 4, 4 for 5; 3 color tokens.
   assert.equal(inside.states, 60);
@@ -310,6 +333,7 @@ test('S16: in Chromium, the five texts of 7.7 show T(M, S) and scheme(M) in ever
 
   // Outside the state space of 7.12: `data-mode` set by hand with one option (settings 2 and 5). The media block
   // always names `:root[data-mode="auto"]` too, so `data-mode="auto"` shows T(auto, S), the contrast themes included.
+  assert.deepEqual(outside.unreadable, []);
   assert.equal(outside.states, 8);
   assert.deepEqual(outside.misses, [], 'data-mode set with one option shows T(M, S) too');
   record('S16.oneOption.dataModeAuto', 'shows T(auto, S), the contrast themes included');
@@ -343,7 +367,11 @@ test('S16: every valid theme set and modes setting shows T(M, S), with empty cel
   ];
   for (const one of pages) {
     assert.equal(/color-mix\(|display-p3/.test(one.css), false, `${one.path} holds no color-mix() and no display-p3`);
-    assert.equal(one.css.includes(NO_ATTRIBUTE_ONLY + ' {'), /^(narrow\d+|broken)$/.test(one.path), `${one.path}: the media selector`);
+    assert.equal(
+      one.css.includes(`${NO_ATTRIBUTE_ONLY} {`),
+      /^(narrow\d+|broken)$/.test(one.path),
+      `${one.path}: the media selector`,
+    );
   }
   const files: Files = { 'src/styles/probes.css': probeCss([...new Set(pages.flatMap((one) => one.tokens))]) };
   for (const one of pages) {
@@ -366,7 +394,10 @@ test('S16: every valid theme set and modes setting shows T(M, S), with empty cel
   // The page import gives the same built text as the injection of `src/styles/tokens.css`. So the pages of this
   // build stand for the injected file of 6.1.
   const imported = tokensBlock(styles(read(dir, 'dist/setting1/index.html')));
-  assert.equal(imported, injectedSetting1(), 'the page import and the injection give the same built tokens layer');
+  assert.ok(imported, 'the built CSS of the page setting1 has a tokens layer');
+  const injected = injectedSetting1();
+  assert.ok(injected, 'the built CSS of setting 1 has a tokens layer');
+  assert.equal(imported, injected, 'the page import and the injection give the same built tokens layer');
 
   const inside = new Tally();
   const outside = new Tally();
@@ -396,6 +427,11 @@ test('S16: every valid theme set and modes setting shows T(M, S), with empty cel
     await server.close();
   }
 
+  // Every reading of the four checks is a pair of colors: no token without a reading, and no text that is no color.
+  assert.deepEqual(inside.unreadable, []);
+  assert.deepEqual(outside.unreadable, []);
+  assert.deepEqual(narrowTally.unreadable, []);
+  assert.deepEqual(brokenTally.unreadable, []);
   assert.deepEqual(inside.misses, [], 'every state of every case shows T(M, S) and scheme(M)');
   record('S16.states.designs', inside.states);
   record('S16.readings.designs', inside.readings);
@@ -415,7 +451,9 @@ test('S16: every valid theme set and modes setting shows T(M, S), with empty cel
     oneAuto.map((one) => one.name),
   );
   assert.ok(
-    narrowTally.misses.every((miss) => miss.mode === 'auto' && miss.system.endsWith('more') && miss.what !== 'color-scheme'),
+    narrowTally.misses.every(
+      (miss) => miss.mode === 'auto' && miss.system.endsWith('more') && miss.what !== 'color-scheme',
+    ),
   );
 });
 
@@ -428,9 +466,16 @@ test('S16: every color syntax that 7.4 accepts shows the design value; the build
   });
   build(dir);
   const built = tokensBlock(styles(read(dir, 'dist/index.html')));
+  assert.ok(built, 'the built CSS has a tokens layer');
   // The minifier keeps these syntaxes as written, also a wide color in oklch(). It writes every other one in a
   // shorter form: hex, a name, or `color(xyz …)` for `xyz-d65`, which is the same space.
-  for (const kept of ['lab(29% 39 -20)', 'lch(52% 60 30)', 'oklab(60% .1 -.1)', 'oklch(40% .1 250)', 'oklch(70% .3 145)']) {
+  for (const kept of [
+    'lab(29% 39 -20)',
+    'lch(52% 60 30)',
+    'oklab(60% .1 -.1)',
+    'oklch(40% .1 250)',
+    'oklch(70% .3 145)',
+  ]) {
     assert.ok(built.includes(`light-dark(${kept},#123456)`), `${kept} stays as written`);
   }
   // `color()` stays in its space, for every space that 7.4 accepts: the build writes no sRGB value in its place.
@@ -464,6 +509,7 @@ test('S16: every color syntax that 7.4 accepts shows the design value; the build
   } finally {
     await server.close();
   }
+  assert.deepEqual(tally.unreadable, []);
   assert.equal(tally.states, 20);
   assert.equal(tally.readings, 20 * tokens.length);
   assert.deepEqual(tally.misses, [], 'every accepted syntax shows the design value in every state');
@@ -476,6 +522,7 @@ test('S16: every color syntax that 7.4 accepts shows the design value; the build
   });
   build(refused);
   const replaced = tokensBlock(styles(read(refused, 'dist/index.html')));
+  assert.ok(replaced, 'the built CSS of the refused syntaxes has a tokens layer');
   /** What the first `:root` rule of the built tokens layer declares for the token. */
   const declared = (token: string): string => new RegExp(`${token}:([^;}]+)`).exec(replaced)?.[1] ?? '';
   // The minifier computes color-mix(), so the page holds the minifier's result and never the browser's own mix.
@@ -492,7 +539,10 @@ test('S16: every color syntax that 7.4 accepts shows the design value; the build
   // reach the page as display-p3 colors.
   const again =
     ':root{--color-p3:light-dark(color(display-p3 1 .5 0),color(display-p3 .106562 .200947 .326991));--color-pair:light-dark(color(display-p3 .425044 .915677 .94766),color(display-p3 .634 .948 .293))}';
-  assert.ok(replaced.includes(`${SUPPORTS}${again}`), 'an @supports rule holds both sides of light-dark() in display-p3');
+  assert.ok(
+    replaced.includes(`${SUPPORTS}${again}`),
+    'an @supports rule holds both sides of light-dark() in display-p3',
+  );
   assert.equal(replaced.split(SUPPORTS).length - 1, 3, 'one @supports rule after each rule with a display-p3 color');
 
   // 13.1 item 40 in the browser: the page shows the minifier's result, and that is another color than the browser's
@@ -512,7 +562,10 @@ test('S16: every color syntax that 7.4 accepts shows the design value; the build
     assert.equal(mixed.probe.pixel.length, 4, `the probe has a color: ${mixed.probe.text}`);
     const distance = pixelDistance(mixed.probe.pixel, mixed.reference.pixel);
     t.diagnostic(`S16: the built color-mix() differs from the browser's own mix by ${distance} of 255 in a channel`);
-    assert.ok(distance > 1, `the page does not show the design value: ${mixed.probe.text} against ${mixed.reference.text}`);
+    assert.ok(
+      distance > 1,
+      `the page does not show the design value: ${mixed.probe.text} against ${mixed.reference.text}`,
+    );
   } finally {
     await close();
   }

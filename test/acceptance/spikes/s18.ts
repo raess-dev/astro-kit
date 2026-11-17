@@ -2,21 +2,26 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
+  type BrowserContext,
   browse,
   build,
+  type ConsoleMessage,
   cspMeta,
+  type Page,
   read,
   record,
   standIn,
-  type BrowserContext,
-  type ConsoleMessage,
-  type Page,
 } from '../harness.ts';
 import { PERMISSIONS_POLICY, PNG, page, project } from './project.ts';
 
 interface Routed {
   request(): { url(): string; method(): string; postData(): string | null };
-  fulfill(answer: { status: number; contentType: string; headers?: Record<string, string>; body: string }): Promise<void>;
+  fulfill(answer: {
+    status: number;
+    contentType: string;
+    headers?: Record<string, string>;
+    body: string;
+  }): Promise<void>;
 }
 interface Violation {
   directive: string;
@@ -154,22 +159,22 @@ async function thirdParties(context: BrowserContext): Promise<string[]> {
     const url = new URL(request.url());
     const posted = request.postData();
     hits.push(`${request.method()} ${url.href}${posted ? ` ${posted}` : ''}`);
-    const headers = { 'access-control-allow-origin': '*' };
+    const cors = { 'access-control-allow-origin': '*' };
     if (url.pathname === '/embed' || url.pathname === '/subscribe') {
       const body = `<!doctype html><title>${url.host}</title><p>${url.pathname}</p>`;
       await route.fulfill({ status: 200, contentType: 'text/html', body });
     } else if (url.href === 'https://stats.example.net/x.js') {
       // A script that loads with the page, and reports the page view to its own host.
       const body = `fetch('https://stats.example.net/collect', { method: 'POST', body: 'view' }).then(() => { document.documentElement.dataset.stats = 'sent'; });`;
-      await route.fulfill({ status: 200, contentType: 'text/javascript', headers, body });
+      await route.fulfill({ status: 200, contentType: 'text/javascript', headers: cors, body });
     } else if (url.pathname.endsWith('.js')) {
       // A third-party script writes HTML through a sink that Trusted Types refuses.
       const body = `document.getElementById('slot').innerHTML = '<b>${url.host}</b>';`;
-      await route.fulfill({ status: 200, contentType: 'text/javascript', headers, body });
+      await route.fulfill({ status: 200, contentType: 'text/javascript', headers: cors, body });
     } else if (url.pathname.endsWith('.css')) {
-      await route.fulfill({ status: 200, contentType: 'text/css', headers, body: 'h1 { color: red; }' });
+      await route.fulfill({ status: 200, contentType: 'text/css', headers: cors, body: 'h1 { color: red; }' });
     } else {
-      await route.fulfill({ status: 200, contentType: 'application/json', headers, body: '{"ok":true}' });
+      await route.fulfill({ status: 200, contentType: 'application/json', headers: cors, body: '{"ok":true}' });
     }
   });
   return hits;
@@ -242,7 +247,10 @@ async function blocked(s: Session, id: string, count = 1): Promise<string[]> {
   const before = await s.violations();
   // Playwright waits for a navigation that the click starts. A form submission that the CSP stops never ends for it.
   await s.tab.click(`#${id}`, { noWaitAfter: true });
-  await s.tab.waitForFunction((size: number) => (window as unknown as Probed).__s18.length >= size, before.length + count);
+  await s.tab.waitForFunction(
+    (size: number) => (window as unknown as Probed).__s18.length >= size,
+    before.length + count,
+  );
   const after = await s.violations();
   for (const known of before) after.splice(after.indexOf(known), 1);
   return after;
@@ -264,7 +272,10 @@ test('S18: declared origins work after a click under the CSP of 9.4, and every o
   ]) {
     assert.ok(meta.includes(directive), `the CSP meta holds ${directive}`);
   }
-  assert.equal(header, "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self' https://news.example.com");
+  assert.equal(
+    header,
+    "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self' https://news.example.com",
+  );
 
   // `gesture`: the built page holds no frame and no script of a host. The form's `action` is the one host URL.
   assert.equal(/<iframe/.test(home), false, 'no iframe in the built page');
@@ -285,7 +296,10 @@ test('S18: declared origins work after a click under the CSP of 9.4, and every o
     // The four declared uses. The form comes last, because it leaves the page.
     for (const id of ['frame', 'script', 'fetch']) await act(tab, id);
     assert.deepEqual(await s.done(), { frame: 'load', script: 'load', fetch: '{"ok":true}' });
-    assert.ok(tab.frames().some((frame) => frame.url() === 'https://maps.example.org/embed'), 'the frame holds the map');
+    assert.ok(
+      tab.frames().some((frame) => frame.url() === 'https://maps.example.org/embed'),
+      'the frame holds the map',
+    );
     assert.equal(
       await tab.evaluate(() => document.querySelector('#slot')?.innerHTML),
       '<b>js.pay.example</b>',
@@ -296,7 +310,11 @@ test('S18: declared origins work after a click under the CSP of 9.4, and every o
     const popup = await open(s, 'popup');
     assert.equal(popup.url(), 'https://js.pay.example/embed');
     assert.equal(await popup.evaluate(() => window.opener !== null), true, 'the opened window has its opener');
-    assert.equal(await tab.evaluate(() => (window as unknown as Probed).__s18popup?.closed), false, 'the page keeps the window');
+    assert.equal(
+      await tab.evaluate(() => (window as unknown as Probed).__s18popup?.closed),
+      false,
+      'the page keeps the window',
+    );
     await popup.close();
 
     assert.deepEqual(await s.violations(), [], 'no CSP violation');
@@ -377,14 +395,23 @@ test('S18: declared origins work after a click under the CSP of 9.4, and every o
 test('S18: with load "page", a static async script and a titled iframe of declared hosts load with no violation', async () => {
   const { headerCsp } = await standIn();
   const html = read(site(), 'dist/page/index.html');
-  assert.ok(html.includes('<iframe src="https://maps.example.org/embed" title="Map"></iframe>'), 'Astro keeps the iframe');
-  assert.ok(html.includes('<script src="https://stats.example.net/x.js" async></script>'), 'Astro keeps the script tag');
+  assert.ok(
+    html.includes('<iframe src="https://maps.example.org/embed" title="Map"></iframe>'),
+    'Astro keeps the iframe',
+  );
+  assert.ok(
+    html.includes('<script src="https://stats.example.net/x.js" async></script>'),
+    'Astro keeps the script tag',
+  );
 
   await session(headers(headerCsp(OPTIONS), 'same-origin-allow-popups'), async (s) => {
     await s.tab.goto(`${s.origin}/page/`);
     await s.tab.waitForFunction(() => document.documentElement.dataset.stats === 'sent');
     await s.tab.waitForLoadState('networkidle');
-    assert.ok(s.tab.frames().some((frame) => frame.url() === 'https://maps.example.org/embed'), 'the frame holds the map');
+    assert.ok(
+      s.tab.frames().some((frame) => frame.url() === 'https://maps.example.org/embed'),
+      'the frame holds the map',
+    );
     assert.deepEqual([...s.hits].sort(), [
       'GET https://maps.example.org/embed',
       'GET https://stats.example.net/x.js',

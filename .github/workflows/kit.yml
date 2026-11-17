@@ -1,6 +1,8 @@
-# The kit's CI (specification, 11.1). test: types, lint, unit tests and the generated docs. scan: zizmor on the
-# workflows and gitleaks on the history. merge: squashes a green pull request of an agent account or Dependabot.
-# A pull request that changes .github/ or .npmrc is never merged here: the owner approves it and merges it by hand.
+# The kit's CI (specification, 11.1). test: types, lint, unit tests and the generated docs. acceptance: the
+# acceptance suite of test/acceptance/ with the test site of test/site/. scan: zizmor on the workflows and gitleaks
+# on the history. merge: squashes a green pull request of an agent account or Dependabot.
+# A pull request that changes the root .github/ or the root .npmrc is never merged here: the owner approves it and
+# merges it by hand. The kit repository deploys nothing, so no wrangler file is protected here.
 # The merge after an approval is in kit-approved.yml: a job that is skipped here on a review event would report a
 # skipped check with the name of a required check, and GitHub counts a skipped check as passed.
 name: kit
@@ -42,6 +44,27 @@ jobs:
       - name: docs/standards.md matches the registry
         run: node src/docs.ts --check
 
+  # The suite packs the kit of this checkout and installs it into a copy of test/site/ (specification, 14.2).
+  # Code of the test site runs in this job, so it holds no secret and no token that can write.
+  acceptance:
+    name: kit / acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Chromium for the browser cases
+        run: npx --no playwright-core install --with-deps chromium
+      - name: The acceptance suite, with the kit that the harness builds and packs from this checkout
+        run: npm run acceptance
+
   scan:
     name: kit / scan
     runs-on: ubuntu-latest
@@ -66,7 +89,7 @@ jobs:
 
   merge:
     name: kit / merge
-    needs: [test, scan]
+    needs: [test, scan, acceptance]
     if: >-
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository
@@ -83,7 +106,6 @@ jobs:
           KIT_AGENTS: ${{ vars.KIT_AGENTS }}
           PR: ${{ github.event.pull_request.number }}
           TESTED_SHA: ${{ github.event.pull_request.head.sha }}
-          HEAD_REF: ${{ github.head_ref }}
         run: |
           set -euo pipefail
           live=$(gh api "repos/$REPO/pulls/$PR" --jq '[.state, .draft, .head.sha, .base.ref, .user.login] | @tsv')
@@ -95,7 +117,7 @@ jobs:
           jq -e --arg a "$author" '(. + ["dependabot[bot]"]) | index($a) != null' <<<"${KIT_AGENTS:-[]}" >/dev/null ||
             { echo "$author is not an agent account: CI does not merge this pull request"; exit 0; }
           files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)')
-          if grep -qE '^\.github/|^\.npmrc$|(^|/)wrangler\.[^/]+$' <<<"$files"; then
+          if grep -qE '^\.github/|^\.npmrc$' <<<"$files"; then
             echo 'it changes a protected file: the owner approves it and merges it by hand'; exit 0
           fi
           if ! out=$(gh pr merge "$PR" --repo "$REPO" --squash --delete-branch --match-head-commit "$TESTED_SHA" 2>&1); then
@@ -103,4 +125,4 @@ jobs:
             echo 'A required check is not green yet, or an owner file waits for the approval of the owner.'
             exit 0
           fi
-          if [ "$base" = main ]; then gh workflow run release.yml --repo "$REPO" --ref main -f paired="$HEAD_REF"; fi
+          if [ "$base" = main ]; then gh workflow run release.yml --repo "$REPO" --ref main; fi

@@ -1,6 +1,6 @@
 /**
- * A small stand-in for the kit integration. The spikes of `test/spikes.test.ts` use it to prove platform facts
- * before the kit exists (specification, 13.2). It follows section 6.1 of the specification: the locked config, the
+ * A small stand-in for the kit integration. The spikes of `test/acceptance/spikes.test.ts` use it to prove platform
+ * facts without the kit (specification, 13.2). It follows section 6.1 of the specification: the locked config, the
  * global CSS through `injectScript('page-ssr')`, the CSP, and the two inserts in `astro:build:done`.
  * It is test code. It is not the kit, and no site imports it.
  */
@@ -30,8 +30,8 @@ export function modeScript(setting) {
   const { enabled, D } = modes(setting);
   return readFileSync(here('./mode-script.txt'), 'utf8')
     .trimEnd()
-    .replace('${MODES}', JSON.stringify(enabled))
-    .replace('${DEFAULT}', JSON.stringify(D));
+    .replace(/\$\{MODES\}/, JSON.stringify(enabled))
+    .replace(/\$\{DEFAULT\}/, JSON.stringify(D));
 }
 
 const host = (origin) => `https://${origin.host}`;
@@ -117,8 +117,8 @@ export default function kit(options = {}) {
         ];
         const css =
           options.css ??
-          [here('./base.css'), 'src/styles/fonts.css', 'src/styles/tokens.css', 'src/styles/elements.css'].map((file) =>
-            file.startsWith('/') ? file : join(root, file),
+          [here('./base.css'), 'src/styles/fonts.css', 'src/styles/tokens.css', 'src/styles/elements.css'].map(
+            (file) => (file.startsWith('/') ? file : join(root, file)),
           );
         if (css.length > 0) {
           injectScript('page-ssr', css.map((file) => `import ${JSON.stringify(file)};`).join('\n'));

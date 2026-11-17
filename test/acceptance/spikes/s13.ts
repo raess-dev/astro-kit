@@ -56,7 +56,10 @@ function tags(html: string): Tag[] {
   return [...body.matchAll(/<([a-z][a-z0-9-]*)\b([^>]*)>/g)].map((match) => ({
     name: match[1] ?? '',
     attributes: Object.fromEntries(
-      [...(match[2] ?? '').matchAll(/([^\s=]+)(?:="([^"]*)")?/g)].map((attribute) => [attribute[1], attribute[2] ?? '']),
+      [...(match[2] ?? '').matchAll(/([^\s=]+)(?:="([^"]*)")?/g)].map((attribute) => [
+        attribute[1],
+        attribute[2] ?? '',
+      ]),
     ),
   }));
 }
@@ -88,7 +91,10 @@ test('S13: Astro adds no class and no style attribute to <Image>, <Picture> and 
   assert.deepEqual(names(byAlt(all, 'image')), img, 'the attributes of <Image>');
   assert.deepEqual(names(byAlt(all, 'priority')), [...img, 'fetchpriority'].sort(), '`priority` adds fetchpriority');
   assert.deepEqual(names(byAlt(all, 'picture')), img, 'the attributes of the <img> of <Picture>');
-  assert.deepEqual(names(byAlt(markdown, 'markdown')), img.filter((name) => name !== 'data-astro-image-fit'));
+  assert.deepEqual(
+    names(byAlt(markdown, 'markdown')),
+    img.filter((name) => name !== 'data-astro-image-fit'),
+  );
   const pictures = all.filter((tag) => tag.name === 'picture');
   assert.deepEqual(pictures.map(names), [[], []], '<picture> has no attribute');
 
@@ -120,11 +126,18 @@ test('S13: Astro adds no class and no style attribute to <Image>, <Picture> and 
   // The responsive styles select by attribute, in the layer astro.images, with no class selector.
   const layerBlock = /@layer astro\.images\{((?:[^{}]*\{[^{}]*\})*)\}/.exec(styles(home));
   const layer = layerBlock?.[1] ?? '';
-  assert.ok(layer.includes(':where([data-astro-image=constrained]){max-width:100%}'), 'the astro.images layer is in the page');
+  assert.ok(
+    layer.includes(':where([data-astro-image=constrained]){max-width:100%}'),
+    'the astro.images layer is in the page',
+  );
   const selectors = [...layer.matchAll(/([^{}]+)\{/g)].map((match) => match[1] ?? '');
   assert.ok(selectors.length > 3);
   for (const selector of selectors) {
-    assert.match(selector, /^(?::where\()?\[data-astro-image[a-z-]*(?:=[a-z-]+)?\]\)?$/, `${selector} selects by attribute`);
+    assert.match(
+      selector,
+      /^(?::where\()?\[data-astro-image[a-z-]*(?:=[a-z-]+)?\]\)?$/,
+      `${selector} selects by attribute`,
+    );
   }
 
   record('S13.classNames', []);

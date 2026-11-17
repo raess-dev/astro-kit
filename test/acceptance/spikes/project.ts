@@ -1,6 +1,6 @@
 /**
  * A minimal Astro project for a spike (specification, 13.2). The suite writes it from strings into an empty case
- * folder. It uses the stand-in integration of `test/kit/`, never the kit.
+ * folder. It uses the stand-in integration of `test/acceptance/kit/`, never the kit.
  */
 import { caseDir, type Files } from '../harness.ts';
 

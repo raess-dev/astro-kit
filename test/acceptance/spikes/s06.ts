@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { isDeepStrictEqual } from 'node:util';
 import { brotliCompressSync, constants, zstdCompressSync } from 'node:zlib';
 import { build, type Files, read, record, tree } from '../harness.ts';
 import { page, project } from './project.ts';
@@ -62,9 +63,14 @@ const compressed = (text: string): number =>
     brotliCompressSync(text, { params: { [constants.BROTLI_PARAM_QUALITY]: 5 } }).length,
   );
 
-const size = (tag: string): { raw: number; compressed: number } => ({ raw: Buffer.byteLength(tag), compressed: compressed(tag) });
+const size = (tag: string): { raw: number; compressed: number } => ({
+  raw: Buffer.byteLength(tag),
+  compressed: compressed(tag),
+});
 
 const TAG = /<meta\b[^>]*http-equiv="?content-security-policy"?[^>]*>/i;
+/** The same pattern for a count of the CSP metas of a page: `match` without the `g` flag gives one match at most. */
+const TAGS = new RegExp(TAG.source, 'gi');
 const STYLE_SRC = /style-src ([^;]*);/;
 
 interface Built {
@@ -78,19 +84,34 @@ interface Built {
   css: string;
 }
 
-/** Builds the case and reads the CSP meta and the `<style>` of every page. The key is the page's URL path. */
-function site(name: string, files: Files): Map<string, Built> {
+interface Site {
+  /** The pages. The key is the page's URL path. */
+  pages: Map<string, Built>;
+  /** Each expectation that a file of `dist` does not meet. */
+  unmet: string[];
+}
+
+/**
+ * Builds the case and reads the CSP meta and the `<style>` of every page. The test asserts that `unmet` is empty.
+ */
+function site(name: string, files: Files): Site {
   const dir = project(name, files);
   build(dir);
   const pages = new Map<string, Built>();
+  const unmet: string[] = [];
   for (const file of tree(join(dir, 'dist'))) {
-    assert.ok(file.endsWith('index.html'), `dist holds pages only, and no CSS file: ${file}`);
+    if (!file.endsWith('index.html')) {
+      unmet.push(`dist holds pages only, and no CSS file: ${file}`);
+      continue;
+    }
     const html = read(dir, `dist/${file}`);
     const tag = TAG.exec(html)?.[0] ?? '';
     const sheets = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((match) => match[1] ?? '');
-    assert.equal(html.match(TAG)?.length, 1, `${file} has one CSP meta`);
-    assert.equal(sheets.length, 1, `${file} has one <style>`);
-    assert.ok(html.indexOf(tag) < html.indexOf('<style'), `the CSP meta of ${file} comes before its <style>`);
+    if ([...html.matchAll(TAGS)].length !== 1) unmet.push(`${file} has one CSP meta`);
+    if (sheets.length !== 1) unmet.push(`${file} has one <style>`);
+    if (!(html.indexOf(tag) < html.indexOf('<style'))) {
+      unmet.push(`the CSP meta of ${file} comes before its <style>`);
+    }
     pages.set(`/${file.replace(/index\.html$/, '')}`, {
       tag,
       frame: tag.replace(STYLE_SRC, 'style-src;'),
@@ -98,12 +119,16 @@ function site(name: string, files: Files): Map<string, Built> {
       css: sheets[0] ?? '',
     });
   }
-  return pages;
+  return { pages, unmet };
 }
 
+/** The paths of `paths` that the site did not build. A test asserts that there are none before it reads a page. */
+const missing = (pages: Map<string, Built>, paths: string[]): string[] => paths.filter((path) => !pages.has(path));
+
+/** The page at `path`. The test asserted before, with `missing`, that the page is built. */
 const at = (pages: Map<string, Built>, path: string): Built => {
   const found = pages.get(path);
-  assert.ok(found, `${path} is built`);
+  if (!found) throw new Error(`${path} is not built`);
   return found;
 };
 
@@ -112,61 +137,106 @@ const distinct = <T>(values: Iterable<T>): T[] => [...new Set(values)];
 /**
  * Astro bundles the CSS of a route as chunks: the global chunk first, then one chunk for each CSS module group.
  * `inlineStylesheets: 'always'` joins them into the page's one `<style>`. This gives the text after the global chunk.
+ * The test asserts before, with `unchunked`, that the `<style>` of the page has this form.
  */
-function chunk(pages: Map<string, Built>, path: string): string {
+const chunk = (pages: Map<string, Built>, path: string): string => at(pages, path).css.slice(at(pages, '/').css.length);
+
+/** The paths of `paths` whose `<style>` is not the global CSS plus a chunk of its own. */
+function unchunked(pages: Map<string, Built>, paths: string[]): string[] {
   const global = at(pages, '/').css;
-  const css = at(pages, path).css;
-  assert.ok(css.startsWith(global) && css.length > global.length, `the <style> of ${path} is the global CSS plus its own chunk`);
-  return css.slice(global.length);
+  return paths.filter((path) => {
+    const css = at(pages, path).css;
+    return !(css.startsWith(global) && css.length > global.length);
+  });
+}
+
+interface Rule {
+  /** One hash for each distinct CSS chunk of the site, sorted. */
+  expected: string[];
+  /** The style hashes of the home page, sorted. */
+  home: string[];
+  /** Each expectation that a page does not meet. */
+  unmet: string[];
+  /** The metas that differ. */
+  metas: string[];
 }
 
 /**
- * The real rule of Astro 7.4, asserted for every page: the style hashes of the CSP meta are one hash for each CSS
+ * The real rule of Astro 7.4, measured for every page: the style hashes of the CSP meta are one hash for each CSS
  * chunk of the whole site (`chunks`, the same list in the same order on every page), then the hash of the page's
- * own `<style>` unless the list holds it already. Returns the metas that differ.
+ * own `<style>` unless the list holds it already. The test asserts that `home` is `expected` and `unmet` is empty.
  */
-function assertRule(pages: Map<string, Built>, chunks: string[]): string[] {
-  const expected = distinct(chunks.map(sha256)).sort();
+function rule(pages: Map<string, Built>, chunks: string[]): Rule {
   const first = at(pages, '/');
-  assert.deepEqual([...first.hashes].sort(), expected, 'the home page lists one hash for each distinct CSS chunk of the site');
+  const unmet: string[] = [];
   for (const [path, built] of pages) {
-    assert.equal(built.frame, first.frame, `${path}: the directives and the script hashes are the same on every page`);
+    if (built.frame !== first.frame) {
+      unmet.push(`${path}: the directives and the script hashes are the same on every page`);
+    }
     const own = sha256(built.css);
-    assert.ok(built.hashes.includes(own), `${path}: the hash of the page's own <style> is in style-src`);
-    assert.deepEqual(
-      built.hashes,
-      first.hashes.includes(own) ? first.hashes : [...first.hashes, own],
-      `${path}: the site's chunk hashes, then the hash of the page's own <style>`,
-    );
+    if (!built.hashes.includes(own)) unmet.push(`${path}: the hash of the page's own <style> is in style-src`);
+    if (!isDeepStrictEqual(built.hashes, first.hashes.includes(own) ? first.hashes : [...first.hashes, own])) {
+      unmet.push(`${path}: the site's chunk hashes, then the hash of the page's own <style>`);
+    }
   }
-  return distinct([...pages.values()].map((built) => built.tag));
+  return {
+    expected: distinct(chunks.map(sha256)).sort(),
+    home: [...first.hashes].sort(),
+    unmet,
+    metas: distinct([...pages.values()].map((built) => built.tag)),
+  };
 }
 
 /** The largest CSP meta of the site: `budget-head` measures each page. */
 const largest = (pages: Map<string, Built>): Built =>
   [...pages.values()].reduce((a, b) => (compressed(b.tag) > compressed(a.tag) ? b : a));
 
-let cache: Map<string, Built> | undefined;
-const plainSite = (): Map<string, Built> => (cache ??= site('s06', plain));
+let cache: Site | undefined;
+/** The plain site. Two tests read it, and it is built once. */
+function plainSite(): Site {
+  cache ??= site('s06', plain);
+  return cache;
+}
 
 const entries = (pages: Map<string, Built>): Built[] =>
   [...pages].filter(([path]) => path.startsWith('/entries/')).map(([, built]) => built);
 
+/** The pages of the plain site with a chunk of their own: one component, the two page files, the dynamic route. */
+const OWN_CHUNK = ['/twin-a/', '/copy-a/', '/copy-b/', '/entries/entry-1/'];
+
+/** The pages of the plain site that a test reads. */
+const PLAIN_PATHS = ['/', '/fr/', '/twin-b/', ...OWN_CHUNK];
+
 /** The CSS chunks of the plain site: the global one, the two components, and the one text of the two page files. */
 const plainChunks = (pages: Map<string, Built>): string[] => [
   at(pages, '/').css,
-  chunk(pages, '/twin-a/'),
-  chunk(pages, '/copy-a/'),
-  chunk(pages, '/copy-b/'),
-  chunk(pages, '/entries/entry-1/'),
+  ...OWN_CHUNK.map((path) => chunk(pages, path)),
 ];
 
 test('S6: the CSP meta is not the same on every page: the chunk hashes of the site, then the hash of the own <style>', () => {
-  const pages = plainSite();
+  const { pages, unmet } = plainSite();
+  assert.deepEqual(unmet, []);
   assert.equal(pages.size, 6 + SHEETS);
-  const metas = assertRule(pages, plainChunks(pages));
+  assert.deepEqual(missing(pages, PLAIN_PATHS), [], 'each of these pages is built');
+  assert.deepEqual(
+    unchunked(pages, OWN_CHUNK),
+    [],
+    'the <style> of each of these pages is the global CSS plus its own chunk',
+  );
+  const measured = rule(pages, plainChunks(pages));
+  assert.deepEqual(
+    measured.home,
+    measured.expected,
+    'the home page lists one hash for each distinct CSS chunk of the site',
+  );
+  assert.deepEqual(measured.unmet, []);
+  const { metas } = measured;
   // The specification said: the same on every page. Pages share a meta only when they share a <style>.
-  assert.equal(metas.length, distinct([...pages.values()].map((built) => built.css)).length, 'one meta for each distinct <style>');
+  assert.equal(
+    metas.length,
+    distinct([...pages.values()].map((built) => built.css)).length,
+    'one meta for each distinct <style>',
+  );
   assert.equal(metas.length, 4);
   record('S6.metaSameOnEveryPage', false);
 
@@ -175,28 +245,59 @@ test('S6: the CSP meta is not the same on every page: the chunk hashes of the si
   assert.equal(at(pages, '/twin-b/').tag, at(pages, '/twin-a/').tag, 'two routes with one component');
   assert.equal(at(pages, '/copy-b/').tag, at(pages, '/copy-a/').tag, 'two routes with two CSS files of the same text');
   assert.equal(chunk(pages, '/copy-b/'), chunk(pages, '/copy-a/'));
-  record('S6.hashesOfTwoRoutesWithIdenticalCss', distinct([at(pages, '/copy-a/'), at(pages, '/copy-b/')].map((built) => sha256(built.css))).length);
+  record(
+    'S6.hashesOfTwoRoutesWithIdenticalCss',
+    distinct([at(pages, '/copy-a/'), at(pages, '/copy-b/')].map((built) => sha256(built.css))).length,
+  );
 
   // One dynamic route with 60 pages: one <style>, so one chunk hash on every page and one own hash on its pages.
   assert.equal(entries(pages).length, SHEETS);
-  assert.equal(distinct(entries(pages).map((built) => built.tag)).length, 1, 'the 60 pages of one route file share one meta');
+  assert.equal(
+    distinct(entries(pages).map((built) => built.tag)).length,
+    1,
+    'the 60 pages of one route file share one meta',
+  );
   record('S6.hashesOfOneDynamicRouteWith60Pages', distinct(entries(pages).map((built) => sha256(built.css))).length);
-  record('S6.styleHashes.plain', { home: at(pages, '/').hashes.length, pageWithOwnChunk: at(pages, '/twin-a/').hashes.length });
+  record('S6.styleHashes.plain', {
+    home: at(pages, '/').hashes.length,
+    pageWithOwnChunk: at(pages, '/twin-a/').hashes.length,
+  });
 });
 
 test('S6: 60 more distinct page style sheets grow the CSP meta by at most 45 B compressed for each', (t) => {
-  const before = plainSite();
-  const after = site('s06-60', { ...plain, ...topics });
+  const plainBuilt = plainSite();
+  assert.deepEqual(plainBuilt.unmet, []);
+  const before = plainBuilt.pages;
+  const built = site('s06-60', { ...plain, ...topics });
+  assert.deepEqual(built.unmet, []);
+  const after = built.pages;
   assert.equal(after.size, before.size + SHEETS);
   const paths = Array.from({ length: SHEETS }, (_, index) => `/topic-${index + 1}/`);
-  const metas = assertRule(after, [...plainChunks(after), ...paths.map((path) => chunk(after, path))]);
+  assert.deepEqual(missing(before, ['/']), [], 'the home page of the plain site is built');
+  assert.deepEqual(missing(after, [...PLAIN_PATHS, ...paths]), [], 'each of these pages is built');
+  assert.deepEqual(
+    unchunked(after, [...OWN_CHUNK, ...paths]),
+    [],
+    'the <style> of each of these pages is the global CSS plus its own chunk',
+  );
+  const measured = rule(after, [...plainChunks(after), ...paths.map((path) => chunk(after, path))]);
+  assert.deepEqual(
+    measured.home,
+    measured.expected,
+    'the home page lists one hash for each distinct CSS chunk of the site',
+  );
+  assert.deepEqual(measured.unmet, []);
+  const { metas } = measured;
   assert.equal(metas.length, 4 + SHEETS, 'each of the 60 routes has its own meta');
 
   // Each added style sheet adds one hash to the meta of every page, and one more to its own pages.
   const home = { before: at(before, '/'), after: at(after, '/') };
   assert.equal(home.after.hashes.length, home.before.hashes.length + SHEETS);
   assert.equal(at(after, '/topic-1/').hashes.length, home.after.hashes.length + 1);
-  record('S6.styleHashes.with60', { home: home.after.hashes.length, pageWithOwnChunk: at(after, '/topic-1/').hashes.length });
+  record('S6.styleHashes.with60', {
+    home: home.after.hashes.length,
+    pageWithOwnChunk: at(after, '/topic-1/').hashes.length,
+  });
 
   const sizes = {
     plainHome: size(home.before.tag),
@@ -207,14 +308,20 @@ test('S6: 60 more distinct page style sheets grow the CSP meta by at most 45 B c
   const growth = {
     raw: (sizes.with60Home.raw - sizes.plainHome.raw) / SHEETS,
     compressed: Math.round(((sizes.with60Home.compressed - sizes.plainHome.compressed) / SHEETS) * 100) / 100,
-    compressedLargest: Math.round(((sizes.with60Largest.compressed - sizes.plainLargest.compressed) / SHEETS) * 100) / 100,
+    compressedLargest:
+      Math.round(((sizes.with60Largest.compressed - sizes.plainLargest.compressed) / SHEETS) * 100) / 100,
   };
   assert.equal(growth.raw, 54, 'one hash is 54 B raw (13.1 item 41)');
   assert.ok(growth.compressed <= 45, `${growth.compressed} B compressed for each sheet on the home page`);
-  assert.ok(growth.compressedLargest <= 45, `${growth.compressedLargest} B compressed for each sheet on the largest meta`);
+  assert.ok(
+    growth.compressedLargest <= 45,
+    `${growth.compressedLargest} B compressed for each sheet on the largest meta`,
+  );
   assert.ok(sizes.with60Largest.compressed <= CSP_BYTES, 'the largest meta of the site stays within cspBytes');
   // How many distinct CSS chunks fit into cspBytes on top of the plain site, at the measured growth (6.2: about 100).
-  const fit = Math.floor((CSP_BYTES - sizes.plainLargest.compressed) / Math.max(growth.compressed, growth.compressedLargest));
+  const fit = Math.floor(
+    (CSP_BYTES - sizes.plainLargest.compressed) / Math.max(growth.compressed, growth.compressedLargest),
+  );
   assert.ok(fit >= 100, `${fit} more chunks fit into cspBytes`);
   // A compressed size depends on the zstd and brotli versions of the Node release. So the spike asserts its limits,
   // records the raw sizes only, and prints what this run measured.
@@ -237,20 +344,31 @@ test('S6: CSS files that the same set of route files imports share one chunk, so
   const names = ['A', 'B', 'C', 'D', 'E', 'G'];
   const route = (...used: string[]): string =>
     page(used.join(''), used.map((name) => `<${name}>x</${name}>`).join(''), used.map((name) => uses(name)).join('\n'));
-  const pages = site('s06-chunks', {
+  const { pages, unmet } = site('s06-chunks', {
     ...Object.assign({}, ...names.map((name, index) => component(name, 10 + index))),
     'src/pages/index.astro': route('G'),
     'src/pages/one.astro': route('A', 'B', 'D', 'E', 'G'),
     'src/pages/two.astro': route('B', 'C', 'D', 'E', 'G'),
     'src/pages/three.astro': route('A', 'C', 'G'),
   });
+  assert.deepEqual(unmet, []);
+  assert.deepEqual(missing(pages, ['/', '/one/', '/two/', '/three/']), [], 'each of these pages is built');
   for (const name of names) {
-    assert.equal(at(pages, '/one/').css.includes(`.${name.toLowerCase()}{`), 'ABDEG'.includes(name), `${name} on /one/`);
+    assert.equal(
+      at(pages, '/one/').css.includes(`.${name.toLowerCase()}{`),
+      'ABDEG'.includes(name),
+      `${name} on /one/`,
+    );
   }
   // The chunks: global with G, A (one, three), C (two, three), and B with D and E (one, two).
   assert.equal(at(pages, '/').hashes.length, 4, 'four chunk hashes for the global CSS and six component files');
-  assert.equal(at(pages, '/').hashes[0], sha256(at(pages, '/').css), 'the component of every route is in the global chunk');
-  for (const path of ['/one/', '/two/', '/three/']) assert.equal(at(pages, path).hashes.length, 5, `${path} adds its own hash`);
+  assert.equal(
+    at(pages, '/').hashes[0],
+    sha256(at(pages, '/').css),
+    'the component of every route is in the global chunk',
+  );
+  for (const path of ['/one/', '/two/', '/three/'])
+    assert.equal(at(pages, path).hashes.length, 5, `${path} adds its own hash`);
   assert.equal(distinct([...pages.values()].map((built) => built.tag)).length, 4);
   record('S6.chunkHashesOfFiveCssFilesWithThreeImportSets', at(pages, '/').hashes.length - 1);
 });

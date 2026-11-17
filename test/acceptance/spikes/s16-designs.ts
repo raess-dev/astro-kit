@@ -2,13 +2,13 @@
  * Spike S16: the designs and `modes` settings that the spike checks, and the printed texts of 7.7.
  */
 import {
+  type Design,
   HEADER,
+  type Modes,
   modesName,
   modesSettings,
   problems,
   THEME_SETS,
-  type Design,
-  type Modes,
   type Theme,
 } from './s16-tokens.ts';
 
@@ -49,7 +49,10 @@ export interface Setting {
   id: number;
   design: Design;
   modes: Modes;
-  /** The text that 7.7 prints (setting 1, read from `test/kit/tokens-setting-1.css`) or describes in its table. */
+  /**
+   * The text that 7.7 prints (setting 1, read from `test/acceptance/kit/tokens-setting-1.css`) or describes in its
+   * table.
+   */
   text?: string;
 }
 
@@ -200,7 +203,10 @@ export function cases(): Case[] {
   for (const themes of THEME_SETS) {
     const design: Design = {
       themes,
-      colors: WIDE.filter((row) => !row.needs || themes.includes(row.needs)).map(({ token, cells }) => ({ token, cells })),
+      colors: WIDE.filter((row) => !row.needs || themes.includes(row.needs)).map(({ token, cells }) => ({
+        token,
+        cells,
+      })),
       others: OTHERS,
       helpers: HELPERS,
     };

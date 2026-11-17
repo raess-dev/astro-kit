@@ -38,7 +38,6 @@
     --space-5: 1.5rem;
     --space-6: 2rem;
     --space-7: 3rem;
-    --space-8: 4rem;
     --space-gutter: clamp(1rem, 5%, 2.5rem);
     --space-section: clamp(3rem, 9%, 7rem);
     --size-page: 72rem;

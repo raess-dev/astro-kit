@@ -2,8 +2,10 @@
 
 The marketing site for https://laerchenwald.example, built with Astro and `@raess/astro-kit`.
 
-The site of the fictitious Hotel Lärchenwald in Sils im Engadin. It is also the site on which the acceptance suite
-in `test/` tests the kit: `README.md` says how to run the suite.
+The site of the fictitious Hotel Lärchenwald in Sils im Engadin. It is also the test site of the kit: this folder is
+`test/site/` of the kit repository, and the acceptance suite in `test/acceptance/` of that repository runs the kit on
+a copy of it. `test/README.md` of the kit repository says how to run the suite and how to build this site by hand.
+Both are outside this folder.
 
 ## How this site is built
 

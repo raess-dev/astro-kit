@@ -1,6 +1,9 @@
 @layer page {
-  /* On a wide viewport the first card of the grid takes a whole row, and the other three share the next one. */
-  @media (width >= 64rem) {
+  /*
+   * The text section is the container. At this width its grid has three columns: then the first card takes a
+   * whole row, and the other three share the next one.
+   */
+  @container (inline-size >= 59rem) {
     .feature-card:first-child {
       grid-column: 1 / -1;
     }

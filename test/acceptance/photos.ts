@@ -1,5 +1,5 @@
 /**
- * Deterministic photos for the cases that plant an image in `src/assets/` (kit specification, 14.2).
+ * Deterministic photos for the cases that plant an image in `src/assets/` (specification, 14.2).
  * `sharp` comes from the base copy through Astro, so the suite adds no dependency.
  */
 import { createRequire } from 'node:module';
@@ -10,10 +10,7 @@ interface Sharp {
   jpeg(options: { quality: number }): Sharp;
   toBuffer(): Promise<Buffer>;
 }
-type SharpFactory = (
-  input: Uint8Array,
-  options: { raw: { width: number; height: number; channels: 3 } },
-) => Sharp;
+type SharpFactory = (input: Uint8Array, options: { raw: { width: number; height: number; channels: 3 } }) => Sharp;
 
 /** xorshift32 with seed 7: the same numbers on every machine. */
 function generator(): () => number {
@@ -31,7 +28,11 @@ function generator(): () => number {
 const clamp = (value: number): number => Math.max(0, Math.min(255, Math.round(value)));
 
 /** A JPEG of `width` × `height`: one flat color with the same noise on all three channels. */
-export function photo(width: number, height: number, color: [number, number, number] = [120, 140, 150]): Promise<Buffer> {
+export function photo(
+  width: number,
+  height: number,
+  color: [number, number, number] = [120, 140, 150],
+): Promise<Buffer> {
   const sharp = createRequire(join(base(), 'node_modules/astro/package.json'))('sharp') as SharpFactory;
   const r = generator();
   const pixels = new Uint8Array(width * height * 3);

@@ -90,7 +90,11 @@ test('S7: the locked i18n emits no extra page or redirect, and the locale follow
   );
   build(dir);
 
-  assert.deepEqual(list(join(dir, 'dist')).sort(), Object.keys(DIST).sort(), 'dist holds the pages of the project and no other file');
+  assert.deepEqual(
+    list(join(dir, 'dist')).sort(),
+    Object.keys(DIST).sort(),
+    'dist holds the pages of the project and no other file',
+  );
 
   const routes = JSON.parse(read(dir, 'routes.json')) as Route[];
   assert.deepEqual(

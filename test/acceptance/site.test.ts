@@ -1,14 +1,15 @@
 /**
- * The site cases of milestone M3 (specification, 14 and 14.2): the hotel site with the packed kit. Each case is a copy
- * of the site in a folder of its own, with one change, and it runs a command of the kit CLI there. M3 has the
- * commands `build` and `tokens`. A failing case asserts the exact sorted rule ids, and a passing case asserts status 0.
- * Without a kit every case is skipped, with the reason. Run: KIT_TARBALL=<packed kit> node --test test/site.test.ts
+ * The site cases of milestone M3 (specification, 14 and 14.2): the hotel site of `test/site/` with the packed kit.
+ * Each case is a copy of the site in a folder of its own, with one change, and it runs a command of the kit CLI
+ * there. M3 has the commands `build` and `tokens`. A failing case asserts the exact sorted rule ids, and that the
+ * output holds no passed line. A passing case asserts status 0, and that the passed line is the last line of stdout
+ * and stands once in the output (6.4). Run: node --test test/acceptance/site.test.ts
  */
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { cspMeta, edit, type KitRun, kitModule, noKit, read, run, siteCase, tree, write } from './harness.ts';
+import { cspMeta, edit, type KitRun, kitModule, passedLine, read, run, siteCase, tree, write } from './harness.ts';
 
 /** The settings of `astro-kit.json` after the kit read them. A case uses these members only. */
 interface Options {
@@ -36,9 +37,6 @@ interface CspModule {
 interface CloudflareModule {
   robotsText(site: string): string;
 }
-
-/** The reason to skip every case: the base copy holds no kit. `undefined` when it holds one. */
-const skip = noKit();
 
 interface Built {
   dir: string;
@@ -69,15 +67,19 @@ async function optionsOf(dir: string): Promise<Options> {
 /** The last part of a command's output, for the message of a failed assertion. */
 const tail = (result: KitRun): string => result.output.slice(-4000);
 
+/** The passed line of a command that ran checks and passed: the last line of stdout, once in the output (6.4). */
+const PASSED = { last: true, count: 1 } as const;
+/** No passed line anywhere: the command failed. */
+const NOT_PASSED = { last: false, count: 0 } as const;
+
 /** Every CSP meta start tag of a built page (6.1): the kit inserts right after the one that a page has. */
 const CSP_META = /<meta\b[^>]*http-equiv="?content-security-policy"?[^>]*>/gi;
 
-test('M3: the site builds, and every page has the CSP meta, the mode script and the speculation block', {
-  skip,
-}, async () => {
+test('M3: the site builds, and every page has the CSP meta, the mode script and the speculation block', async () => {
   const { dir, run: result } = built();
   assert.equal(result.status, 0, `astro-kit build failed in ${dir}:\n${tail(result)}`);
   assert.deepEqual(result.ids, []);
+  assert.deepEqual(passedLine(result), PASSED, tail(result));
 
   const options = await optionsOf(dir);
   const { modeScript, modeHash } = await kitModule<ModesModule>('modes');
@@ -116,13 +118,21 @@ test('M3: the site builds, and every page has the CSP meta, the mode script and 
   }
 });
 
-test('M3: tokens --check passes, so tokens.css is the rendering of docs/design.md', { skip }, () => {
-  const result = run(built().dir, ['tokens', '--check']);
+test('M3: tokens --check passes, so tokens.css is the rendering of docs/design.md', () => {
+  const { dir } = built();
+  const result = run(dir, ['tokens', '--check']);
   assert.equal(result.status, 0, tail(result));
   assert.deepEqual(result.ids, []);
+  assert.deepEqual(passedLine(result), PASSED, tail(result));
+  // `tokens` alone runs no check. It writes the same file again and prints no passed line.
+  const before = read(dir, 'src/styles/tokens.css');
+  const written = run(dir, 'tokens');
+  assert.equal(written.status, 0, tail(written));
+  assert.deepEqual(passedLine(written), NOT_PASSED, tail(written));
+  assert.equal(read(dir, 'src/styles/tokens.css'), before);
 });
 
-test('M3: the edge files exist, and robots.txt is the text of the kit', { skip }, async () => {
+test('M3: the edge files exist, and robots.txt is the text of the kit', async () => {
   const { dir, run: result } = built();
   assert.equal(result.status, 0, `astro-kit build failed in ${dir}:\n${tail(result)}`);
   const dist = join(dir, 'dist');
@@ -151,7 +161,7 @@ test('M3: the edge files exist, and robots.txt is the text of the kit', { skip }
 
 // The planted cases. Each one fails in the config stage, before Astro builds a page.
 
-test('M3 planted: a value changed by hand in tokens.css gives design-tokens', { skip }, () => {
+test('M3 planted: a value changed by hand in tokens.css gives design-tokens', () => {
   const dir = siteCase('planted-design-tokens', (folder) => {
     // The first length in rem of the file gets a value that no design declares.
     edit(folder, 'src/styles/tokens.css', /: [\d.]+rem;/, ': 77.7rem;');
@@ -159,13 +169,15 @@ test('M3 planted: a value changed by hand in tokens.css gives design-tokens', { 
   const result = run(dir, 'build');
   assert.deepEqual(result.ids, ['design-tokens'], tail(result));
   assert.equal(result.status, 1);
+  assert.deepEqual(passedLine(result), NOT_PASSED, tail(result));
   // `tokens --check` compares the same file and writes nothing.
   const check = run(dir, ['tokens', '--check']);
   assert.deepEqual(check.ids, ['design-tokens'], tail(check));
   assert.equal(check.status, 1);
+  assert.deepEqual(passedLine(check), NOT_PASSED, tail(check));
 });
 
-test('M3 planted: // @ts-ignore in a source gives config-suppression', { skip }, () => {
+test('M3 planted: // @ts-ignore in a source gives config-suppression', () => {
   const dir = siteCase('planted-config-suppression', (folder) => {
     const file = 'src/data/routes.ts';
     write(folder, { [file]: `${read(folder, file)}// @ts-ignore\n` });
@@ -173,13 +185,15 @@ test('M3 planted: // @ts-ignore in a source gives config-suppression', { skip },
   const result = run(dir, 'build');
   assert.deepEqual(result.ids, ['config-suppression'], tail(result));
   assert.equal(result.status, 1);
+  assert.deepEqual(passedLine(result), NOT_PASSED, tail(result));
 });
 
-test('M3 planted: a redirect row with a query string in from gives routes-redirects', { skip }, () => {
+test('M3 planted: a redirect row with a query string in from gives routes-redirects', () => {
   const dir = siteCase('planted-routes-redirects', (folder) => {
     write(folder, { 'redirects.json': `${JSON.stringify([{ from: '/angebot/?id=7', to: '/' }], null, 2)}\n` });
   });
   const result = run(dir, 'build');
   assert.deepEqual(result.ids, ['routes-redirects'], tail(result));
   assert.equal(result.status, 1);
+  assert.deepEqual(passedLine(result), NOT_PASSED, tail(result));
 });

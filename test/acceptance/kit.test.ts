@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { KIT_DIR, standIn } from './harness.ts';
+import { STAND_IN, standIn } from './harness.ts';
 
 test('the stand-in integration holds the exact texts of the specification', async () => {
   // The stand-in integration is plain JavaScript: `standIn` imports it by its file URL and gives it a type.
@@ -15,6 +15,6 @@ test('the stand-in integration holds the exact texts of the specification', asyn
   assert.equal(Buffer.byteLength(script), 1080);
   assert.equal(sha256(script), 'sha256-tVX7IDqXb4rkmRiqqGfEY8YPs6KvuNlSnmTbTdmGmSs=');
   // 7.6: base.css starts with the order statement.
-  const css = readFileSync(join(KIT_DIR, 'base.css'), 'utf8');
+  const css = readFileSync(join(STAND_IN, 'base.css'), 'utf8');
   assert.ok(css.startsWith('@layer astro, reset, tokens, elements, layout, components, page;\n'));
 });

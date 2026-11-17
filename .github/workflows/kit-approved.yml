@@ -31,7 +31,6 @@ jobs:
           KIT_AGENTS: ${{ vars.KIT_AGENTS }}
           PR: ${{ github.event.pull_request.number }}
           TESTED_SHA: ${{ github.event.pull_request.head.sha }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
           live=$(gh api "repos/$REPO/pulls/$PR" --jq '[.state, .draft, .head.sha, .base.ref, .user.login] | @tsv')
@@ -43,7 +42,7 @@ jobs:
           jq -e --arg a "$author" '(. + ["dependabot[bot]"]) | index($a) != null' <<<"${KIT_AGENTS:-[]}" >/dev/null ||
             { echo "$author is not an agent account: CI does not merge this pull request"; exit 0; }
           files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)')
-          if grep -qE '^\.github/|^\.npmrc$|(^|/)wrangler\.[^/]+$' <<<"$files"; then
+          if grep -qE '^\.github/|^\.npmrc$' <<<"$files"; then
             echo 'it changes a protected file: the owner approves it and merges it by hand'; exit 0
           fi
           if ! out=$(gh pr merge "$PR" --repo "$REPO" --squash --delete-branch --match-head-commit "$TESTED_SHA" 2>&1); then
@@ -51,4 +50,4 @@ jobs:
             echo 'A required check is not green yet, or an owner file waits for the approval of the owner.'
             exit 0
           fi
-          if [ "$base" = main ]; then gh workflow run release.yml --repo "$REPO" --ref main -f paired="$HEAD_REF"; fi
+          if [ "$base" = main ]; then gh workflow run release.yml --repo "$REPO" --ref main; fi

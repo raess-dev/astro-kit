@@ -84,7 +84,13 @@ const ROUTES: Route[] = [
     entrypoint: 'node_modules/@astrojs/cloudflare/dist/entrypoints/image-passthrough-endpoint.js',
     type: 'endpoint',
   },
-  { pattern: '/_server-islands/[name]', origin: 'internal', prerender: false, entrypoint: '_server-islands.astro', type: 'page' },
+  {
+    pattern: '/_server-islands/[name]',
+    origin: 'internal',
+    prerender: false,
+    entrypoint: '_server-islands.astro',
+    type: 'page',
+  },
   { pattern: '/api/forms/[form]', origin: 'project', prerender: false, entrypoint: SHIM, type: 'endpoint' },
 ];
 
@@ -160,7 +166,10 @@ test('S19: in a forms build the form shim is the only on-demand project route, a
   // Astro and the adapter add two on-demand routes of their own to EVERY build, with no source in the project.
   const internal = onDemand.filter((route) => route.origin !== 'project');
   assert.deepEqual(patterns(internal), ['/_image', '/_server-islands/[name]']);
-  assert.ok(internal.every((route) => route.origin === 'internal'), 'they have origin "internal"');
+  assert.ok(
+    internal.every((route) => route.origin === 'internal'),
+    'they have origin "internal"',
+  );
   assert.deepEqual(list, ROUTES);
   record('S19.routes', list);
   // The hook runs twice in one build, here with the same list.
@@ -176,7 +185,11 @@ test('S19: in a forms build the form shim is the only on-demand project route, a
     const shim = await call(origin, '/api/forms/contact/', POST);
     assert.equal(shim.status, 200, 'the shim answers');
     // wrangler dev gives the Worker the host of `routes`, over http.
-    assert.deepEqual(JSON.parse(shim.body), { shim: 's19-shim', form: 'contact', url: 'http://example.ch/api/forms/contact/' });
+    assert.deepEqual(JSON.parse(shim.body), {
+      shim: 's19-shim',
+      form: 'contact',
+      url: 'http://example.ch/api/forms/contact/',
+    });
 
     // `run_worker_first` is a list, so the asset layer answers every other path itself: a missing path gets the 404
     // page, and a method other than GET or HEAD gets 405. So a POST that is not answered with 405 reached the Worker.
@@ -247,21 +260,34 @@ for (const [name, file] of [
     const dir = project(name, { ...files, [file]: MIDDLEWARE(name) }, FORMS, IMPORTS);
     build(dir);
     // The file ran for the prerendered page: its mark is in the built HTML.
-    assert.ok(read(dir, 'dist/client/index.html').includes(`<p id="marker">${name}</p>`), 'the mark is in the built page');
+    assert.ok(
+      read(dir, 'dist/client/index.html').includes(`<p id="marker">${name}</p>`),
+      'the mark is in the built page',
+    );
     // It adds no route, so `astro:routes:resolved` cannot see it: only a source rule can (`config-server`).
     assert.deepEqual(routes(dir), ROUTES, 'the route list is the one of a build with no middleware');
     await withWorker(dir, undefined, async (origin) => {
       const shim = await call(origin, '/api/forms/contact/', POST);
       assert.equal(shim.status, 200);
-      assert.equal(shim.headers['x-s19-middleware'], name, 'the file ran in the Worker: its header is on the shim answer');
+      assert.equal(
+        shim.headers['x-s19-middleware'],
+        name,
+        'the file ran in the Worker: its header is on the shim answer',
+      );
       const home = await call(origin, '/');
       assert.equal(home.headers['x-s19-middleware'], undefined, 'a prerendered page comes from the asset layer');
-      record(`S19.middleware.${file.endsWith('index.ts') ? 'folder' : 'file'}`, { builtPage: true, shimHeader: true, pageHeader: false, routes: patterns(routes(dir)) });
+      record(`S19.middleware.${file.endsWith('index.ts') ? 'folder' : 'file'}`, {
+        builtPage: true,
+        shimHeader: true,
+        pageHeader: false,
+        routes: patterns(routes(dir)),
+      });
     });
   });
 }
 
-const ACTIONS = "import { defineAction } from 'astro:actions';\n\nexport const server = {\n  ping: defineAction({ handler: async () => 's19-pong' }),\n};\n";
+const ACTIONS =
+  "import { defineAction } from 'astro:actions';\n\nexport const server = {\n  ping: defineAction({ handler: async () => 's19-pong' }),\n};\n";
 
 test('S19: src/actions/index.ts adds the internal route /_actions/[...path]; the asset routing of 10.4 keeps it from the Worker', async () => {
   const dir = project('s19-actions', { ...files, 'src/actions/index.ts': ACTIONS }, FORMS, IMPORTS);
@@ -273,7 +299,11 @@ test('S19: src/actions/index.ts adds the internal route /_actions/[...path]; the
     entrypoint: 'node_modules/astro/dist/actions/runtime/entrypoints/route.js',
     type: 'endpoint',
   };
-  assert.deepEqual(routes(dir), [...ROUTES.slice(0, 2), route, ...ROUTES.slice(2)], 'one more route, with origin "internal"');
+  assert.deepEqual(
+    routes(dir),
+    [...ROUTES.slice(0, 2), route, ...ROUTES.slice(2)],
+    'one more route, with origin "internal"',
+  );
   const routed = await withWorker(dir, undefined, async (origin) => ({
     '/_actions/ping/': statuses(await pair(origin, '/_actions/ping/')),
     '/_actions/ping': statuses(await pair(origin, '/_actions/ping')),
@@ -295,7 +325,9 @@ test('S19: src/actions/index.ts adds the internal route /_actions/[...path]; the
   // not a navigation goes to the Worker, and the action runs.
   const noList = await withWorker(dir, routing(dir, undefined), async (origin) => ({
     '/_actions/ping/': statuses(await pair(origin, '/_actions/ping/')),
-    navigation: (await call(origin, '/_actions/ping/', { ...POST, headers: { ...POST.headers, 'sec-fetch-mode': 'navigate' } })).status,
+    navigation: (
+      await call(origin, '/_actions/ping/', { ...POST, headers: { ...POST.headers, 'sec-fetch-mode': 'navigate' } })
+    ).status,
   }));
   assert.equal(noList['/_actions/ping/'].post, 200, 'with no list, the action can be called');
   record('S19.actions', { route, routed, worker, noList });
@@ -307,7 +339,11 @@ test('S19: server:defer adds no route: the server-island route is in every build
     {
       ...files,
       'src/components/Late.astro': '<p id="late">s19-late</p>\n',
-      'src/pages/index.astro': page('Home', '<p id="who">home</p><Late server:defer />', "import Late from '../components/Late.astro';"),
+      'src/pages/index.astro': page(
+        'Home',
+        '<p id="who">home</p><Late server:defer />',
+        "import Late from '../components/Late.astro';",
+      ),
     },
     FORMS,
     IMPORTS,
@@ -368,8 +404,16 @@ test('S19: a static build lists the same two internal routes; Astro refuses acti
   });
   assert.equal(island, 'NoAdapterInstalledServerIslands');
   // A middleware needs no server: it runs in the build of a static site.
-  const middleware = project('s19-static-middleware', { ...pages, 'src/middleware.ts': MIDDLEWARE('s19-static') }, STATIC, HOOK);
+  const middleware = project(
+    's19-static-middleware',
+    { ...pages, 'src/middleware.ts': MIDDLEWARE('s19-static') },
+    STATIC,
+    HOOK,
+  );
   build(middleware);
-  assert.ok(read(middleware, 'dist/index.html').includes('<p id="marker">s19-static</p>'), 'the mark is in the built page');
+  assert.ok(
+    read(middleware, 'dist/index.html').includes('<p id="marker">s19-static</p>'),
+    'the mark is in the built page',
+  );
   record('S19.static.planted', { actions, serverIsland: island, middleware: 'runs in the build' });
 });

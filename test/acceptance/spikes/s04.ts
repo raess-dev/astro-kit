@@ -14,8 +14,13 @@ const block = (prelude: string): string => `  ${prelude} {\n    .card {\n      d
 const files = (css: string, body = ''): Record<string, string> => ({
   'src/styles/tokens.css': TOKENS,
   'src/styles/components/card.css': css,
-  'src/components/Card.astro': "---\nimport '../styles/components/card.css';\n---\n<div class=\"card\"><slot /></div>\n",
-  'src/pages/index.astro': page('Home', `<Card>a</Card><p>x</p>${body}`, "import Card from '../components/Card.astro';"),
+  'src/components/Card.astro':
+    '---\nimport \'../styles/components/card.css\';\n---\n<div class="card"><slot /></div>\n',
+  'src/pages/index.astro': page(
+    'Home',
+    `<Card>a</Card><p>x</p>${body}`,
+    "import Card from '../components/Card.astro';",
+  ),
 });
 
 /** The preludes of the top-level rules of built CSS: the text before each `{` that is in no other block. */
@@ -38,20 +43,29 @@ function topLevel(css: string): string[] {
   return preludes;
 }
 
+interface Failure {
+  /** The exit code and the error line of the CSS minifier. */
+  result: { status: number | null; error: string };
+  /** Each expectation that the failed build does not meet. */
+  unmet: string[];
+}
 
-/** Builds a case that must fail, and gives the exit code and the error line of the CSS minifier. */
-function failed(name: string, prelude: string): { status: number | null; error: string } {
+/** Builds a case that must fail. The test asserts that `unmet` is empty. */
+function failed(name: string, prelude: string): Failure {
   const dir = project(name, files(card(block(prelude))));
   const run = astro(dir);
   const output = plain(run.output);
-  assert.notEqual(run.status, 0, `the build with ${prelude} must fail:\n${output.slice(-2000)}`);
-  assert.equal(existsSync(join(dir, 'dist')), false, 'a failed build writes no dist folder');
-  assert.ok(output.includes('[ERROR] [vite]') && output.includes('Build failed'), 'Astro reports a failed Vite build');
   const error = /\[lightningcss minify\] ([^\n]*)/.exec(output)?.[1]?.trim() ?? '';
-  assert.notEqual(error, '', `the error comes from the CSS minifier:\n${output.slice(-2000)}`);
+  const unmet: string[] = [];
+  if (run.status === 0) unmet.push(`the build with ${prelude} must fail:\n${output.slice(-2000)}`);
+  if (existsSync(join(dir, 'dist'))) unmet.push('a failed build writes no dist folder');
+  if (!(output.includes('[ERROR] [vite]') && output.includes('Build failed'))) {
+    unmet.push('Astro reports a failed Vite build');
+  }
+  if (error === '') unmet.push(`the error comes from the CSS minifier:\n${output.slice(-2000)}`);
   // The error names a line of the merged chunk, never the source file.
-  assert.equal(output.includes('card.css'), false, 'the error does not name the source file');
-  return { status: run.status, error };
+  if (output.includes('card.css')) unmet.push('the error does not name the source file');
+  return { result: { status: run.status, error }, unmet };
 }
 
 test('S4: a scoped <style> in .astro is unlayered', () => {
@@ -70,7 +84,10 @@ test('S4: a scoped <style> in .astro is unlayered', () => {
 });
 
 test('S4: a literal length in an @media and an @container prelude builds', () => {
-  const dir = project('s04-literal', files(card(block('@media (width < 48rem)') + block('@container (width < 48rem)'))));
+  const dir = project(
+    's04-literal',
+    files(card(block('@media (width < 48rem)') + block('@container (width < 48rem)'))),
+  );
   build(dir);
   const css = styles(read(dir, 'dist/index.html'));
   assert.ok(css.includes('@media (width<48rem){.card{display:grid}}'), 'the @media block ships');
@@ -79,13 +96,17 @@ test('S4: a literal length in an @media and an @container prelude builds', () =>
 
 test('S4: var() in an @media prelude fails the build with an error of the CSS minifier', () => {
   const range = failed('s04-media', '@media (width < var(--size-m))');
+  assert.deepEqual(range.unmet, []);
   const legacy = failed('s04-media-legacy', '@media (min-width: var(--size-m))');
-  record('S4.mediaVar', range);
-  record('S4.mediaVarLegacy', legacy);
+  assert.deepEqual(legacy.unmet, []);
+  record('S4.mediaVar', range.result);
+  record('S4.mediaVarLegacy', legacy.result);
 });
 
 test('S4: var() in an @container prelude fails the build in the same way', () => {
-  record('S4.containerVar', failed('s04-container', '@container (width < var(--size-m))'));
+  const container = failed('s04-container', '@container (width < var(--size-m))');
+  assert.deepEqual(container.unmet, []);
+  record('S4.containerVar', container.result);
 });
 
 test('S4: with the CSS minifier off, var() in an @media prelude builds and ships as written', () => {

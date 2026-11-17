@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { browse, build, read, record, styles, type Page } from '../harness.ts';
+import { browse, build, type Page, read, record, styles } from '../harness.ts';
 import { PNG, page, project } from './project.ts';
 
 // Project rules that try to undo the floor of base.css (7.6), at every strength a project file can have:
@@ -25,24 +25,22 @@ const files = {
     // `flex` is not the default of a `<p>`, so the control on `hidden="until-found"` can tell the rule from no rule.
     against('.shown', ['display: flex']),
     against('.mode-switch', ['display: flex']),
-    against(
-      '.visually-hidden',
-      [
-        'position: static',
-        'inline-size: auto',
-        'block-size: auto',
-        'overflow: visible',
-        'clip-path: none',
-        'white-space: normal',
-      ],
-    ),
+    against('.visually-hidden', [
+      'position: static',
+      'inline-size: auto',
+      'block-size: auto',
+      'overflow: visible',
+      'clip-path: none',
+      'white-space: normal',
+    ]),
     against('.plain:focus-visible', ['outline-style: none']),
     against('.short:focus-visible', ['outline: none']),
     against('.zero:focus-visible', ['outline: 0']),
-    against(
-      '.mover',
-      ['transition: opacity 20s linear', 'animation: s05-spin 20s linear infinite', 'scroll-behavior: smooth'],
-    ),
+    against('.mover', [
+      'transition: opacity 20s linear',
+      'animation: s05-spin 20s linear infinite',
+      'scroll-behavior: smooth',
+    ]),
     '@layer components {\n  .mover.moved {\n    opacity: 0.5;\n  }\n}\n',
     '@keyframes s05-spin {\n  to {\n    rotate: 1turn;\n  }\n}\n',
   ].join('\n'),
@@ -156,9 +154,9 @@ test('S5: the floor of base.css holds against project rules, in Chromium compute
     const shown = await tab.evaluate(() => {
       const element = document.getElementById('found-plain') as HTMLElement;
       element.style.setProperty('display', 'flex');
-      const display = getComputedStyle(element).display;
+      const value = getComputedStyle(element).display;
       element.style.removeProperty('display');
-      return display;
+      return value;
     });
     assert.equal(shown, 'flex', 'an inline declaration works on hidden="until-found"');
 

@@ -100,14 +100,25 @@ Clalüna family runs it. The persons who may sign for the company are named in t
   sends a one-time code to a reviewer's email address). The site sets no cookie and has no statistics. The page also
   says that the browser keeps the chosen display mode on the device. With the forms of a later stage, the page
   gets the sentences for `forms` and `server`.
+- **What the privacy page does not say.** It names no state abroad but the United States, because `cdn` declares no
+  other. It has no section on enquiries by email or by phone: no setting declares who carries and stores the mail of
+  the hotel, so the page could not name the recipients. It makes no promise that no fact supports, such as "we never
+  pass your data on".
 - The legal texts are samples that an editor of the hotel could have written. No lawyer has checked them.
 - The owner approves each change to the text of a legal page through `legal.lock.json`.
 
 ## Open questions
 
 - **The domain.** The production domain is not known yet. The site uses the provisional host `laerchenwald.example`.
-  The host stands in `astro-kit.json`, `site.json`, `wrangler.jsonc` and `AGENTS.md`, and in no file under `src/`.
-  `README.md` lists these places.
+  The host stands in `astro-kit.json`, `site.json`, `wrangler.jsonc`, `AGENTS.md` and this brief, and in no file
+  under `src/`. `test/README.md` of the kit repository lists these places. That file is outside this folder.
 - **Photos.** The hero photo of the home page and the share image come at stage 2.
-- **Legal check.** Should a lawyer read the legal note and the privacy page before the launch?
+- **Legal check.** Should a lawyer read the legal note and the privacy page before the launch? Two points for that
+  check. Cloudflare can also process data in states other than the United States, and the privacy page names no
+  guarantee for them. And stage 1 asks for a room by email and by phone, but the page says nothing about these
+  enquiries.
 - **The stored display mode.** The privacy page mentions it. The owner decides whether it stays.
+- **The edge of a card in the contrast themes.** A card has a background and a shadow, and a line only with forced
+  colors. In every theme its background has a contrast of about 1.1:1 to the page, and in the dark contrast theme the
+  shadow does not show. Should a card get a visible line in `--color-line`? The line would show in every theme,
+  because a border color needs a contrast pair in each theme.

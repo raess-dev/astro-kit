@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { findBin } from '../../src/ci.ts';
-import { type Io, main, outcome, USAGE } from '../../src/cli.ts';
-import { type Finding, getRule } from '../../src/registry.ts';
+import { type Io, main, outcome, PASSED_LINE, USAGE } from '../../src/cli.ts';
+import { type Finding, formatFindings, getRule } from '../../src/registry.ts';
 import { type Files, inTemp, inTempAsync, json, SMALLEST } from './fixtures.ts';
 import { SPEC, specBlock } from './spec.ts';
 
@@ -134,6 +134,17 @@ const FINDING_TEXT = specBlock('**Finding format** (exact)', 'text')
 
 const WAIVED_LINE = `~ [config-locked] site: ${LOCKED.message} (waived until 2026-12-01: a reason)`;
 
+/** The passed line as a command prints it: the last line on stdout (6.4). */
+const PASSED = `${PASSED_LINE}\n`;
+
+/** How often the passed line stands in a text. */
+const passedIn = (text: string): number => text.split(PASSED_LINE).length - 1;
+
+test('the passed line is the exact text of 6.4', () => {
+  assert.equal(PASSED_LINE, 'astro-kit: all checks passed.');
+  assert.equal(SPEC.includes(`- **The passed line** (exact): \`${PASSED_LINE}\``), true);
+});
+
 test('the finding text of the tests has the four lines of 6.4', () => {
   assert.deepEqual(FINDING_TEXT.split('\n'), [
     'astro-kit: 1 finding',
@@ -160,7 +171,7 @@ const OUTCOME_CASES: readonly OutcomeCase[] = [
     name: 'a waived finding fails nothing',
     value: [WAIVED],
     code: 0,
-    text: `${WAIVED_LINE}\nastro-kit: all checks passed.`,
+    text: WAIVED_LINE,
   },
   {
     name: 'a waived finding does not count beside a finding that fails',
@@ -180,6 +191,7 @@ const OUTCOME_CASES: readonly OutcomeCase[] = [
   { name: 'an object whose findings are no list', value: { findings: 3 }, code: 0 },
 ];
 
+// The outcome mapping never prints the passed line: every case has an empty stdout, and no text holds the line.
 for (const c of OUTCOME_CASES) {
   test(`outcome: ${c.name}`, async () => {
     const seen = await inTempAsync({}, async (root) => {
@@ -259,12 +271,59 @@ for (const code of [0, 1, 5]) {
       };
     });
     assert.equal(seen.result, code);
-    assert.equal(seen.out, 'fake astro: stdout\n');
+    // The passed line follows the output of the tool, and only when the tool ended with the status 0 (6.4).
+    assert.equal(seen.out, code === 0 ? `fake astro: stdout\n${PASSED}` : 'fake astro: stdout\n');
     assert.equal(seen.err, 'fake astro: stderr\n');
     assert.deepEqual(seen.run, { args: ['build'], cwd: seen.root, telemetry: '1' });
     assert.equal(seen.summary, code === 0 ? undefined : '\nastro build failed; see the job log.\n');
   });
 }
+
+/**
+ * A fake `astro` that prints what a real build prints for a waived finding: the text of `formatFindings` on stdout,
+ * through the Astro logger, and then one more line of Astro (6.1).
+ */
+function warningAstro(code: number): Files {
+  const text = formatFindings([WAIVED]);
+  return {
+    ...fakeAstro(code),
+    'node_modules/astro/bin/astro.mjs': [
+      `process.stdout.write(${JSON.stringify(`12:00:00 [WARN] [@raess/astro-kit] ${text}\n`)});`,
+      "process.stdout.write('12:00:01 [build] Complete!\\n');",
+      `process.exitCode = ${code};`,
+      '',
+    ].join('\n'),
+  };
+}
+
+test('astro-kit build with a waived finding: the passed line comes once, as the last line on stdout', async () => {
+  const seen = await inTempAsync(warningAstro(0), async (root) => {
+    const seenIo = recorder({ [SUMMARY_VARIABLE]: join(root, SUMMARY_FILE) });
+    const code = await main(['build'], root, seenIo.io);
+    return { code, out: seenIo.out(), err: seenIo.err(), summary: textOf(join(root, SUMMARY_FILE)) };
+  });
+  assert.equal(seen.code, 0);
+  assert.equal(seen.err, '');
+  assert.equal(seen.summary, undefined);
+  assert.deepEqual(seen.out.split('\n'), [
+    `12:00:00 [WARN] [@raess/astro-kit] ${WAIVED_LINE}`,
+    '12:00:01 [build] Complete!',
+    PASSED_LINE,
+    '',
+  ]);
+  assert.equal(passedIn(seen.out), 1);
+});
+
+test('astro-kit build that fails prints no passed line, also when its output holds a waived finding', async () => {
+  const seen = await inTempAsync(warningAstro(1), async (root) => {
+    const seenIo = recorder();
+    const code = await main(['build'], root, seenIo.io);
+    return { code, out: seenIo.out(), err: seenIo.err() };
+  });
+  assert.equal(seen.code, 1);
+  assert.equal(passedIn(`${seen.out}${seen.err}`), 0);
+  assert.equal(seen.out.endsWith('12:00:01 [build] Complete!\n'), true);
+});
 
 /** What a `build` without astro gave. `above` is an astro in a folder above the temp folder: then nothing ran. */
 interface WithoutAstro {
@@ -383,12 +442,13 @@ test('astro-kit tokens writes the file; --check passes for it and fails after a 
     steps.push(await run('tokens', '--check'), await run('tokens'), await run('tokens', '--check'));
     return steps;
   });
+  // `tokens --check` runs a check, so it ends with the passed line. `tokens` alone runs none (6.4).
   assert.deepEqual(seen, [
     { code: 0, out: WROTE, ids: [], css: TOKENS_CSS },
-    { code: 0, out: '', ids: [], css: TOKENS_CSS },
+    { code: 0, out: PASSED, ids: [], css: TOKENS_CSS },
     { code: 1, out: '', ids: ['design-tokens'], css: CHANGED_CSS },
     { code: 0, out: WROTE, ids: [], css: TOKENS_CSS },
-    { code: 0, out: '', ids: [], css: TOKENS_CSS },
+    { code: 0, out: PASSED, ids: [], css: TOKENS_CSS },
   ]);
 });
 
@@ -543,6 +603,11 @@ test('the process: build has the status and the output of the tool, also from a 
   assert.equal(seen.summary, '\nastro build failed; see the job log.\n');
 });
 
+test('the process: a build with the status 0 ends with the passed line on stdout, and stderr has none', () => {
+  const seen = inTemp(fakeAstro(0), (root) => spawnCli(root, ['build']));
+  assert.deepEqual(seen, { status: 0, stdout: `fake astro: stdout\n${PASSED}`, stderr: 'fake astro: stderr\n' });
+});
+
 test('the process: build without astro gives the status 1', () => {
   const seen = inTemp({}, (root): WithoutAstro => {
     // As above: with an astro in a folder above the temp folder, the process is not started.
@@ -571,10 +636,10 @@ test('the process: tokens writes the file, and tokens --check has the status 1 a
   });
   assert.deepEqual(seen.steps, [
     { status: 0, stdout: WROTE, ids: [], css: TOKENS_CSS },
-    { status: 0, stdout: '', ids: [], css: TOKENS_CSS },
+    { status: 0, stdout: PASSED, ids: [], css: TOKENS_CSS },
     { status: 1, stdout: '', ids: ['design-tokens'], css: CHANGED_CSS },
     { status: 0, stdout: WROTE, ids: [], css: TOKENS_CSS },
-    { status: 0, stdout: '', ids: [], css: TOKENS_CSS },
+    { status: 0, stdout: PASSED, ids: [], css: TOKENS_CSS },
   ]);
   assert.equal(seen.before, undefined);
   assert.deepEqual(seen.summaryIds, ['design-tokens']);

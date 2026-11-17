@@ -1,10 +1,12 @@
 @layer components {
   .text-section {
+    /* A container: a page file asks for the width of the section, which decides how many columns its grid has. */
+    container-type: inline-size;
     padding-block: var(--space-7);
 
-    /* Two sections in a row share one distance, not two. */
-    & + .text-section {
-      padding-block-start: 0;
+    /* Sections in a row share one distance, not two: only the last one keeps the space below it. */
+    &:not(:last-child) {
+      padding-block-end: 0;
     }
 
     /* A heading belongs to the text after it: more space before it than after it. */

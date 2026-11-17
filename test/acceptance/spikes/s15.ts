@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { baseRequire, browse, build, cspMeta, PIXEL_SOURCE, read, record, samePixel, standIn } from '../harness.ts';
 import type { BrowserContext, ConsoleMessage, Page, Pixel } from '../harness.ts';
+import { baseRequire, browse, build, cspMeta, PIXEL_SOURCE, read, record, samePixel, standIn } from '../harness.ts';
 import { PNG, project } from './project.ts';
 
 const MODES = { auto: true, light: true, dark: true };
@@ -145,22 +145,29 @@ async function screencast(context: BrowserContext, tab: Page): Promise<() => Pro
           return `rgb(${data[at]}, ${data[at + 1]}, ${data[at + 2]})`;
         }),
     );
-    cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {});
+    cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {
+      // The tab can close before the acknowledgment arrives. Then no frame follows, and the spike needs none.
+    });
   });
   await cdp.send('Page.startScreencast', { format: 'png', everyNthFrame: 1 });
   return () => Promise.all(colors);
 }
 
-/** Waits until the last painted frame has the color. */
+/**
+ * Waits until the last painted frame has the color, and returns the painted frames. After 30 seconds it returns the
+ * frames as they are, so the caller asserts that the last frame has the color.
+ */
 async function painted(colors: () => Promise<string[]>, color: string): Promise<string[]> {
   const end = Date.now() + 30_000;
   for (;;) {
     const seen = await colors();
-    if (seen.at(-1) === color) return seen;
-    assert.ok(Date.now() < end, `no painted frame is ${color}: ${seen.join(' | ')}`);
+    if (seen.at(-1) === color || Date.now() >= end) return seen;
     await new Promise((done) => setTimeout(done, 20));
   }
 }
+
+/** The failure message for a wait of `painted` that did not end on the color. */
+const notPainted = (frames: string[], color: string): string => `no painted frame is ${color}: ${frames.join(' | ')}`;
 
 /** The tags of the head of a built page, in order. */
 function headOrder(html: string, modeText: string): string[] {
@@ -207,7 +214,9 @@ test('S15: the mode script of build:done runs before the first paint, with the C
 
   const header = kit.headerCsp({});
   assert.ok(header.includes("require-trusted-types-for 'script'; trusted-types 'none'"), 'Trusted Types is on');
-  const { server, browser, close } = await browse(join(dir, 'dist'), { headers: { 'content-security-policy': header } });
+  const { server, browser, close } = await browse(join(dir, 'dist'), {
+    headers: { 'content-security-policy': header },
+  });
   try {
     /** Opens `path` in a new context with a light system and the stored mode, and waits for the first paint. */
     const open = async (stored: string | undefined, path = '/') => {
@@ -261,11 +270,19 @@ test('S15: the mode script of build:done runs before the first paint, with the C
       assert.ok(frame.switch === null || frame.switch === 'block', `a frame has the switch at ${frame.switch}`);
     }
     const last = before.at(-1);
-    assert.ok(samePixel(last?.background ?? [], DARK), `the frame of the first paint has the dark background: ${last?.background}`);
+    assert.ok(
+      samePixel(last?.background ?? [], DARK),
+      `the frame of the first paint has the dark background: ${last?.background}`,
+    );
     assert.equal(last?.switch, 'block', 'the frame of the first paint has the switch');
     // The painted frames themselves: the blank tab, then dark. No frame shows the light theme of the system.
     const frames = await painted(colors, PAINTED.dark);
-    assert.deepEqual([...new Set(frames)].filter((color) => color !== PAINTED.blank), [PAINTED.dark], frames.join(' | '));
+    assert.equal(frames.at(-1), PAINTED.dark, notPainted(frames, PAINTED.dark));
+    assert.deepEqual(
+      [...new Set(frames)].filter((color) => color !== PAINTED.blank),
+      [PAINTED.dark],
+      frames.join(' | '),
+    );
     assert.deepEqual(seen.shifts, [], 'no layout shift: CLS is 0');
     const checked = (): string | undefined => document.querySelector<HTMLInputElement>('[name="mode"]:checked')?.value;
     assert.equal(await tab.evaluate(checked), 'dark', 'the switch shows the stored mode');
@@ -311,8 +328,13 @@ test('S15: the mode script of build:done runs before the first paint, with the C
     assert.equal(plainSeen.attribute?.body, false);
     const plainPaint = plainSeen.paints['first-paint'] ?? 0;
     const plainLast = plainSeen.frames.filter((frame) => frame.at <= plainPaint).at(-1);
-    assert.ok(samePixel(plainLast?.background ?? [], LIGHT), `the frame of the first paint is light: ${plainLast?.background}`);
-    assert.equal((await painted(plain.colors, PAINTED.light)).includes(PAINTED.dark), false);
+    assert.ok(
+      samePixel(plainLast?.background ?? [], LIGHT),
+      `the frame of the first paint is light: ${plainLast?.background}`,
+    );
+    const plainFrames = await painted(plain.colors, PAINTED.light);
+    assert.equal(plainFrames.at(-1), PAINTED.light, notPainted(plainFrames, PAINTED.light));
+    assert.equal(plainFrames.includes(PAINTED.dark), false);
     assert.deepEqual(plain.errors, []);
 
     // Control: a mode script whose hash is not in the CSP meta does not run, and both listeners report it.
@@ -325,7 +347,9 @@ test('S15: the mode script of build:done runs before the first paint, with the C
     while (tampered.errors.length === 0 && Date.now() < end) await settle(tampered.tab);
     assert.equal(tampered.errors.length, 1, tampered.errors.join('\n'));
     assert.match(tampered.errors[0] ?? '', /Content Security Policy/);
-    assert.equal((await painted(tampered.colors, PAINTED.light)).includes(PAINTED.dark), false, 'the page shows the system theme');
+    const tamperedFrames = await painted(tampered.colors, PAINTED.light);
+    assert.equal(tamperedFrames.at(-1), PAINTED.light, notPainted(tamperedFrames, PAINTED.light));
+    assert.equal(tamperedFrames.includes(PAINTED.dark), false, 'the page shows the system theme');
   } finally {
     await close();
   }

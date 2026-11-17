@@ -3,9 +3,9 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { build, plain, read, record, tree, type Run } from '../harness.ts';
-import { page, project } from './project.ts';
+import { build, plain, type Run, read, record, tree } from '../harness.ts';
 import { FORM_SHIM, get, WRANGLER_FORMS, wranglerBin, wranglerDev, wranglerEnv } from '../wrangler.ts';
+import { page, project } from './project.ts';
 
 type Json = Record<string, unknown>;
 
@@ -159,7 +159,11 @@ test('S14: CLOUDFLARE_ENV=preview astro build rewrites dist/server/wrangler.json
   const wrangler = await wranglerDev(dir, 'dist/server/wrangler.json');
   try {
     const sent = await get(wrangler.origin, '/api/forms/kontakt/', 'POST');
-    assert.deepEqual({ status: sent.status, body: sent.body }, { status: 200, body: 'ok' }, wrangler.output().slice(-2000));
+    assert.deepEqual(
+      { status: sent.status, body: sent.body },
+      { status: 200, body: 'ok' },
+      wrangler.output().slice(-2000),
+    );
     assert.equal((await get(wrangler.origin, '/')).status, 200);
   } finally {
     await wrangler.close();

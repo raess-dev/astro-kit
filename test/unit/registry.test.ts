@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { PASSED_LINE } from '../../src/cli.ts';
 import {
   applyWaivers,
   DOCS_PATH,
@@ -130,8 +131,29 @@ test('a finding without a detail has no parentheses, and two findings read "2 fi
   );
 });
 
-test('no finding prints that all checks passed', () => {
-  assert.equal(formatFindings([], rules), 'astro-kit: all checks passed.');
+test('no finding gives an empty text', () => {
+  assert.equal(formatFindings([], rules), '');
+});
+
+test('the text never holds the passed line of 6.4: only the command line prints it', () => {
+  assert.equal(SPEC.includes(`- **The passed line** (exact): \`${PASSED_LINE}\``), true);
+  const waived = applyWaivers(
+    [{ rule: 'head-title', where: '/jobs/' }],
+    [{ rule: 'head-title', where: '/jobs/', reason: 'Agreed with the client', until: '2026-12-31' }],
+    rules,
+  );
+  const warn: Finding = { rule: 'links-depth', where: '/a/b/c/d/' };
+  const failing: Finding = { rule: 'config-shim', where: 'biome.json' };
+  const lists: Finding[][] = [[], waived, [warn], [...waived, warn], [failing], [...waived, warn, failing]];
+  assert.deepEqual(
+    lists.map((findings) => formatFindings(findings, rules).includes(PASSED_LINE)),
+    lists.map(() => false),
+  );
+  // The same holds for the text of a report and for the message of the error that a hook throws.
+  const report = new Report({ rules });
+  report.add('links-depth', '/a/b/c/d/');
+  assert.equal(report.format().includes(PASSED_LINE), false);
+  assert.equal(new FindingError([warn], rules).message.includes(PASSED_LINE), false);
 });
 
 test('a warn finding has "!", is not counted and fails nothing', () => {
@@ -142,7 +164,6 @@ test('a warn finding has "!", is not counted and fails nothing', () => {
       '! [links-depth] /a/b/c/d/: A page is too deep. This becomes an error in 0.2.0.',
       '    fix: Link the page from a page nearer to the home.',
       `    rule: ${DOCS_PATH}#links-depth`,
-      'astro-kit: all checks passed.',
     ].join('\n'),
   );
   assert.deepEqual(failures(findings, rules), []);
@@ -158,10 +179,7 @@ test('a waived finding has "~" on one line, is not counted and fails nothing', (
   const findings = applyWaivers([{ rule: 'head-title', where: '/jobs/', detail: '200 code points' }], [waiver], rules);
   assert.equal(
     formatFindings(findings, rules),
-    [
-      '~ [head-title] /jobs/: A title is too short or too long. (200 code points) (waived until 2026-12-31: The client wants this title)',
-      'astro-kit: all checks passed.',
-    ].join('\n'),
+    '~ [head-title] /jobs/: A title is too short or too long. (200 code points) (waived until 2026-12-31: The client wants this title)',
   );
   assert.deepEqual(failures(findings, rules), []);
 });

@@ -3,8 +3,8 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { build, caseDir, read, record, write } from '../harness.ts';
-import { page, project } from './project.ts';
 import { type Answer, FORM_SHIM, get, WRANGLER_FORMS, WRANGLER_STATIC, wranglerDev } from '../wrangler.ts';
+import { page, project } from './project.ts';
 
 /** The asset rule of 6.3, which the kit writes on a static site and the adapter on a forms site. */
 const ASSET_RULE = '/_astro/*\n  Cache-Control: public, max-age=31536000, immutable\n';
@@ -49,7 +49,10 @@ test('S9: Workers static assets answer a missing URL at any depth with /404.html
   const wrangler = await wranglerDev(dir);
   try {
     const { origin } = wrangler;
-    assert.ok(wrangler.output().includes('Parsed 2 valid header rules'), `wrangler read _headers:\n${wrangler.output()}`);
+    assert.ok(
+      wrangler.output().includes('Parsed 2 valid header rules'),
+      `wrangler read _headers:\n${wrangler.output()}`,
+    );
 
     const home = await get(origin, '/');
     assert.equal(home.status, 200, 'the home answers 200');
@@ -73,8 +76,17 @@ test('S9: Workers static assets answer a missing URL at any depth with /404.html
     assert.equal(asset.status, 404);
     assert.equal(asset.body, notFound);
     assert.deepEqual(rule(asset), RULE);
-    assert.equal(asset.headers['cache-control'], IMMUTABLE, 'the /_astro/* rule sets Cache-Control on a 404 answer too');
-    record('S9.missingAsset', { path: '/_astro/x.css', status: 404, body: '/404.html', cache: asset.headers['cache-control'] });
+    assert.equal(
+      asset.headers['cache-control'],
+      IMMUTABLE,
+      'the /_astro/* rule sets Cache-Control on a 404 answer too',
+    );
+    record('S9.missingAsset', {
+      path: '/_astro/x.css',
+      status: 404,
+      body: '/404.html',
+      cache: asset.headers['cache-control'],
+    });
     const head = await get(origin, '/fr/x/', 'HEAD');
     assert.equal(head.status, 404, 'HEAD on a missing URL answers 404');
     assert.equal(head.body, '');
@@ -103,7 +115,12 @@ test('S9: Workers static assets answer a missing URL at any depth with /404.html
     assert.equal(own.body, notFound);
     record('S9.own404', { path: '/404', status: own.status });
     record('S9.htmlCacheControl', home.headers['cache-control']);
-    record('S9.headerRuleOn', { '200': rule(home), '404': RULE, '307': rule(noSlash), '405': rule(await get(origin, '/x/', 'POST')) });
+    record('S9.headerRuleOn', {
+      '200': rule(home),
+      '404': RULE,
+      '307': rule(noSlash),
+      '405': rule(await get(origin, '/x/', 'POST')),
+    });
   } finally {
     await wrangler.close();
   }

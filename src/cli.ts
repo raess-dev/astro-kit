@@ -20,6 +20,12 @@ Run it in the project root.
                     With --check it writes nothing and compares the file.
   help              Prints this text.`;
 
+/**
+ * The passed line of 6.4. A command that runs checks prints it as its last line on stdout, once, when it ends with
+ * no finding that fails it. Only this file prints it: `formatFindings` and the hooks of the integration never do.
+ */
+export const PASSED_LINE = 'astro-kit: all checks passed.';
+
 /** Where the command line writes, and the environment it reads. `out` and `err` write a text as it is. */
 export type Io = ToolIo;
 
@@ -59,6 +65,8 @@ function findingsOf(value: unknown): Finding[] | undefined {
  *   when every finding is a warning or waived.
  * - A number is the code.
  * - `false` gives 1. Anything else gives 0.
+ *
+ * It never prints the passed line: `passed` does that, after all other output of a command that runs checks.
  */
 export async function outcome(value: unknown, io: Io = processIo()): Promise<number> {
   const findings = findingsOf(value);
@@ -77,6 +85,15 @@ export async function outcome(value: unknown, io: Io = processIo()): Promise<num
   return failures(findings).length > 0 ? 1 : 0;
 }
 
+/**
+ * The end of a command that runs checks. With the code 0 it prints the passed line on stdout. Call it once, after
+ * the last tool of the command has ended and after all other output of the command.
+ */
+function passed(code: number, io: Io): number {
+  if (code === 0) io.out(`${PASSED_LINE}\n`);
+  return code;
+}
+
 /** The flags of a command. `undefined` when an argument is not one of the flags that the command knows. */
 function flagsOf(args: readonly string[], known: readonly string[]): ReadonlySet<string> | undefined {
   return args.every((arg) => known.includes(arg)) ? new Set(args) : undefined;
@@ -93,16 +110,19 @@ async function dispatch(argv: readonly string[], root: string, io: Io): Promise<
   if (command === 'build') {
     if (rest.length > 0) return undefined;
     const { build } = await import('./ci.ts');
-    return outcome(await build(root, io), io);
+    // `build` gives the status of `astro build`. The integration ran every check inside that process.
+    return passed(await outcome(await build(root, io), io), io);
   }
   if (command === 'tokens') {
     const flags = flagsOf(rest, ['--check']);
     if (flags === undefined) return undefined;
     const { tokens, TOKENS_FILE } = await import('./ci.ts');
-    const result = tokens(root, { check: flags.has('--check') });
+    const check = flags.has('--check');
+    const result = tokens(root, { check });
     const code = await outcome(result, io);
     if (result.written) io.out(`astro-kit tokens: wrote ${TOKENS_FILE}\n`);
-    return code;
+    // Only `tokens --check` runs a check. `tokens` alone writes the file.
+    return check ? passed(code, io) : code;
   }
   return undefined;
 }

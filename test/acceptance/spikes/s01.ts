@@ -16,7 +16,8 @@ const files = {
   'src/styles/components/card.css':
     '@layer components {\n  .card {\n    display: block;\n  }\n  .card img {\n    block-size: 3rem;\n  }\n}\n',
   'src/styles/pages/index.css': '@layer page {\n  .card {\n    order: 1;\n  }\n}\n',
-  'src/components/Card.astro': "---\nimport '../styles/components/card.css';\n---\n<div class=\"card\"><slot /></div>\n",
+  'src/components/Card.astro':
+    '---\nimport \'../styles/components/card.css\';\n---\n<div class="card"><slot /></div>\n',
   'src/pages/index.astro': page(
     'Home',
     '<Card><Image src={photo} alt="" /></Card>',
@@ -57,7 +58,10 @@ test('S1: page-ssr CSS lands in every page, base.css first, in the layer order o
   assert.ok(home.includes('@layer astro.images{'), 'responsiveStyles emits @layer astro.images');
   // Astro's own layer is lowest, so a project rule on an Astro image wins.
   assert.equal(await imageHeight(join(dir, 'dist')), '48px', 'a component rule beats the astro.images layer');
-  record('S1.astroImagesPosition', home.indexOf('@layer astro.images{') > home.indexOf('@layer layout{') ? 'after the global CSS' : 'first');
+  record(
+    'S1.astroImagesPosition',
+    home.indexOf('@layer astro.images{') > home.indexOf('@layer layout{') ? 'after the global CSS' : 'first',
+  );
 });
 
 test('S1: without `astro` first in the order statement, the astro.images layer beats every project layer', async () => {
@@ -65,6 +69,10 @@ test('S1: without `astro` first in the order statement, the astro.images layer b
   const css = join(dir, 'kit/base.css');
   writeFileSync(css, readFileSync(css, 'utf8').replace('@layer astro, reset,', '@layer reset,'));
   build(dir);
-  assert.equal(layerOrder(styles(read(dir, 'dist/index.html'))).at(-1), 'astro.images', 'the astro layer is declared last');
+  assert.equal(
+    layerOrder(styles(read(dir, 'dist/index.html'))).at(-1),
+    'astro.images',
+    'the astro layer is declared last',
+  );
   assert.equal(await imageHeight(join(dir, 'dist')), '1px', 'the component rule loses: height stays auto');
 });

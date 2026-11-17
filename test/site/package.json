@@ -1,19 +1,17 @@
 {
-  "name": "astro-kit-test",
+  "name": "laerchenwald-example",
   "private": true,
   "type": "module",
   "scripts": {
     "check": "astro-kit check",
     "build": "astro-kit build",
     "test": "astro-kit test",
-    "ci": "astro-kit ci",
-    "acceptance": "node --test 'test/**/*.test.ts'"
+    "ci": "astro-kit ci"
   },
   "dependencies": {
     "astro": "7.4.11"
   },
   "devDependencies": {
-    "@types/node": "22.20.5",
     "wrangler": "4.160.1"
   }
 }

@@ -2,7 +2,19 @@ import assert from 'node:assert/strict';
 import { type ChildProcess, spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { atEnd, browse, build, chromePath, PIXEL_SOURCE, record, samePixel, serve, standIn, type Page, type Pixel } from '../harness.ts';
+import {
+  atEnd,
+  browse,
+  build,
+  chromePath,
+  type Page,
+  PIXEL_SOURCE,
+  type Pixel,
+  record,
+  samePixel,
+  serve,
+  standIn,
+} from '../harness.ts';
 import { PNG, page, project } from './project.ts';
 
 // Two options and no `auto`, so that no state of this spike depends on the system of the machine.
@@ -140,16 +152,22 @@ function site(): Promise<{ dist: string; dir: string; header: string }> {
   return cached;
 }
 
+/** The end of a wait of `until`: the last value, and whether `done` accepted it before the time was over. */
+interface Waited<T> {
+  done: boolean;
+  value: T;
+}
+
 /**
- * Waits until `read` gives a value that `done` accepts. The failure shows the last value. `what` can be a function:
- * it then runs when the time is over, so that the message holds the state of that moment.
+ * Waits until `read` gives a value that `done` accepts, for 30 seconds at most. It asserts nothing: the caller
+ * asserts `done` right after the wait, with a message that holds the last value and the state of that moment.
  */
-async function until<T>(read: () => T | Promise<T>, done: (value: T) => boolean, what: string | (() => string)): Promise<T> {
+async function until<T>(read: () => T | Promise<T>, done: (value: T) => boolean): Promise<Waited<T>> {
   const end = Date.now() + 30_000;
   for (;;) {
     const value = await read();
-    if (done(value)) return value;
-    if (Date.now() >= end) assert.fail(`${typeof what === 'string' ? what : what()}: ${JSON.stringify(value)}`);
+    if (done(value)) return { done: true, value };
+    if (Date.now() >= end) return { done: false, value };
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
 }
@@ -172,16 +190,20 @@ const PROBE = `(() => {
 
 type Probed = { __s17: string[]; __kept?: string; __pixel(color: string): Pixel };
 
-/** The page has the mode, its switch shows it, and its background has the color, as a canvas pixel. */
-async function assertState(tab: Page, mode: 'light' | 'dark', background: Pixel): Promise<void> {
-  const state = await tab.evaluate(() => ({
-    mode: document.documentElement.dataset.mode,
-    checked: document.querySelector<HTMLInputElement>('[name="mode"]:checked')?.value,
+/** The mode of the page, the mode that its switch shows, and its background as a canvas pixel. */
+interface State {
+  shown: { mode: string | undefined; checked: string | undefined };
+  background: Pixel;
+}
+
+const stateOf = (tab: Page): Promise<State> =>
+  tab.evaluate(() => ({
+    shown: {
+      mode: document.documentElement.dataset.mode,
+      checked: document.querySelector<HTMLInputElement>('[name="mode"]:checked')?.value,
+    },
     background: (window as unknown as Probed).__pixel(getComputedStyle(document.body).backgroundColor),
   }));
-  assert.deepEqual({ mode: state.mode, checked: state.checked }, { mode, checked: mode });
-  assert.ok(samePixel(state.background, background), `the background with the mode ${mode}: ${state.background}`);
-}
 
 test('S17: a page restored from the back/forward cache shows the mode that another page changed', async () => {
   const { dist, header } = await site();
@@ -190,7 +212,9 @@ test('S17: a page restored from the back/forward cache shows the mode that anoth
     const tab = await (await browser.newContext({ colorScheme: 'light' })).newPage();
     await tab.addInitScript(PROBE);
     await tab.goto(`${server.origin}/`);
-    await assertState(tab, 'light', LIGHT);
+    const first = await stateOf(tab);
+    assert.deepEqual(first.shown, { mode: 'light', checked: 'light' });
+    assert.ok(samePixel(first.background, LIGHT), `the background with the mode light: ${first.background}`);
     await tab.evaluate(() => {
       (window as unknown as Probed).__kept = 'the same window';
     });
@@ -199,17 +223,19 @@ test('S17: a page restored from the back/forward cache shows the mode that anoth
     await tab.click('#to-b');
     await tab.waitForURL(`${server.origin}/b/`);
     await tab.click('input[value="dark"]');
-    await assertState(tab, 'dark', DARK);
+    const changed = await stateOf(tab);
+    assert.deepEqual(changed.shown, { mode: 'dark', checked: 'dark' });
+    assert.ok(samePixel(changed.background, DARK), `the background with the mode dark: ${changed.background}`);
     assert.equal(await tab.evaluate((key: string) => localStorage.getItem(key), KEY), 'dark');
 
     // Back. A restore fires no load event, so wait for the commit and then for the events.
     await tab.goBack({ waitUntil: 'commit' });
-    const log = await until(
+    const events = await until(
       () => tab.evaluate(() => (window as unknown as Probed).__s17 ?? []),
       (notes) => notes.length >= 6,
-      'the events of the restored page',
     );
-    assert.deepEqual(log, [
+    assert.ok(events.done, `the events of the restored page: ${JSON.stringify(events.value)}`);
+    assert.deepEqual(events.value, [
       'pageshow persisted=false found light',
       'pageshow persisted=false left light',
       'pagehide persisted=true',
@@ -222,7 +248,9 @@ test('S17: a page restored from the back/forward cache shows the mode that anoth
     assert.equal(await tab.evaluate(() => location.pathname), '/');
     assert.equal(await tab.evaluate(() => (window as unknown as Probed).__kept), 'the same window', 'no reload');
     assert.equal(server.requests.filter((path) => path === '/').length, 1, 'the server sent page A once');
-    await assertState(tab, 'dark', DARK);
+    const restored = await stateOf(tab);
+    assert.deepEqual(restored.shown, { mode: 'dark', checked: 'dark' });
+    assert.ok(samePixel(restored.background, DARK), `the background with the mode dark: ${restored.background}`);
     record('S17.bfcache', { restored: true, modeAfterPageshow: 'dark', storageEventAfterRestore: true });
   } finally {
     await close();
@@ -243,7 +271,7 @@ test('S17: a prerendered page shows the changed mode when it activates, with no 
   const server = await serve(dist, { headers: { 'content-security-policy': header } });
   let chrome: ChildProcess | undefined;
   let exited: Promise<void> | undefined;
-  let forget = (): void => {};
+  let forget: (() => void) | undefined;
   let limit: NodeJS.Timeout | undefined;
   try {
     // No debugging port and no pipe: nothing can attach to this browser. The pages report to the server.
@@ -278,12 +306,16 @@ test('S17: a prerendered page shows the changed mode when it activates, with no 
         resolve();
       });
     });
-    const sent = await until(
+    const reported = await until(
       () => server.requests.find((path) => path.startsWith('/report/?')),
       (path) => path !== undefined || child.exitCode !== null || failed !== undefined,
-      // The request list is the only trace of this browser, so the message reads it when the time is over.
-      () => `page B sent no report; the requests were ${server.requests.join(' ')}`,
     );
+    // The request list is the only trace of this browser, so the message reads it right after the wait.
+    assert.ok(
+      reported.done,
+      `page B sent no report; the requests were ${server.requests.join(' ')}: ${JSON.stringify(reported.value)}`,
+    );
+    const sent = reported.value;
     assert.equal(failed, undefined, `Chromium did not start: ${String(failed)}`);
     assert.ok(sent, `Chromium ended with code ${child.exitCode} before page B sent its report`);
     const report = JSON.parse(decodeURIComponent(sent.slice('/report/?'.length))) as Report;
@@ -315,7 +347,7 @@ test('S17: a prerendered page shows the changed mode when it activates, with no 
         const timer = setTimeout(() => child.kill('SIGKILL'), 5_000);
         await exited;
         clearTimeout(timer);
-        forget();
+        forget?.();
       }
     } finally {
       await server.close();
@@ -351,8 +383,16 @@ test('S17: with a DevTools client, Chromium cancels the prerender of the kit rul
 
     // The rules of the kit (`moderate`): the pointer rests on the link, and Chromium starts the prerender.
     await tab.hover('#to-b');
-    await until(() => purposes, (seen) => seen.length > 0, 'the prerender request');
-    await until(() => failures, (seen) => seen.length > 0, 'the status of the prerender');
+    const requested = await until(
+      () => purposes,
+      (seen) => seen.length > 0,
+    );
+    assert.ok(requested.done, `the prerender request: ${JSON.stringify(requested.value)}`);
+    const status = await until(
+      () => failures,
+      (seen) => seen.length > 0,
+    );
+    assert.ok(status.done, `the status of the prerender: ${JSON.stringify(status.value)}`);
     assert.equal(purposes[0], 'prefetch;prerender');
     assert.equal(failures[0], '/b/ PrerenderingDisabledByDevTools');
     record('S17.prerenderWithDevTools', 'PrerenderingDisabledByDevTools');

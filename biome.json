@@ -3,17 +3,27 @@
   "root": true,
   "extends": ["./config/biome.json"],
   "files": {
-    "includes": ["!**/dist", "!**/.astro", "!**/.wrangler", "!**/node_modules", "!test/site", "!test/acceptance"]
+    "includes": ["!**/dist", "!**/.astro", "!**/.wrangler", "!**/node_modules", "!test/site"]
   },
   "overrides": [
     {
-      "includes": ["css/base.css"],
+      "includes": ["css/base.css", "test/acceptance/kit/base.css"],
       "linter": {
         "rules": {
           "complexity": {
             "noImportantStyles": "off"
           }
         }
+      }
+    },
+    {
+      "includes": [
+        "test/acceptance/kit/speculation.json",
+        "test/acceptance/kit/tokens-setting-1.css",
+        "test/acceptance/spikes.results.json"
+      ],
+      "formatter": {
+        "enabled": false
       }
     },
     {

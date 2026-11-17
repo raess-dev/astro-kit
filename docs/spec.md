@@ -19,7 +19,7 @@ This document says what to build and why. A builder can build the kit from it al
 | 11 | The kit's own CI and releases | `kit.yml`, `release.yml`, the version rule |
 | 12 | Agent tooling | AGENTS.md, init, the session hook, INDEX, recipes, feedback |
 | 13 | Platform facts | Verified facts, spikes, the delivery rehearsal |
-| 14 | Build order | Milestones M0–M13, the kit unit tests, the test repository |
+| 14 | Build order | Milestones M0–M13, the kit unit tests, the test site and the acceptance suite |
 | 15 | Verification and definition of done | |
 | 16 | Owner steps | |
 
@@ -50,14 +50,18 @@ This document says what to build and why. A builder can build the kit from it al
 | A rendered file | A file whose text the kit computes from other files, such as `tokens.css` and `wrangler.jsonc`. |
 | An origin | A third-party host that the owner allows pages to contact (9.4). |
 | A waiver | A setting that switches one rule off for one place until a date (8). |
+| The test site | The fictitious Hotel Lärchenwald in `test/site/` of the kit repository: one complete kit project. It is not in the npm package (14.2). |
+| The acceptance suite | The tests in `test/acceptance/` of the kit repository. They pack the kit of the checkout and test it on the test site and in the spikes (13.2, 14.2). |
+| The rehearsal repository | `raess-dev/astro-kit-test`: the one real site repository of the build. Only the delivery rehearsal of milestone M13 uses it (13.3). |
 
 **Where to build.**
 
 - **Branch.** Build in `raess-dev/astro-kit`, on a new branch from `main` named `build`. Its first commit removes the whole tree that `main` holds, leaving only `.git`.
 - **Earlier code.** `main` holds an earlier, unpublished kit. This document does not depend on it. The builder may read it with `git show main:<path>`, and may reuse a module from it under one condition: every value in the module is checked against this document, and the module passes every test that 14.1 asks of it. Where the two differ, this document wins.
 - **Merging.** The build branch merges into `main` at milestone M12, when M0–M11 pass and the branch holds `release.yml`, with `npm pack --dry-run` listing only the `files` of 3.4. It touches `.github/`, so the owner approves it and merges it by hand (10.1). The release PR of 11.4, step 4, then sets `version` to `0.1.0` with its CHANGELOG lines.
-- **The test repository.** `raess-dev/astro-kit-test` is a second repository. The owner creates it (section 16). It is built alongside the kit, from milestone M1. It holds a real site made with the kit, the Hotel Lärchenwald, and an acceptance suite that tests the kit on that site (section 14.2). The kit repository holds no site and no Astro project. Its own tests are unit tests only (section 14.1).
-- **Outside the repositories.** Three things exist outside: the npm package name `@raess/astro-kit`, the rulesets of the GitHub organization, and the npm trusted-publisher entry for `release.yml`. Sections 10.2, 11.4 and 16 say how to create or replace each. `release.yml` keeps its file name, because the trusted publisher names it.
+- **One repository.** The kit repository holds the kit, its tests and its test site. `test/unit/` holds the unit tests (14.1). `test/site/` holds the test site: one complete kit project, the fictitious Hotel Lärchenwald. `test/acceptance/` holds the acceptance suite, which packs the kit of the checkout and tests it on that site (14.2). Nothing under `test/` is in the npm package (3.4).
+- **The rehearsal repository.** Only the delivery rehearsal of milestone M13 needs a second repository, `raess-dev/astro-kit-test`, because GitHub runs workflows only from the root of a repository (13.3). A repository with that name exists already: it holds the test site and the suite of an earlier design. This document does not depend on it. Before M13 the owner deletes that repository and creates a new private one with the same name (16). No CI job of the kit repository reads it.
+- **Outside the repository.** Three things exist outside: the npm package name `@raess/astro-kit`, the rulesets of the GitHub organization, and the npm trusted-publisher entry for `release.yml`. Sections 10.2, 11.4 and 16 say how to create or replace each. `release.yml` keeps its file name, because the trusted publisher names it.
 
 ---
 
@@ -183,14 +187,14 @@ Version 1 does not do these things. Each line says what a site does instead. A s
 
 1. At the start of the build (milestone M0), run `npm view <pkg> version` for each package below.
 2. Pin the latest stable version that stays inside the listed major and minor line. The table gives the verified floor.
-3. A newer major (Astro 8, for example) waits for a kit release that supports it. That release passes the kit's unit tests and the real-site job (11.1), and it has the owner's agreement.
+3. A newer major (Astro 8, for example) waits for a kit release that supports it. That release passes the kit's unit tests and the acceptance suite (11.1), and it has the owner's agreement.
 4. Pin every version exactly (`save-exact`). Record the pins in `package.json`, in `src/init.ts` (`PINS`) and in the site templates.
 5. Re-verify the platform facts of section 13 with the spikes of milestone M1.
 6. Some values in this document follow from a pinned version: the Solid hash (13.1 item 11), the install lines of 9.2, the `engines` floor and the compatibility date (10.4). When a pin moves, recompute them and change this document in the same PR. A test that checks such a value reads the installed version, never a constant.
 
 | Part | Package / tool | Verified floor | Role |
 |---|---|---|---|
-| Runtime | Node | engines `>=22.23.4`; `.node-version` `24` | Kit and sites. Unit tests run `.ts` through type stripping. |
+| Runtime | Node | engines `>=22.23.4`; `.node-version` `24` | Kit and sites. The unit tests and the acceptance suite run `.ts` through type stripping. |
 | Package manager | npm | the npm bundled with Node 24; the release job needs npm ≥ 11.15 and installs `npm@11.21.2` when older | Every install is `npm ci --ignore-scripts` |
 | Framework | `astro` | `7.4.8`; peer range `>=7.4.8 <8` | Static output; the integration API |
 | Bundler (transitive) | `vite` / `lightningcss` | `8.3.7` / `1.33.0`, through Astro | Never a direct dependency |
@@ -208,10 +212,10 @@ Version 1 does not do these things. Each line says what a site does instead. A s
 | Forms adapter (feature) | `@astrojs/cloudflare` | `14.4.6`; peer `>=14.4.6 <15` | Only with `features.forms` |
 | Deploy CLI | `wrangler` | `4.160.0` | A devDependency of every site. The deploy, preview and rollback jobs run it from the lockfile with `npx --no wrangler` |
 | Hosting | Cloudflare Workers static assets | `compatibility_date` `2026-11-01` | Static assets, plus one Worker route with forms |
-| Images (transitive) | `sharp` | through Astro's image pipeline | Image processing in sites, and the deterministic photos of the test repository (14.2); never a direct dependency |
+| Images (transitive) | `sharp` | through Astro's image pipeline | Image processing in sites, and the deterministic photos of the acceptance suite (14.2); never a direct dependency |
 | Tests only | `yaml` `2.9.1`, `@types/node` `22.20.5` | devDependencies | Workflow parsing, types |
 
-**Which browser.** When `CHROME_PATH` is set, the kit takes that file and tries no other. Else it takes the Chromium that `playwright-core` installed, when that file exists. Else it takes `/usr/bin/google-chrome`. The kit does not test that `CHROME_PATH` or `/usr/bin/google-chrome` names a file. When the browser does not start, the command prints the error of the launch and exits 1 (6.4). The Playwright build changes only with the `playwright-core` pin, in a kit release. The system Chrome changes with no commit, so a green site could turn red by itself. Every workflow that runs a browser check therefore installs the Playwright build first (10.1, 11.1, 11.2, 14.2).
+**Which browser.** When `CHROME_PATH` is set, the kit takes that file and tries no other. Else it takes the Chromium that `playwright-core` installed, when that file exists. Else it takes `/usr/bin/google-chrome`. The kit does not test that `CHROME_PATH` or `/usr/bin/google-chrome` names a file. When the browser does not start, the command prints the error of the launch and exits 1 (6.4). The Playwright build changes only with the `playwright-core` pin, in a kit release. The system Chrome changes with no commit, so a green site could turn red by itself. Every workflow that runs a browser check therefore installs the Playwright build first (10.1, 11.1, 11.2).
 
 **The pins of milestone M0** (2026-11-13). Each is the latest version in its line. Where the table gives no other value, the pin equals the floor.
 
@@ -246,16 +250,16 @@ Use the same pins in `kit.yml`, `release.yml` and the site template. Refresh eac
 
 ```text
 astro-kit/
-├── .github/workflows/kit.yml        CI: test, real-site, scan, canary, merge
+├── .github/workflows/kit.yml        CI: test, acceptance, scan, canary, merge
 ├── .github/workflows/kit-approved.yml   the merge after the owner's approval
 ├── .github/workflows/release.yml    staged trusted publishing
 ├── .github/CODEOWNERS               one line: /.github/ @<the KIT_OWNER login>
-├── .gitignore                       node_modules/ dist/ *.tgz
+├── .gitignore                       node_modules/ dist/ .astro/ .wrangler/ *.tgz (at any depth, so also in test/site/)
 ├── .gitleaksignore                  one entry: the test HMAC key in test/unit/feedback.test.ts
 ├── .node-version                    24
 ├── .npmrc                           ignore-scripts=true, save-exact=true
-├── biome.json                       repo lint config; extends ./config/biome.json; overrides: `complexity.noImportantStyles` off for `css/base.css` (the behavior floor), `suspicious.noConsole` off for `src/**` (CLI output and the form log of 9.1)
-├── tsconfig.json / tsconfig.build.json
+├── biome.json                       repo lint config; extends ./config/biome.json; leaves out `test/site` (a project of its own, 14.2); overrides: `complexity.noImportantStyles` off for `css/base.css` (the behavior floor) and for its copy in `test/acceptance/kit/`, the formatter off for the exact texts `speculation.json` and `tokens-setting-1.css` in `test/acceptance/kit/` and for `test/acceptance/spikes.results.json`, which the suite writes itself, `suspicious.noConsole` off for `src/**` (CLI output and the form log of 9.1)
+├── tsconfig.json / tsconfig.build.json   the type check covers src, test/unit and test/acceptance; the build covers src
 ├── package.json / package-lock.json
 ├── README.md CONTRIBUTING.md SECURITY.md CHANGELOG.md LICENSE (MIT)
 ├── config/biome.json                Biome preset that sites extend
@@ -263,14 +267,22 @@ astro-kit/
 ├── css/base.css                     the layer order, @layer reset (reset and behavior floor) and @layer layout (stack, cluster, grid, center); ≤ 2 KB compressed
 ├── schema/astro-kit.schema.json     generated JSON Schema of astro-kit.json
 ├── docs/spec.md                     this specification; not in the npm package
+├── docs/rehearsal.md                the evidence of the delivery rehearsal (13.3), from M13; not in the npm package
 ├── docs/INDEX.md                    what agents read first (≤ 100 lines)
 ├── docs/standards.md                generated from the registry
 ├── docs/forms.md, docs/islands.md, docs/modes.md, docs/origins.md   the four features
 ├── docs/recipes/*.md                twelve recipes (≤ 40 lines each)
 ├── src/                             TypeScript sources (see 3.2)
 ├── templates/                       what init writes (see 3.3)
-└── test/
-    └── unit/*.test.ts               node --test, table-driven; strings and small temp files only, never an Astro project (14.1)
+└── test/                            not in the npm package (3.4)
+    ├── README.md                    how to run the suite, and how to build the test site by hand
+    ├── unit/*.test.ts               the unit tests (npm test): node --test, table-driven; strings and small temp files only, never an Astro build (14.1)
+    ├── acceptance/                  the acceptance suite (npm run acceptance, 14.2)
+    │   ├── harness.ts serve.ts wrangler.ts photos.ts   the packed kit, the base copy and the runners; the static server; wrangler dev; the photos
+    │   ├── kit/                     a stand-in integration for the spikes; it is not the kit (13.2)
+    │   ├── spikes/ spikes.test.ts spikes.results.json   S1–S19 and their measured values (13.2)
+    │   └── kit.test.ts site.test.ts  the texts of the stand-in; the cases on the test site
+    └── site/                        the test site, the Hotel Lärchenwald: one complete kit project with its own package.json and package-lock.json (14.2)
 ```
 
 ### 3.2 Modules
@@ -346,16 +358,16 @@ templates/
 | Field | Value |
 |---|---|
 | `name` / `license` / `type` | `@raess/astro-kit` / `MIT` / `module` |
-| `version` | `0.0.0` on the build branch, so that its merge stages nothing (11.2). The release PR of 11.4, step 4, sets `0.1.0`. |
+| `version` | `0.0.0` on the build branch. The stage step stages no `0.0.0` (11.2). The release PR of 11.4, step 4, sets `0.1.0`. |
 | `engines` | `{ "node": ">=22.23.4" }`, the floor of Astro 7.4 |
 | `publishConfig` | `{ "access": "public", "provenance": true }` |
 | `bin` | `{ "astro-kit": "dist/cli.js" }` |
-| `files` | `dist`, `css`, `config`, `docs/INDEX.md`, `docs/standards.md`, `docs/forms.md`, `docs/islands.md`, `docs/modes.md`, `docs/origins.md`, `docs/recipes`, `schema`, `templates`, `CHANGELOG.md` |
+| `files` | `dist`, `css`, `config`, `docs/INDEX.md`, `docs/standards.md`, `docs/forms.md`, `docs/islands.md`, `docs/modes.md`, `docs/origins.md`, `docs/recipes`, `schema`, `templates`, `CHANGELOG.md`. The list is a whitelist: the package holds no file of `test/`, so no unit test, no acceptance suite and no test site. |
 | `exports` | `.` → `./dist/index.js` (types `./dist/index.d.ts`); `./forms` → `./dist/forms/index.js`; `./css/base.css`; `./biome.json` → `./config/biome.json`; `./tsconfig.json` → `./config/tsconfig.json`; `./package.json`. Nothing else. |
-| `scripts` | `build`: `tsc -p tsconfig.build.json`; `check`: `biome ci --error-on-warnings . && tsc -p tsconfig.json --noEmit`; `test`: `node --test 'test/unit/**/*.test.ts'` (unit tests only, 14.1); `docs`: `node src/docs.ts --write` |
+| `scripts` | `build`: `tsc -p tsconfig.build.json`; `check`: `biome ci --error-on-warnings . && tsc -p tsconfig.json --noEmit`; `test`: `node --test 'test/unit/**/*.test.ts'` (the unit tests, 14.1); `acceptance`: `node --test 'test/acceptance/**/*.test.ts'` (the acceptance suite, 14.2); `docs`: `node src/docs.ts --write`. `check` covers all kit code, `test/unit/` and `test/acceptance/` included. It leaves out `test/site/`, which has its own `biome.json` and `tsconfig.json` (14.2). |
 | `dependencies` | `@astrojs/check`, `@biomejs/biome`, `axe-core`, `html-validate`, `node-html-parser`, `playwright-core`, `typescript` (exact pins) |
 | `peerDependencies` | `astro >=7.4.8 <8`; `@astrojs/cloudflare >=14.4.6 <15`, `@astrojs/solid-js >=7.1.2 <8`, `solid-js >=1.9.18 <2` (the last three optional in `peerDependenciesMeta`) |
-| `devDependencies` | `astro`, `@astrojs/cloudflare`, `@astrojs/solid-js`, `solid-js`, `@types/node`, `yaml`. The type check and the unit tests use them (14.1). No kit test builds a site with them. |
+| `devDependencies` | `astro`, `@astrojs/cloudflare`, `@astrojs/solid-js`, `solid-js`, `@types/node`, `yaml`. The type check and the unit tests use them (14.1). No test builds a site with them: the acceptance suite installs the packages of the test site in its base copy (14.2). |
 | `keywords` | `astro-integration`, `withastro` |
 
 **Repo conventions.**
@@ -701,7 +713,9 @@ Each declared origin adds one more sentence to the privacy text, with the name o
    - Any truthy `config.experimental` key whose value differs from its default → `config-experimental`. The only allowed default is `{collectionStorage: 'single-file'}`.
 4. **Findings.**
    - A `config-options` finding (in `astro-kit.json`, `site.json` or `glossary.json`): throw a `FindingError`.
-   - Other findings: throw when `command === 'build'`; otherwise `logger.warn(formatFindings(...))` and continue, so that dev and check keep the page visible.
+   - Other findings, when `command === 'build'`: throw a `FindingError` when a finding fails the command (6.4).
+   - Findings that stop nothing: `logger.warn(formatFindings(...))` and continue. These are the `warn` and the waived findings of a build, and every finding of another command, so that dev and check keep the page visible.
+   - **The logger.** The Astro logger writes a warning to stdout. It puts a time and a label before the first line of the text, so that line does not start with `!`, `~` or `astro-kit:`. The text never holds the passed line of 6.4.
 5. **Watch files.** `addWatchFile` for `astro-kit.json`, `site.json`, `schedule.json`, `redirects.json`, `glossary.json` and `docs/design.md`.
 6. **Islands.** With `features.islands`, push `(await import('@astrojs/solid-js')).default()` into integrations and add `solidHydrationHash(root)` to the script hashes.
 7. **Forms.** With `features.forms`, set `adapter = (await import('@astrojs/cloudflare')).default({ imageService: 'compile', prerenderEnvironment: 'node' })`, and push it into `integrations` too. Both are needed: Astro runs the hooks of an adapter only from `integrations`, and it reads `config.adapter` to accept an on-demand route (13.1 item 7, S10). With `imageService: 'compile'` the adapter keeps Astro's own image service for the build (`astro/assets/services/sharp`) and passes an image request through at run time; without it the adapter sets its image binding service.
@@ -742,7 +756,7 @@ Each declared origin adds one more sentence to the privacy text, with the name o
 - `security.csp` must be an object.
 - `config.i18n` must deep-equal the kit's value (`config-i18n`).
 - An adapter while forms is off reports `config-adapter`. With forms on, a missing adapter, or one other than `@astrojs/cloudflare`, reports it too.
-- Throw on any finding.
+- Throw when a finding fails the command (6.4). The hook prints no finding itself: its rules are `error` rules that no waiver covers (8), so every finding of this hook fails the command.
 
 **`astro:routes:resolved`**
 
@@ -750,7 +764,7 @@ Each declared origin adds one more sentence to the privacy text, with the name o
 - **Endpoints.** Every route with `origin === 'project'` and `type === 'endpoint'`, other than the form shim, must be a static file route, as the endpoint clause of `routes-slug` defines it (8). Any other endpoint route reports `routes-slug` (entrypoint and pattern).
 - **Internal routes.** Routes that Astro adds itself have the origin `internal`: `/_image` and `/_server-islands/[name]` in every build, and `/_actions/[...path]` with `src/actions/`. The two checks do not look at them. `config-server` keeps their sources out, and the asset routing of 10.4 keeps their paths away from the Worker (8, S19).
 - **More than one call.** Astro calls this hook more than once in a build, with a shorter first list in a static build (S12, S19). The checks keep no state between calls, so they give the same result for the same list on every call.
-- Throw on any finding.
+- Throw when a finding fails the command (6.4). The hook prints no finding itself, for the reason that `astro:config:done` gives.
 
 **`astro:build:done`** (`dir` is the client directory, `dist/` or `dist/client/`):
 
@@ -766,7 +780,7 @@ Each declared origin adds one more sentence to the privacy text, with the name o
    - `is404` is true for `/404.html` only.
 3. **Edge files.** `writeEdgeFiles` (section 6.3).
 4. **Audits.** `runAudits` in this order: page, site, budgets, CSS, design (built halves), edge, html-validate.
-5. **Result.** Throw on any finding.
+5. **Result.** Throw a `FindingError` when a finding fails the command (6.4). Otherwise, with one or more `warn` or waived findings, `logger.warn(formatFindings(...))`, as in step 4 of `astro:config:setup`. The hook never prints the passed line: Astro prints more lines after this hook, and only the CLI prints that line (6.4).
 
 ### 6.2 CSP and the speculation rules
 
@@ -908,7 +922,7 @@ Canonical: ${site}/.well-known/security.txt
 **Shared mechanics.**
 
 - **Outcome mapping.**
-  - A findings array (or `{findings}`): print `formatFindings` and append it to `GITHUB_STEP_SUMMARY` inside a ```` ```text ```` fence. Exit 1 when a finding fails the command, and 0 when every finding is a `warn` or a waived one (see the finding format). An empty array prints nothing and exits 0.
+  - A findings array (or `{findings}`): print `formatFindings` on stderr and append it to `GITHUB_STEP_SUMMARY` inside a ```` ```text ```` fence. Exit 1 when a finding fails the command, and 0 when every finding is a `warn` or a waived one (see the finding format). An empty array prints no finding, appends nothing and exits 0.
   - A number: exit with that number.
   - `false`: exit 1. Anything else: exit 0.
   - A thrown error prints its message and exits 1.
@@ -921,7 +935,14 @@ Canonical: ${site}/.well-known/security.txt
       rule: node_modules/@raess/astro-kit/docs/standards.md#<id>
   ```
 
-  A `warn` finding has `!` in place of `✗`, and a waived finding has `~` and ends with `(waived until <until>: <reason>)` (8). Neither counts in `<n>`, and neither fails the command. With no `✗` finding, the last line is `astro-kit: all checks passed.`. Tests parse ids with `/✗ \[([a-z0-9-]+)\]/g`.
+  A `warn` finding has `!` in place of `✗`, and a waived finding has `~` and ends with `(waived until <until>: <reason>)` (8). Neither counts in `<n>`, and neither fails the command. With no `✗` finding, the text has no line `astro-kit: <n> finding(s)`. With no finding at all, the text is empty. The text never holds the passed line: only the CLI prints that line. Tests parse ids with `/✗ \[([a-z0-9-]+)\]/g`.
+- **The passed line** (exact): `astro-kit: all checks passed.`
+  - A command that runs checks, and ends with no finding that fails it, prints this line as its last line on stdout, once.
+  - These commands run checks: `check`, `build`, `test`, `ci`, `smoke`, `provision zone --check`, `tokens --check` and `legal --check`.
+  - Once: only the CLI prints the line. It prints it on stdout, after its last tool has ended and after all other output of the command. No other code prints it: not `formatFindings`, and not a hook of the integration (6.1). `ci` prints it at its end, and not after each of `check`, `build` and `test`. A command that starts itself again (the network re-spawn below) prints it in the child only.
+  - The streams: the CLI prints its finding text on stderr, and the passed line on stdout. A tool that the CLI runs prints on its own streams, and the CLI passes both on. So a `warn` or waived finding of a build comes on stdout, through the Astro logger (6.1), and the passed line still comes after it.
+  - `build` gets a status from `astro build`, and no findings array. It prints the line when that status is 0.
+  - A command that ends with a failing finding, a failing tool or a thrown error prints no passed line. A command that runs no check never prints it: `init`, `tokens` without `--check`, `legal --write`, `settings`, `routes import`, `provision zone --apply`, `feedback send` and `help`.
 - **Tool runner.**
   - It finds each bin in `node_modules`, walking up from the root, and spawns it with `process.execPath`: never npm, npx or a shell.
   - Env: `ASTRO_TELEMETRY_DISABLED=1`. It tees the output.
@@ -1604,14 +1625,14 @@ Each declared theme needs an enabled option that reaches it: `light` through `au
 
 | Rule | Stage | Standard and measurement | Input |
 |---|---|---|---|
-| `facts-value` | build | Every email, phone number, CHE-UID, IBAN and CHF amount on a page equals a `site.json` value, including `contacts`. Swiss phones written `+41`, `0041` or `0` are normalized to E.164. CHF is compared in minor units against `prices` amounts. `mailto:` and `tel:` hrefs are checked too. Measurement details gives the patterns. | dist, site.json |
+| `facts-value` | build | Every email, phone number, CHE-UID, IBAN and CHF amount on a page equals a `site.json` value, including `contacts`. Swiss phones written `+41`, `0041` or `0` are normalized to E.164. CHF is compared in minor units against `prices` amounts. `mailto:` and `tel:` hrefs are checked too. Every Unicode space separator counts as a normal space. Measurement details gives the patterns. | dist, site.json |
 | `facts-schedule` | config | `schedule.json` matches its strict schema (5.6). | schedule.json |
 
 ### content (5)
 
 | Rule | Stage | Standard and measurement | Input |
 |---|---|---|---|
-| `content-stale` | build | A translation matches its default-locale sibling (its hreflang alternate) in h2 count, in the site.json facts shown, and in internal link targets mapped through hreflang. | dist |
+| `content-stale` | build | A translation matches its default-locale sibling (its hreflang alternate) in h2 count, in the site.json facts shown, and in internal link targets. The link targets of both pages are mapped into the default locale through hreflang before they are compared. A target that has no page in the default locale, or none in the locale of the translation, is left out on both sides. Measurement details gives the mapping. | dist |
 | `content-language` | build | The rule looks at each leaf `p`, `li`, `td` or `blockquote` whose nearest `lang` (its own attribute or an ancestor's) is the page's `html lang`. It counts only the text that is not inside a descendant with another `lang`. When that text has ≥ 12 words, the element fails if another language has ≥ 3 stopwords in it and more than twice the page language's count. Lists exist for de, fr, it and en (Measurement details); pages in other languages are skipped. | dist |
 | `content-copied` | build | A translation's meta description differs from its default-locale sibling's. Titles and h1s may match. | dist |
 | `content-glossary` | build | Title, description and body text contain no banned variant from `glossary.json`. Each text uses the list of the locale whose tag or code equals its nearest `lang` (its own element's or an ancestor's, up to `html`). For tag `de-CH` only, the built-in bans ß→ss, „→« and “→» apply too. Text under a `lang` that names no configured locale is skipped. | dist, glossary.json |
@@ -1654,7 +1675,7 @@ Each declared theme needs an enabled option that reaches it: `light` through `au
 | `modes-script` | build | With two or more mode options, every page, `/404.html` included, has exactly one kit mode script: a `<script>` with no attributes whose text equals `modeScript(options)` (9.3). It comes right after the CSP meta, and before every `<style>`, every `<link rel="stylesheet">` and the speculation block. With fewer options, no page has one. In every case, the `html` start tag of every built page, `/404.html` included, carries no `data-mode` attribute: only the mode script sets it. | dist, options |
 | `modes-switch` | build | With two or more mode options, every page, `/404.html` included, has exactly one `[data-mode-switch]` element, outside any `form`. It is or holds either a `fieldset` with a `legend` that has text and one `input[type=radio][name=mode]` per enabled option, or one `select[name=mode]` without `multiple` and with one `option` per enabled option. Every control named `mode` is inside the element, never the element itself. The values are the enabled options, each exactly once. Each radio and the select has a `label`. Each radio label and each `option` has text, and these texts differ. No other form control (`input`, `select`, `textarea`, `button`) is inside it, and no control named `mode` is outside it. With fewer options, no page has a `[data-mode-switch]` or a control named `mode`. | dist, options |
 | `modes-media` | config + build | With a `light`, `dark` or `contrast` option on, no `@media` or `@container` prelude outside `tokens.css` (in built CSS: outside the `tokens` layer) uses `prefers-color-scheme` or `prefers-contrast`, and no HTML `media` attribute uses them (`picture source`, `link`, `meta[name=theme-color]`): the switch cannot change them. In every case, no selector outside `tokens.css` and `base.css` (in built CSS: outside the `tokens`, `reset` and `layout` layers) names the `data-mode` attribute, and no declaration outside `tokens.css` (in built CSS: outside the `tokens` layer) sets `color-scheme`. | options, project CSS, built CSS, .astro, dist |
-| `modes-behavior` | browser | With two or more mode options, on the default home, at 1280×800 and at 390×844, without the reveal step. When the switch sits inside a closed `details`, `popover` or `dialog`, the rule first opens each such ancestor, outermost first, through its native invoker (`summary`, `[popovertarget]` or `[commandfor]`), and opens nothing else. With JS on: the switch is visible. `html` has `data-mode` before `body` exists: an `addInitScript` `MutationObserver` on `document` records `document.body` when `data-mode` appears, and that value is `null`. A click on the label of each option, or `selectOption()` on the select, sets `data-mode` to that option. Then, in each emulated system state `S`, the computed `color-scheme` of `html` is the one that 7.7 expects, and the probe color of every `--color-` token equals the design.md value of `T(option, S)`, with fallbacks and aliases resolved and painted through the same probe. The rule never compares computed color text: it paints both sides on a 1×1 canvas, as `contrast-pairs` does, and each of the four channels is equal within 1 of 255 (**Colors** in the harness). The last choice survives a navigation to another built page and a reload: `data-mode` and the control show it. With JS off: no control named `mode` is visible, and in each `S` the probe colors equal those of `T(D, S)`. With fewer options, the rule has nothing to check. | dist, options, design.md |
+| `modes-behavior` | browser | With two or more mode options, on the default home, at 1280×800 and at 390×844, without the reveal step. When the `[data-mode-switch]` element is a closed `details`, `popover` or `dialog`, or sits inside one, the rule first opens each such element, outermost first, through its native invoker (`summary`, `[popovertarget]` or `[commandfor]`), and opens nothing else. With JS on: the switch is visible. `html` has `data-mode` before `body` exists: an `addInitScript` `MutationObserver` on `document` records `document.body` when `data-mode` appears, and that value is `null`. A click on the label of each option, or `selectOption()` on the select, sets `data-mode` to that option. Then, in each emulated system state `S`, the computed `color-scheme` of `html` is the one that 7.7 expects, and the probe color of every `--color-` token equals the design.md value of `T(option, S)`, with fallbacks and aliases resolved and painted through the same probe. The rule never compares computed color text: it paints both sides on a 1×1 canvas, as `contrast-pairs` does, and each of the four channels is equal within 1 of 255 (**Colors** in the harness). The last choice survives a navigation to another built page and a reload: `data-mode` and the control show it. With JS off: no control named `mode` is visible, and in each `S` the probe colors equal those of `T(D, S)`. With fewer options, the rule has nothing to check. | dist, options, design.md |
 
 ### csp (3), edge (2), html (2)
 
@@ -1713,7 +1734,7 @@ Each declared theme needs an enabled option that reaches it: `light` through `au
 | `a11y-focus` | browser | The first Tab and every sweep stop show `outline-style` other than `none` and `outline-width` ≥ 2 px. A mouse click on a link, button or summary shows `none` or 0. |
 | `a11y-targets` | browser | At 1280×800 and 390×844, and after the reveal step: `a[href]` (except links inline in text; see Measurement details), `button`, `input` (except checkbox, radio, hidden), `select` and `summary` are ≥ 43.5×43.5. Boxes ≤ 1×1 and boxes above the page start are skipped. |
 | `a11y-reflow` | browser | At 320×640, before and after the reveal step: no element's right edge exceeds `clientWidth + 1` unless an ancestor scrolls, and `scrollWidth ≤ clientWidth + 1`. |
-| `a11y-spacing` | browser | With `* { line-height: 1.5 !important; letter-spacing: .12em !important; word-spacing: .16em !important } p { margin-bottom: 2em !important }` at 1280 and 390 px, no element with `overflow-y` hidden or clip has `scrollHeight − clientHeight > 2`. |
+| `a11y-spacing` | browser | With `* { line-height: 1.5 !important; letter-spacing: .12em !important; word-spacing: .16em !important } p { margin-bottom: 2em !important }` at 1280 and 390 px, no element with `overflow-y` hidden or clip has `scrollHeight − clientHeight > 2`. An element with the kit class `visually-hidden` is skipped, and so is every element inside it: the class clips text in a 1 px box on purpose (7.6). |
 | `a11y-forced-colors` | browser | With `emulateMedia({ forcedColors: 'active' })`: `h1` and `main` are visible; every button (`button`, `input[type=button\|submit\|reset]`, `[role=button]`) has a border with style not `none`, width ≥ 1 px and a color that is not transparent; the first Tab shows a focus ring. |
 | `a11y-keyboard` | browser | At 1280×800, 390×844 and 390×844 after the reveal step, Tab reaches every visible control within stops + 5 presses (a radio group is one stop). No focused element is entirely covered: the center and the four corners, inset 2 px, of each on-screen line box are sampled with `elementFromPoint`. |
 | `a11y-no-js` | browser | With JS off, `h1` and `main` are visible, and every link target and named control visible with JS on, except `[data-mode-switch]` and its content, is visible with JS off (both after the reveal step). Each declared form is filled and submitted within 10 s: email `probe@example.com`; tel `+41441234567`; date today + 30 days; number its `min`; choice its first option; consent checked; text and textarea `Kit browser test`. It must land on `<page path>#sent` with `#sent` visible. |
@@ -1773,13 +1794,14 @@ These definitions belong to the rules above. They make the text rules decidable.
     - it: `il lo la gli le e è di un una per con che non del della dei nel sono si da su come più anche noi vostro nostro alla al`
     - en: `the and is of to in for with on that this are you your our we it at from by as be or not have has will can an was`
 - **`facts-value`.** The rule finds candidates in the page text and in `mailto:` and `tel:` hrefs. Each candidate must equal a `site.json` value after the same normalization.
+  - Spaces: the rule first turns every Unicode space separator (`\p{Zs}`: U+00A0, U+202F, U+2009 and the others) into a normal space (U+0020), and only then joins each run of white space into one space. It does both before it looks for candidates, in the page text and in the `site.json` values alike. In the other order, a normal space beside a no-break space would stay two spaces, and the amount pattern would not match. So an amount or a phone number that is written with a no-break space or a narrow no-break space is found, and it compares equal.
   - Email: `/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+/g`, in lower case.
   - Phone: `/(?:\+|00)\d[\d ()./-]{6,20}\d/g`, and the Swiss national form `/\b0\d{2}[ ./-]?\d{3}[ ./-]?\d{2}[ ./-]?\d{2}\b/g`. Normalize: keep the digits; a leading `00` or `+` gives `+`; a national number gives `+41` and the digits without the first `0`. Other national forms are not found: write a foreign number with `+`.
   - CHE-UID: `/CHE-?\d{3}\.?\d{3}\.?\d{3}/g`, normalized to `CHE-ddd.ddd.ddd`.
   - IBAN: `/\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?\b/g`, with spaces removed on both sides.
   - CHF amount: `/(?:CHF|SFr\.|Fr\.)\s?(\d{1,3}(?:['’ ]\d{3})+|\d+)(?:[.,](\d{2}|–|-))?/g`, and the form with the currency last, `/(\d{1,3}(?:['’ ]\d{3})+|\d+)(?:[.,](\d{2}|–|-))?\s?(?:CHF|Fr\.)/g`. The amount in minor units is the whole part times 100 plus the two digits. It must equal the `amount` of a `prices` entry in CHF.
   - Other currencies are not checked.
-- **`content-stale`.** "The facts shown" are the `site.json` values that `facts-value` finds on the page, as a set. The link targets are the same-origin page paths that the page links, as a set; each target is mapped to its alternate in the other locale, and a target with no alternate there is dropped on both sides. The two pages must have equal sets and the same number of `h2` elements.
+- **`content-stale`.** "The facts shown" are the `site.json` values that `facts-value` finds on the page, as a set. The link targets are the same-origin page paths that a page links, as a set. Before the two sets are compared, each target of both pages is mapped into the default locale: a default-locale path stays, and another path becomes its default-locale alternate. A page links its own page in every locale through the language links, so each page links pages of every locale: only a mapping into one locale makes the two sets comparable. A target with no alternate in the default locale, or with none in the locale of the translation, is dropped on both sides. The two pages must have equal sets and the same number of `h2` elements.
 - **`links-generic`: the accessible name** is the first of these that is not empty: the text of the elements that `aria-labelledby` names; `aria-label`; the link's text, where an `img` counts as its `alt`, an `svg` as its `aria-label` or the text of its `title` child, and a descendant with `aria-hidden="true"` as nothing; the `title` attribute. White space is collapsed and trimmed. For the comparison with the list, the name is in lower case, and characters that are not letters are removed from its start and end.
 - **`legal-statement`.** A match is a whole word, in any letter case: `/(?<!\p{L})(konform|conforme|conformant|compliant)(?!\p{L})/iu`. It is not a claim when one of `not`, `non`, `nicht`, `pas`, `kein`, `keine` stands as a whole word in the 24 characters before it.
 - **`a11y-targets`: a link inline in text** is a link whose parent element also has a text node with a letter or a digit.
@@ -2031,7 +2053,7 @@ The form may sit on a page, in a dialog or in a sidebar, but not on `/404.html`,
 - No other form control is inside it. No other control on the page has the name `mode`.
 - No radio has `checked`: the mode script sets the state, and `forms-safety` fails a pre-checked radio.
 - The labels name the modes in the language of the page. The kit checks only that each label has text and that the labels differ.
-- The project chooses where the switch sits and how it looks. Its CSS follows the rules of section 7, like all other markup. It may sit in a `popover` menu.
+- The project chooses where the switch sits and how it looks. Its CSS follows the rules of section 7, like all other markup. It may sit inside a `details`, `popover` or `dialog` element, and it may be that element itself, for example `<div popover data-mode-switch>`. `modes-behavior` opens such an element through its native invoker before it tests the switch (8).
 - Without JavaScript the switch cannot work, so `base.css` hides it (7.6). With JavaScript, the script sets `data-mode` before the body is parsed. So the switch is visible from the first paint, and nothing shifts.
 - `astro dev` serves pages without the build inserts. There the switch stays hidden and the page shows the no-attribute state. The pages that `astro-kit build` writes show the switch, and `astro-kit test` checks it there.
 
@@ -2168,7 +2190,8 @@ Images, fonts, media and style sheets of another origin stay forbidden. Download
 - Env `ASTRO_TELEMETRY_DISABLED: "1"`, `SHA: ${{ github.sha }}`, `REPO: ${{ github.repository }}` and `RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`. A shell step reads them as `$SHA`, `$REPO` and `$RUN`. A value in a YAML `env` or `with` block uses the expression, because YAML does not expand `$SHA`.
 - The file has no template variable. Every site gets the same text, and a step that differs for a forms site reads `astro-kit.json` or `dist` at run time. The builder writes the YAML from this section; the M9 tests check its jobs, names, triggers and pins (14).
 - Every job has its own permissions and a timeout. A step that calls `gh` gets `GH_TOKEN: ${{ github.token }}` through its `env`.
-- Every checkout uses `persist-credentials: false`, except in the `protected` job. setup-node uses `node-version-file: .node-version`.
+- Every checkout uses `persist-credentials: false`, except in the `protected` job, whose checkout has the line `persist-credentials: true` (10.6). setup-node uses `node-version-file: .node-version`.
+- **zizmor.** The two workflow files and `dependabot.yml` pass zizmor 1.32.0 with no finding. `kit / scan` audits their renderings in `test/site/.github/` (11.1).
 - **Install steps.** Where a job installs, it runs these three steps in this order: `bash .github/kit-identity.sh`; `npm ci --ignore-scripts --no-audit --no-fund`; `npm ls --all > /dev/null` (10.3).
 - Job order: `ci, preview, merge, build, build-alert, deploy, smoke, rollback, feedback, protected`.
 - **A second file, `.github/workflows/site-merge.yml`,** holds the one job `merge-event`. Its triggers are `pull_request` types `[opened, reopened, ready_for_review]` and `pull_request_review` types `[submitted]`. It has `permissions: {}`, the env `REPO`, and the concurrency group `site-merge-${{ github.event.pull_request.number }}`. It is a file of its own for one reason: GitHub counts a skipped job as a passed check. If `site.yml` ran on these events, its `ci` job would be skipped, and that skipped run would satisfy the required check `site / ci` on a head whose real run failed. So no workflow that runs on a pull-request event holds a job with the name of a required check.
@@ -2349,7 +2372,7 @@ echo "@raess/astro-kit $version and every other package from the npm registry"
 - The kit entry has a `sha512` hash and is never older than on the base.
 - The install steps of 10.1 run `npm ls --all > /dev/null` after `npm ci`. That command fails when an installed version does not satisfy the range that its parent asks for.
 - If a future dependency tree of Astro needs an alias, this script fails on it. Then a kit release adds that one alias, by key and target name, to the script.
-- The `acceptance` job of the test repository runs the same steps from M3, once the site has a lockfile entry for the kit (14.2). So M3 proves that a clean install passes them.
+- No workflow of the kit repository runs this script on the test site: the lockfile of `test/site/` has no kit entry, and GitHub runs no workflow from that folder (14.2). From M9, the `identity` case of the acceptance suite runs the script on a copy of that lockfile, after npm has written the packed kit and the kit's own package tree into the copy (14.2). So the suite proves that the whole package tree of the test site, a complete kit project, passes the script: the packages of the site and the packages that the kit brings. Its first run in a site workflow is in the rehearsal of M13 (13.3).
 
 ### 10.4 wrangler.jsonc (`renderWrangler` in `src/hosts/cloudflare.ts`)
 
@@ -2466,7 +2489,7 @@ The protected files are renderings of the kit: `.github/workflows/site.yml`, `.g
 **Steps of the job `protected`.**
 
 1. Job env `BRANCH: ${{ inputs.branch }}`, which steps 1, 2 and 7 use. Check the input: `$BRANCH` matches `^[A-Za-z0-9._/-]*$`.
-2. `actions/checkout` of that branch (or `main`), with `ssh-key: ${{ secrets.KIT_PROTECTED_KEY }}` and `fetch-depth: 0`. This checkout keeps its credentials: the job pushes with them.
+2. `actions/checkout` of that branch (or `main`), with `ssh-key: ${{ secrets.KIT_PROTECTED_KEY }}`, `fetch-depth: 0` and `persist-credentials: true`. This checkout keeps its credentials: the job pushes with them. The line is written out, although `true` is the default of the action: without it zizmor reports `artipacked` (11.1).
 3. `bash .github/kit-identity.sh`.
 4. Read the kit version from the lockfile. Install only the kit, outside the checkout: `npm install --prefix "$RUNNER_TEMP/kit" --ignore-scripts --no-audit --no-fund --save-exact "@raess/astro-kit@$version"`.
 5. In the checkout: `node "$RUNNER_TEMP/kit/node_modules/@raess/astro-kit/dist/cli.js" init --protected`. This command reads `astro-kit.json` as data and writes the seven files. No project code runs in this job, and the job never runs `npm ci` in the checkout.
@@ -2489,7 +2512,7 @@ The protected files are renderings of the kit: `.github/workflows/site.yml`, `.g
 - Triggers: `pull_request` `[opened, synchronize, reopened, ready_for_review]`; push `main`; schedule `"41 5 * * 1"`; `workflow_dispatch`.
 - **A second file, `.github/workflows/kit-approved.yml`,** holds the one job `merge-approved`, on `pull_request_review` `[submitted]`, with `permissions: {}`, the env `REPO` and the concurrency group `kit-approved-<PR>`. It is a file of its own for the reason that 10.1 gives for `site-merge.yml`: a skipped `kit / test` on a review event would count as a passed required check.
 - `permissions: {}`; concurrency `kit-<event>-<PR|ref>`, canceling for pull_request.
-- Every job has its own permissions and a timeout: `test`, `real-site`, `scan` and `canary` get `contents: read` (canary 60 min); `merge` and `merge-approved` get `contents: write`, `pull-requests: write` and `actions: write`, 5 min. Every checkout uses `persist-credentials: false`, and setup-node uses `node-version-file: .node-version`.
+- Every job has its own permissions and a timeout: `test`, `acceptance`, `scan` and `canary` get `contents: read` (`acceptance` 30 min, `canary` 60 min); `merge` and `merge-approved` get `contents: write`, `pull-requests: write` and `actions: write`, 5 min. Every checkout uses `persist-credentials: false`, and setup-node uses `node-version-file: .node-version`.
 - Env `ASTRO_TELEMETRY_DISABLED: "1"` and `REPO: ${{ github.repository }}`. The `scan` job gets `GITLEAKS`, the gitleaks image pin of 2.2, through its `env`.
 
 **Jobs:**
@@ -2497,83 +2520,73 @@ The protected files are renderings of the kit: `.github/workflows/site.yml`, `.g
 | Job | Name | Steps |
 |---|---|---|
 | `test` | `kit / test` (20 min) | `npm ci --ignore-scripts --no-audit --no-fund`, `npx --no playwright-core install --with-deps chromium` (for the browser-rule unit tests), `npm run build`, `npm run check`, `npm test`, `node src/docs.ts --check` |
-| `real-site` | `kit / real-site` (60 min) | The steps of the real-site job below. It exists from milestone M3 (14). |
-| `scan` | `kit / scan` (10 min) | `fetch-depth: 0`; zizmor (`version: 1.32.0`, `advanced-security: false`, `annotations: true`); `docker run --rm -v "$PWD:/repo" "$GITLEAKS" git --redact --verbose --no-banner /repo` |
-| `canary` | `kit / canary (astro@latest)` | Schedule or dispatch only. Real-site step 1, with three additions in the kit: after `npm ci`, `npx --no playwright-core install --with-deps chromium`; then `npm install --no-save --ignore-scripts --no-audit --no-fund astro@latest` (zizmor ignore `adhoc-packages`) and a print of the version; after `npm run build`, `npm test`. Real-site steps 2–4, where step 4 adds `astro@latest` to its one `npm install --no-save` command (a second `--no-save` install removes the packages of the first). Then, in `site/`: a print of the version and `npx --no astro-kit build`. |
-| `merge` | `kit / merge` | `needs: [test, scan]` until M3, and `needs: [test, scan, real-site]` from M3; on `pull_request`, for a same-repository PR. The merge script of 10.1 with `PR: ${{ github.event.pull_request.number }}` and `TESTED_SHA: ${{ github.event.pull_request.head.sha }}`, and with three changes: it has no pull-request lookup, because `PR` is always set; it also accepts the base `build`; and its last line is `gh workflow run release.yml --ref main -f paired="$HEAD_REF"` (`HEAD_REF: ${{ github.head_ref }}` through `env`), run only when the base is `main`. |
-| `merge-approved` (in `kit-approved.yml`) | `kit / merge after approval` | On `pull_request_review` with `review.state == 'approved'`, and only when the base of the pull request is `main`. The same script with the same env, except `HEAD_REF: ${{ github.event.pull_request.head.ref }}`, because `github.head_ref` is empty on a review event. GitHub refuses the merge while a required check is not green. A PR into `build` merges only through the `merge` job, which needs the checks. |
+| `acceptance` | `kit / acceptance` (30 min) | `npm ci --ignore-scripts --no-audit --no-fund`, `npx --no playwright-core install --with-deps chromium`, `npm run acceptance`. See the acceptance job below. It exists from milestone M1 (14). |
+| `scan` | `kit / scan` (10 min) | `fetch-depth: 0`; zizmor (`version: 1.32.0`, `advanced-security: false`, `annotations: true`), which audits the workflows and Dependabot files of the whole checkout, so from M9 those of `test/site/.github/` too; `docker run --rm -v "$PWD:/repo" "$GITLEAKS" git --redact --verbose --no-banner /repo` |
+| `canary` | `kit / canary (astro@latest)` (60 min) | Schedule or dispatch only. `npm ci --ignore-scripts --no-audit --no-fund`; `npx --no playwright-core install --with-deps chromium`; `npm install --no-save --ignore-scripts --no-audit --no-fund astro@latest` (zizmor ignore `adhoc-packages`) and a print of the version; `npm run build`; `npm test`. Then `npm run acceptance`, with `KIT_ACCEPTANCE_ASTRO: latest` in the `env` of that step. This one variable asks the harness for the newest Astro: the harness adds `astro@latest` to the one `npm install --no-save` command of its base copy, and it prints the Astro version of the base copy (14.2). So the unit tests, the spikes and the cases on the test site all run with `astro@latest`. It exists from milestone M10 (14). |
+| `merge` | `kit / merge` | `needs: [test, scan, acceptance]` (at M0, before the acceptance job exists: `[test, scan]`); on `pull_request`, for a same-repository PR. The merge script of 10.1 with `PR: ${{ github.event.pull_request.number }}` and `TESTED_SHA: ${{ github.event.pull_request.head.sha }}`, and with four changes: it has no pull-request lookup, because `PR` is always set; it also accepts the base `build`; its file rule covers only the protected files of the kit repository (see "Who merges"); and its last line is `gh workflow run release.yml --repo "$REPO" --ref main`, run only when the base is `main`. |
+| `merge-approved` (in `kit-approved.yml`) | `kit / merge after approval` | On `pull_request_review` with `review.state == 'approved'`, and only when the base of the pull request is `main`. The same script with the same env. GitHub refuses the merge while a required check is not green. A PR into `build` merges only through the `merge` job, which needs the checks. |
 
-**Who merges.** The script merges a PR only when its author is in `vars.KIT_AGENTS`, or is `dependabot[bot]`. It never merges a PR that changes `.github/**` (the file rule of 10.1): the kit repository has `.github/CODEOWNERS` with the line `/.github/ @<KIT_OWNER>` and the `pull_request` rule of 10.2, so the owner approves such a PR and merges it by hand. The kit repository has no push ruleset: the builder writes `kit.yml` and `release.yml`, and the code-owner review is the gate for them. The ruleset of `main` does not cover the branch `build`, so a milestone PR into `build` needs no approval. The `merge` job merges it when its checks are green, unless it changes `.github/**` or `.npmrc` (M0, M3, M6, M9, M10 and M12 do): the owner merges such a PR by hand, like every PR with a protected file.
+**Who merges.** The script merges a PR only when its author is in `vars.KIT_AGENTS`, or is `dependabot[bot]`.
 
-**The real-site job** (`kit / real-site`; permissions `contents: read`; 60 min).
+- **The protected files of the kit repository** are the files under the root `.github/`, and the root `.npmrc`. The script never merges a PR that changes one of them. Its file rule is `grep -qE '^\.github/|^\.npmrc$'`. Like the rule of 10.1, it reads the name of each changed file and the old name of a renamed file.
+- The owner approves such a PR and merges it by hand. The kit repository has `.github/CODEOWNERS` with the line `/.github/ @<KIT_OWNER>` and the `pull_request` rule of 10.2.
+- **Not protected here.** The kit repository deploys nothing, so no wrangler file is protected in it. The files of the test site are test data: `test/site/.npmrc`, `test/site/wrangler.jsonc` and, from M9, the files of `test/site/.github/` configure nothing in this repository, and GitHub runs no workflow from that folder. The `merge` job merges a green PR that changes them.
+  - **One job reads them all the same.** zizmor in `kit / scan` audits every `.github/workflows/*.yml` and every `.github/dependabot.yml` of the checkout, at any depth. So from M9 it audits the rendered files in `test/site/.github/` too, and the site templates must pass zizmor 1.32.0 with no finding (10.1). This is wanted: every kit PR audits the site workflow.
+  - **To verify at M9.** The workflow token cannot change a workflow file of the root `.github/workflows/`. If GitHub also refuses its merge of a PR that changes a file under `test/site/.github/workflows/`, the merge script prints that refusal, and the owner merges that PR by hand. A PR then adds `^test/site/\.github/` to the file rule above.
+- The kit repository has no push ruleset: the builder writes `kit.yml` and `release.yml`, and the code-owner review is the gate for them.
+- The ruleset of `main` does not cover the branch `build`, so a milestone PR into `build` needs no approval. The `merge` job merges it when its checks are green, unless it changes a protected file (M0, M1, M10 and M12 do): the owner merges such a PR by hand.
 
-It builds the hotel site of the test repository with the kit under test (14.2). It runs no `kit-identity.sh`. That script checks the registry kit in the site's lockfile. This job installs the packed kit over it and leaves the lockfile as it is, so the script proves nothing here.
+**The acceptance job** (`kit / acceptance`; permissions `contents: read`; 30 min).
 
-1. **Pack the kit.** Checkout with `persist-credentials: false`; setup-node with `node-version-file: .node-version`; `npm ci --ignore-scripts --no-audit --no-fund`; `npm run build`. Then the step `pack` runs:
+It runs the acceptance suite of 14.2 with the kit of the checkout: the spikes, and the cases on the test site.
 
-   ```sh
-   set -euo pipefail
-   tgz="$RUNNER_TEMP/$(npm pack --pack-destination "$RUNNER_TEMP" --json | jq -r '.[0].filename')"
-   echo "tgz=$tgz" >> "$GITHUB_OUTPUT"
-   rm -rf node_modules
-   ```
+1. Checkout with `persist-credentials: false`; setup-node with `node-version-file: .node-version`.
+2. `npm ci --ignore-scripts --no-audit --no-fund`. These are the packages of the kit repository, which the build of the kit needs.
+3. `npx --no playwright-core install --with-deps chromium`.
+4. `npm run acceptance`. The harness builds and packs the kit of the checkout, makes its base copy of `test/site/`, installs the packed kit there, and runs every case (14.2).
 
-   With the kit's `node_modules` removed, nothing in `site/` resolves a package from the kit checkout.
-2. **Pick the test branch.** The step `ref` gets `HEAD_REF: ${{ github.head_ref }}` and `GH_TOKEN: ${{ secrets.KIT_TEST_REPO_TOKEN || github.token }}` through `env`, never inline in the script:
-
-   ```sh
-   set -euo pipefail
-   ref=main
-   if [ -n "$HEAD_REF" ]; then
-     refs=$(gh api "repos/raess-dev/astro-kit-test/git/matching-refs/heads/$HEAD_REF" --jq '.[].ref')
-     if grep -qxF "refs/heads/$HEAD_REF" <<<"$refs"; then ref=$HEAD_REF; fi
-   fi
-   echo "ref=$ref" >> "$GITHUB_OUTPUT"
-   ```
-
-   A pull request, and a `release.yml` run dispatched with `paired`, uses the astro-kit-test branch of that name when it exists. Every other run uses `main`.
-3. **Check out the test site.** `actions/checkout` with `repository: raess-dev/astro-kit-test`, `ref: ${{ steps.ref.outputs.ref }}`, `path: site`, `fetch-depth: 0` (`routes-removed` needs the base branch), `persist-credentials: false` and `token: ${{ secrets.KIT_TEST_REPO_TOKEN || github.token }}`.
-4. **Install the packed kit.** In `site/`, with `KIT_TARBALL: ${{ steps.pack.outputs.tgz }}` in `env`: `npm ci --ignore-scripts --no-audit --no-fund`; `npm install --no-save --ignore-scripts --no-audit --no-fund "$KIT_TARBALL"` (zizmor ignore `adhoc-packages`); `npx --no playwright-core install --with-deps chromium`.
-5. **Run.** In `site/`, with the same `KIT_TARBALL`: `GITHUB_BASE_REF=main npx --no astro-kit ci`, then `node --test 'test/**/*.test.ts'` (the acceptance suite of 14.2). The ci-stage rules compare the test site with its own `main`, whatever the base of the kit pull request. The variable is set on the command line, because a step `env` cannot override a `GITHUB_*` variable. Before M9 the kit has no `ci` command, so the first command is `npx --no astro-kit build`, followed from M6 by `npx --no astro-kit test --all` (14).
-
-**Access to the test repository.**
-
-- When `raess-dev/astro-kit-test` is private, the job reads it with the repository secret `KIT_TEST_REPO_TOKEN`: a fine-grained token with Contents read on that repository only (16).
-- The same token is also a Dependabot secret with the same name, because a Dependabot pull request reads only Dependabot secrets.
-- When the test repository is public, the job needs no secret: `github.token` reads it.
-- Only the `ref` step and the site checkout get the token. The checkout does not keep it.
-
-**The paired branch.** A kit PR whose change needs a site change has a branch with the same name in astro-kit-test. The `ref` step picks it. The `acceptance` job of the test repository picks the kit branch of the same name in the same way (14.2). So each side of a paired change is tested with the other side.
-
-- Push both branches before you open the two pull requests. When one side ran before its partner branch existed, push an empty commit to it (`git commit --allow-empty -m 'retest with the paired branch'`).
-- Before `0.1.0`, the two PRs merge in any order, each on its own green check.
-- After `0.1.0`, the test site also has its `site / ci`, which uses the released kit. A paired change that the released kit accepts merges in the test repository first, and the kit PR after it. A paired change that the released kit rejects, such as a changed shim, waits there for the release: the kit PR merges first, the `release.yml` run builds the paired branch (11.2), and the site PR merges with the upgrade to the new version.
-- A new kit setting reaches the test site only after its release. Until then, acceptance cases turn it on in their temp copies.
+- **One repository.** The job has no second checkout, and no step has an `env`. It reads no secret, no token and no repository variable: its only variables are the two of the workflow header. No step sets `KIT_TARBALL`, so the harness packs the kit itself.
+- **Site code runs here.** The suite builds the test site, so code of `test/site/` runs in this job. The job therefore holds `contents: read` and nothing else.
+- **Every event.** The job has no `if`. It runs on every event of the workflow, a Dependabot pull request included, because it needs no secret.
+- **No `ci` and no `kit-identity.sh` on the checkout.** `test/site/` is a folder of the kit repository, not a site repository: its lockfile holds no kit, and the git history around it is the kit's. The suite runs both in copies that it makes (14.2, the `ci` and `identity` cases).
 
 ### 11.2 release.yml
 
-- **Header comments:** staging never publishes; nothing is staged unless the real-site job passes; the owner approves each version with 2FA; the trusted publisher is `raess-dev/astro-kit` with this file, allowed to stage only.
-- **Trigger.** `workflow_dispatch` only, with one optional string input `paired` (default empty). Concurrency `release`, no cancel.
-- **Job `release / real-site`** (`real-site`).
-  - Runs only when `github.ref == 'refs/heads/main'`. Permissions: `contents: read`. 60 min.
-  - Steps 1–5 of the kit.yml real-site job (11.1), with `HEAD_REF: ${{ inputs.paired }}` in the env of the `ref` step. That step uses the astro-kit-test branch named `paired` when it exists, else `main`.
-  - It is a separate job, so the test site's code never runs in a job that holds `id-token: write`.
+- **Header comments:** staging never publishes; nothing is staged unless the acceptance job passes; the owner approves each version with 2FA; the trusted publisher is `raess-dev/astro-kit` with this file, allowed to stage only.
+- **Trigger.** `workflow_dispatch` only, with no input. Concurrency `release`, no cancel.
+- **Job `release / acceptance`** (`acceptance`).
+  - Runs only when `github.ref == 'refs/heads/main'`. Permissions: `contents: read`. 30 min.
+  - The steps of the acceptance job of `kit.yml` (11.1): the checkout, setup-node, `npm ci --ignore-scripts --no-audit --no-fund`, `npx --no playwright-core install --with-deps chromium` and `npm run acceptance`. No step has an `env`.
+  - It is a separate job, so the code of the test site never runs in a job that holds `id-token: write`.
 - **Job `release / fleet list`** (`fleet-list`). Permissions: none. 5 min.
   - Without the secret `KIT_FLEET_TOKEN`: print `No KIT_FLEET_TOKEN: the fleet is not checked.` and give the output `sites=[]`.
   - Otherwise, with `GH_TOKEN: ${{ secrets.KIT_FLEET_TOKEN }}`: `gh api --paginate "orgs/raess-dev/properties/values?repository_query=props.kit-site:true" --jq '.[].repository_full_name'`, written as one JSON array to the output `sites` (13.3, R11).
 - **Job `release / fleet`** (`fleet`).
   - `needs: fleet-list`; skipped when `sites` is `[]`. A matrix over `sites` with `fail-fast: false` and `max-parallel: 4`. `continue-on-error: true`. Permissions: `contents: read`. 30 min for each site.
-  - Steps: real-site step 1 (pack the kit); check out the site's `main` into `site/` with the fleet token and `persist-credentials: false`; real-site step 4 (install the packed kit); then, in `site/`, `npx --no astro-kit check`, `npx --no astro-kit build` and `npx --no astro-kit test`.
+  - Steps:
+    1. **Pack the kit.** Checkout with `persist-credentials: false`; setup-node with `node-version-file: .node-version`; `npm ci --ignore-scripts --no-audit --no-fund`; `npm run build`. Then the step `pack` runs:
+
+       ```sh
+       set -euo pipefail
+       tgz="$RUNNER_TEMP/$(npm pack --pack-destination "$RUNNER_TEMP" --json | jq -r '.[0].filename')"
+       echo "tgz=$tgz" >> "$GITHUB_OUTPUT"
+       rm -rf node_modules
+       ```
+
+       With the kit's `node_modules` removed, nothing in `site/` resolves a package from the kit checkout.
+    2. **Check out the site.** `actions/checkout` of the site's `main` into `site/`, with the fleet token and `persist-credentials: false`.
+    3. **Install the packed kit.** In `site/`, with `KIT_TARBALL: ${{ steps.pack.outputs.tgz }}` in `env`: `npm ci --ignore-scripts --no-audit --no-fund`; `npm install --no-save --ignore-scripts --no-audit --no-fund "$KIT_TARBALL"` (zizmor ignore `adhoc-packages`); `npx --no playwright-core install --with-deps chromium`.
+    4. **Run.** In `site/`: `npx --no astro-kit check`, `npx --no astro-kit build` and `npx --no astro-kit test`.
   - It writes one row to the step summary: the site, the kit version in its lockfile, `pass` or `fail`, and the sorted rule ids of a failure. Together the rows are the fleet table: which site runs which kit version, and what this release would break.
   - A site's code runs in this job. So the job holds no secret after the checkout, and it never holds `id-token: write`.
 - **Job `release / stage`.**
-  - `needs: real-site`. When the real-site job fails, this job does not run, and nothing is staged. The fleet job does not block it: the owner reads the fleet table and decides.
+  - `needs: acceptance`. When the acceptance job fails, this job does not run, and nothing is staged. The fleet job does not block it: the owner reads the fleet table and decides.
   - Runs only when `github.ref == 'refs/heads/main'`. Permissions: `contents: read`, `id-token: write`. 15 min.
   - setup-node: `node-version: 24`, `registry-url: https://registry.npmjs.org`, `package-manager-cache: false`.
   - npm ≥ 11.15, else `npm install -g npm@11.21.2 --ignore-scripts --no-audit --no-fund`.
   - npm ci, `npx --no playwright-core install --with-deps chromium`, build, `npm test`. The job installs Chromium like the `test` job of `kit.yml` (11.1), because its `npm test` runs the browser-rule unit tests in that browser (2.1).
 - **Stage step:**
-  - First `name=$(jq -r .name package.json)` and `version=$(jq -r .version package.json)`. Then `if npm view "$name@$version" version >/dev/null 2>&1; then` print `<name>@<version> is on npm already; nothing to stage.` and end the step with success. `npm view` exits with an error for a version that is not published (13.1 item 46), so the test is the exit code.
+  - First `name=$(jq -r .name package.json)` and `version=$(jq -r .version package.json)`. When `version` is `0.0.0`, the version of the build branch (3.4): print `<name>@0.0.0 is the build version; nothing to stage.` and end the step with success. Then `if npm view "$name@$version" version >/dev/null 2>&1; then` print `<name>@<version> is on npm already; nothing to stage.` and end the step with success. `npm view` exits with an error for a version that is not published (13.1 item 46), so the test is the exit code.
   - Otherwise run `npm stage publish`. A failure whose log matches `already (exists|staged)|E409` counts as staged already.
   - Summary: `Staged $name@$version. Approve it with 2FA: npm stage list $name, then npm stage approve <id>.` Below it, the summary prints the `CHANGELOG.md` section of this version.
 
@@ -2595,12 +2608,12 @@ npm stage approve <stage-id>
 
 ### 11.4 First release
 
-1. Before the first PR, set the repository variables `KIT_OWNER` and `KIT_AGENTS`. While the test repository is private, set the secret `KIT_TEST_REPO_TOKEN` (16) before the real-site job lands in milestone M3.
-2. Before milestone M3, check `npm view @raess/astro-kit versions`. If the name is unclaimed, an agent writes a folder that holds only a `package.json` with `{"name": "@raess/astro-kit", "version": "0.0.0", "license": "MIT"}`. The owner runs `npm publish --access public` in that folder and confirms with 2FA. This placeholder is what the test site pins until the first release (14.2).
-3. The owner runs `npm trust github @raess/astro-kit --file release.yml --repo raess-dev/astro-kit --allow-stage-publish`.
-4. After the build branch is in `main` (M12): merge the release PR that sets `version` to `0.1.0`. The merge job dispatches `release.yml`. Its real-site job passes before anything is staged.
-5. The owner approves the staged `0.1.0` within two days (11.3).
-6. In `raess-dev/astro-kit-test`, the agent runs `npm install --save-exact --ignore-scripts @raess/astro-kit@0.1.0`, gives the `merge` job of `acceptance.yml` the permission `actions: write` and the last line of the merge script (`gh workflow run site.yml --repo "$REPO" --ref main`), and opens a PR. Its `acceptance` check passes. It changes `.github/`, so the owner approves it and merges it by hand (10.1). Then the owner switches the workflow `site` on, sets the custom property `kit-site=true` and does the per-site steps of section 16. From then on `site / ci` runs, `kit-identity.sh` included, and both checks are required.
+1. **The variables.** Before the first PR, the owner sets the repository variables `KIT_OWNER` and `KIT_AGENTS` (16). The CI of the kit repository needs no secret before M12.
+2. **The name.** Before milestone M12, the name `@raess/astro-kit` must exist on npm, because `npm trust` works only on a package that exists. Check `npm view @raess/astro-kit versions`. When the name has no version, an agent writes a folder that holds only a `package.json` with `{"name": "@raess/astro-kit", "version": "0.0.0", "license": "MIT"}`. The owner runs `npm publish --access public` in that folder and confirms with 2FA. This `0.0.0` only claims the name. Nothing installs it: the acceptance suite installs the packed kit of the checkout (14.2). The stage step never stages a `0.0.0` (11.2).
+3. **The trusted publisher.** When the release PR of step 4 is ready to merge, and not earlier, the owner runs `npm trust github @raess/astro-kit --file release.yml --repo raess-dev/astro-kit --allow-stage-publish`. npm lets a new trusted publisher expire when it has no successful publish within two days. So steps 4 and 5 follow within two days of this command. When the entry has expired, the owner removes it and runs the command again.
+4. **The release PR.** After the build branch is in `main` (M12): merge the release PR that sets `version` to `0.1.0`. The merge job dispatches `release.yml`. Its acceptance job passes before anything is staged.
+5. **The approval.** The owner approves the staged `0.1.0` within two days (11.3).
+6. **The rehearsal.** The delivery rehearsal of milestone M13 follows (13.3). It is the first install of the kit from the registry, and the first run of `site / ci`, `kit-identity.sh` included.
 
 ### 11.5 Version rule (CONTRIBUTING.md)
 
@@ -2616,7 +2629,7 @@ npm stage approve <stage-id>
 
 **Numbers.** From `1.0.0` on: breaking is a major, feature is a minor, fix is a patch. While the major is `0`: breaking is a minor, and feature and fix are patches.
 
-**With each change.** A change PR adds one neutral line under `## Unreleased` in `CHANGELOG.md`. It does not change `version`. A release PR sets `version` and moves those lines under the new version. Only the merge of a release PR stages a version (the stage step of 11.2 does nothing while the version is on npm). So the owner approves one release for many changes.
+**With each change.** A change PR adds one neutral line under `## Unreleased` in `CHANGELOG.md`. It does not change `version`. A release PR sets `version` and moves those lines under the new version. Only the merge of a release PR stages a version (the stage step of 11.2 does nothing while the version is on npm, or is the build version `0.0.0`). So the owner approves one release for many changes.
 
 ---
 
@@ -2781,7 +2794,7 @@ Each recipe is at most 40 lines and is routed from INDEX (tests). This table say
 | `first-build.md` | The fixed order from `init` to the first green `ci`: design.md with the owner, `tokens`, elements.css, the layout component and head, the 404 page, the legal pages at the declared paths and `legal --write`, the homes, the pages, the form UI, the mode switch with two or more mode options, then the owner steps after the first merge. For a site with many pages, use one dynamic route per page type: its pages share one style sheet, which keeps the CSP small (6.2). |
 | `design.md` | Write design.md from the brief, then run `tokens`, then write elements until bare HTML looks finished, then components, then placement. A design change ships design.md and the new `tokens.css` in one PR, and the owner approves it. Which values need a token and which are free (7.3). Gradients, motion and shapes with examples. |
 | `head.md` | The head contract (title, description, canonical, alternates including self and x-default, Open Graph with `getImage({src, width: 1200, height: 630, fit: 'cover', format: 'jpg', quality: 70, layout: 'none'})`, icons, JSON-LD from `site.json`). What the kit adds (CSP, speculation). Snippets: alternates through `astro:i18n`, `formatMoney` with `Intl.NumberFormat` on minor units, the one multilingual 404 page (each greeting in its `lang`, a link to every locale home), a sitemap page. |
-| `component.md` | One `.astro` or `.tsx` file with one CSS file; root, part and modifier classes; locals; the tier test; no `<style>`. State through attributes (`aria-*`, `data-*`). Keyframes named `<kebab>-<name>`. |
+| `component.md` | One `.astro` or `.tsx` file with one CSS file; root, part and modifier classes; locals; the tier test; no `<style>`. State through attributes (`aria-*`, `data-*`). Keyframes named `<kebab>-<name>`. A skip link has the kit class `visually-hidden`, and its own CSS puts its size and its padding on the focused state (`.skip-link:focus`): the class does not reset padding, so a hidden link with padding stays a small target. |
 | `form.md` | Declared fields, the markup pattern of 9.1, the dialog variant, JSON mode for a script. |
 | `locale.md` | The owner adds the locale, coverage and legal paths through the settings page; the same PR holds the pages, hreflang, language links from the alternates, the glossary and `legal --write`. Never change `defaultLocale`. |
 | `translation.md` | Transcreate from the brief, never line by line. Keep the section structure of the default-locale page (`content-stale` compares the `h2` count). Uncertainties go in the PR body, and the PR stays a draft while one is open. |
@@ -2883,7 +2896,7 @@ These facts were checked on the versions of 2.1, against the published package s
 43. Astro loads the first file that exists of `astro.config.mjs`, `.js`, `.ts`, `.mts`, in that order.
 44. Astro loads `src/middleware.*` or `src/middleware/index.*` without any config. The file runs in the prerender of every page and in the Worker, and it adds no route. Astro adds the route `/_actions/[...path]` when `src/actions/` exports `server`. The routes `/_image` and `/_server-islands/[name]` are in the route list of every build, static builds included, whether or not a page uses `server:defer`. All three have `origin: 'internal'` and are on demand. When the project has no 404 page, the list still holds an internal route `/404`, although dist has no `404.html`. So `routes-404` reads dist and never the route list. With no adapter, Astro fails the build on actions (`ActionsWithoutServerOutputError`) and on `server:defer` (`NoAdapterInstalledServerIslands`). `astro:routes:resolved` fires more than once in a build: twice in the measured builds. In a static build the first call lists the project routes only, and with zero pages it gets an empty list (S12, S19).
 45. GitHub: `GET /repos/{owner}/{repo}/commits/{sha}/pulls` returns no `merged_by`. A push, merge or pull request made with the workflow token starts no workflow run; `workflow_dispatch` is the exception. Organization rulesets and push rulesets work on the Team plan for private repositories.
-46. npm 11.15 and later have `npm stage publish`, `list`, `view`, `download`, `approve` and `reject`, and `npm trust github --allow-stage-publish`. `npm view <name>@<version>` exits with a non-zero code (E404) for a version that is not published.
+46. npm 11.15 and later have `npm stage publish`, `list`, `view`, `download`, `approve` and `reject`, and `npm trust github --allow-stage-publish`. `npm view <name>@<version>` exits with a non-zero code (E404) for a version that is not published. `npm trust` works only on a package that exists on the registry already. A new trusted publisher expires when it has no successful publish within two days; an expired one can no longer be used or edited (npm docs, read 2026-11; 11.4).
 47. Cloudflare: an account-owned API token can be scoped to named Workers. The `send_email` binding takes a plain object with `from`, `to`, `subject`, `text` and `replyTo`. An account holds at most 200 verified destination addresses. A version alias and the Worker name, joined with a dash, are at most 63 characters. A `ratelimits` period is 10 or 60 seconds, and the count is per Cloudflare location. `wrangler rollback` deploys the version before the current one.
 48. Chromium checks an inline `speculationrules` block against `script-src` like an inline script. A block whose hash is missing is reported as `script-src-elem` with the blocked URI `inline`, and its rules stay off. A prerender that a document rule starts reaches the server with `Sec-Purpose: prefetch;prerender` (S8).
 49. In `<Picture>` output the generated `sizes` is only on the `<img>`. A `<source>` gets `sizes` only when the source code passes the `sizes` prop (S13).
@@ -2903,9 +2916,9 @@ These facts were checked on the versions of 2.1, against the published package s
 63. With `@astrojs/cloudflare` 14.4.7 and no on-demand route in the project, the build writes the Worker config to `dist/client/wrangler.json` and leaves `dist/server` empty. `dist/client/.assetsignore` then names `wrangler.json` and `.dev.vars`, so the config is no public file. With an on-demand route the output is the one of item 16. A forms site always has the form route (9.1), so only a forms site in work shows this layout (measured with the packed kit).
 64. Without a terminal, `astro dev` of Astro 7.4.11 starts the server as a background process, prints `Dev server running at <url> (pid <n>)` and returns with exit 0. `astro dev stop` ends that server, and `astro dev status` and `astro dev logs` read it. A script that starts `astro dev` must stop it in this way (measured in the scratch site; the `dev` variant of the acceptance suite of M9 depends on it).
 
-### 13.2 To prove in the test repository (milestone M1)
+### 13.2 To prove in the acceptance suite (milestone M1)
 
-Each spike is a case of the acceptance suite in `raess-dev/astro-kit-test` (14.2), never a kit test. It builds a minimal Astro project that the suite writes from strings. The kit parts it needs come from this specification: for example the 7.6 text of `base.css`, the generated `tokens.css` texts of 7.7, or a small integration that calls `injectScript('page-ssr', …)` as 6.1 does. The spikes run first in milestone M1, and then in every `acceptance` and real-site run, so a platform change shows.
+Each spike is a case of the acceptance suite, in `test/acceptance/spikes/` (14.2), never a unit test. It builds a minimal Astro project that the suite writes from strings. A spike uses no kit. The kit parts it needs come from this specification, and the stand-in integration `test/acceptance/kit/` holds them: for example the 7.6 text of `base.css`, the generated `tokens.css` texts of 7.7, or a small integration that calls `injectScript('page-ssr', …)` as 6.1 does. The spikes run first in milestone M1, and then in every `acceptance` run, so a platform change shows.
 
 **How this document marks an open fact.** The column "Governs" names each place that depends on the spike. Until the spike passes, read those places as "to verify". When a spike uses its fallback, a PR changes those places before the dependent milestone starts (14).
 
@@ -2931,11 +2944,24 @@ Each spike is a case of the acceptance suite in `raess-dev/astro-kit-test` (14.2
 | S18 | Declared origins work under the CSP of 9.4. With one origin for each of `frame`, `script`, `connect` and `form`, a bundled script that runs after a click can add the `iframe`, load the script, call `fetch` and submit the form with no CSP violation. A frame, script, fetch or form request to a host that is not declared is blocked, and so is a use of a declared host that its directives do not name. A navigation by a link or by `window.open` is not a subject of the CSP: a window that a script opens reaches any host, as a link does. Before the click, the page sends no request to another origin. The suite answers the third-party hosts through Playwright request routing, so the spike needs no network. | 6.2, 6.3, 9.4, `origins-gesture` | |
 | S19 | The server surface of a forms build. `astro:routes:resolved` lists the form shim as the only on-demand route with `origin: 'project'`. The spike records the internal on-demand routes that Astro adds. Under the asset routing of 10.4 (in `wrangler dev`), only paths under `/api/forms/` reach the Worker. The asset layer answers a GET to `/_actions/x` or `/_server-islands/x` with `/404.html` and status 404, and a POST with 405. A build with a planted `src/middleware.ts` runs that file, and so does a build with a planted `src/middleware/index.ts`. | 6.1 (`astro:routes:resolved`), 9.1, 10.1 (the deploy config check), 10.4, `routes-on-demand`, `config-server` | `routes-on-demand` also fails the route `/_actions/[...path]`. It never fails `/_image` or `/_server-islands/[name]`: Astro lists them in every build. |
 
-Result at M1 (Astro 7.4.11): every spike passes without its fallback. Seven spikes found a statement of this document wrong: S1, S6, S11, S13, S14, S16 and S19. `test/spikes.results.json` in the test repository holds the measured values.
+Result at M1 (Astro 7.4.11): every spike passes without its fallback. Seven spikes found a statement of this document wrong: S1, S6, S11, S13, S14, S16 and S19. `test/acceptance/spikes.results.json` holds the measured values.
 
 ### 13.3 To prove on real accounts (milestone M13)
 
-No test can prove these facts, because they need GitHub, Cloudflare, npm and a mailbox. The builder and the owner prove them once, on the hotel site, after `0.1.0`. Each item gets its evidence (a run URL or a command output) in `docs/rehearsal.md` of the test repository. A failed item becomes a kit fix in a patch release, with its fallback where the table gives one.
+No test can prove these facts, because they need GitHub, Cloudflare, npm and a mailbox. The builder and the owner prove them once, in the delivery rehearsal, after `0.1.0`.
+
+**The rehearsal repository.** The rehearsal needs one real site repository, because GitHub runs workflows only from the root of a repository: the `site.yml` in `test/site/.github/` never runs. The rehearsal repository is `raess-dev/astro-kit-test`. A repository with that name exists already, with the test site and the suite of an earlier design. The owner deletes it, creates a new one with one first commit on `main`, and adds nothing else until M13 (16). It is the only site repository that the build needs, and no CI job of the kit repository reads it.
+
+**How the rehearsal starts.**
+
+1. **The domain.** The owner names the production domain of the rehearsal site. It is needed at M13 only: until then the test site uses the provisional host `laerchenwald.example` (14.2).
+2. **The kit from npm.** In a clone of the rehearsal repository, on a new branch, an agent runs `npm install --no-save --ignore-scripts --no-audit --no-fund @raess/astro-kit@<the released version>`. The folder has no `package.json` yet, so `npx --no astro-kit` finds no kit before this command. Then the agent runs `npx --no astro-kit init --site https://<the production host> --locales de,fr,en --features forms --owner @<the KIT_OWNER login>`, and then `npm install --ignore-scripts --no-audit --no-fund`. `init` writes the `package.json` with the kit at its own version (12.2), so the new lockfile holds the kit from the registry.
+3. **The content.** The agent copies the content of `test/site/` into the clone: every file except `package.json`, `package-lock.json` and the protected files of 10.6.
+   - **The code owner.** The copied `astro-kit.json` replaces the one that `init` wrote. Its `codeOwner` is `@<the KIT_OWNER login>` (14.2). The agent sets it when it is not, because `CODEOWNERS` is rendered from it (10.2).
+   - **The host.** The agent puts the production host in place of `laerchenwald.example` in the four copied files that hold it: `astro-kit.json`, `site.json`, `AGENTS.md` and `docs/spec.md`. The fifth file of the test site that holds the host, `wrangler.jsonc`, is not copied: `init --protected` renders it.
+   - **The commands.** The agent runs `init --protected` and then `build`. This build is expected to fail with `legal-approved` and no other id: the legal pages show the new email addresses, so their legal text differs from `legal.lock.json`. The build leaves `dist/`, which `legal` needs (6.4). Then the agent runs `legal --write` and `ci`, and `ci` passes.
+4. **The site steps.** The agent opens the init pull request. The owner merges it by hand, sets `kit-site=true` and does the per-site steps of section 16 for the production domain.
+5. **The items.** R1–R9 and R12–R14 run in the rehearsal repository. R10 and R11 run in `release.yml` of the kit repository (11.2). The evidence of R10 is the run that staged `0.1.0`. For R11, the next merge into `main` of the kit repository starts `release.yml`, after the rehearsal repository has `kit-site=true` and the kit repository has the secret `KIT_FLEET_TOKEN` (16). Each item gets its evidence (a run URL or a command output) in `docs/rehearsal.md` of the kit repository. That file is not in the npm package (3.4). A failed item becomes a kit fix in a patch release, with its fallback where the table gives one.
 
 | Item | What it must prove | Fallback if it fails |
 |---|---|---|
@@ -2948,11 +2974,13 @@ No test can prove these facts, because they need GitHub, Cloudflare, npm and a m
 | R7 | **Deploy, zone and rollback.** A merge deploys. `provision zone --apply`, then `--check`, pass. A smoke failure that the rehearsal forces rolls production back and opens `rollback: production`. To force it, the owner sets the repository variable `KIT_WORKERS_DEV` to the production host for one deploy, so that `smoke-redirects` fails. The rehearsal also records the status and the `Cache-Control` of a missing `/_astro/` URL in production (6.3). On the real deploy, `POST /_actions/x` answers 405 (S19). | |
 | R8 | **Red main.** A red build on `main` opens `main: build failed`, assigned to the owner. The next green build on `main` closes it. | |
 | R9 | **Mail.** One live send of each form arrives and shows `dmarc=pass`. The weekly probe arrives at `contact.probe`. | |
-| R10 | **Staged publish.** `release.yml` stages a version through the trusted publisher. The staged package has provenance. The owner approves it with 2FA. | |
+| R10 | **Staged publish.** `release.yml` stages a version through the trusted publisher. The staged package has provenance. The owner approves it with 2FA. The item records how old the trusted publisher was at the stage run and at the approval, and whether it was still valid (11.4, step 3). | |
 | R11 | **Fleet.** `release / fleet` lists the repositories with `kit-site=true` and builds each of them with the packed kit (11.2). | The job reads the list of site repositories from the repository variable `KIT_SITES`. |
 | R12 | **Feedback.** A KIT-FEEDBACK entry pushed on a branch reaches the feedback repository and gets the `auto` label. | |
 | R13 | **Dependabot.** A Dependabot npm pull request passes `site / ci` with no secret, gets no preview, and the `merge` job merges it. | The owner merges Dependabot pull requests. |
 | R14 | **Rollback gate.** While `rollback: production` is open, a merge deploys nothing, and that run starts neither smoke nor rollback. A pull request with `Fixes #<issue>` closes the issue, and its merge deploys. | |
+
+**After the rehearsal.** `test/site/` stays the test site of the kit and keeps its provisional host. The rehearsal repository is a site like every client site: it has `kit-site=true`, the fleet job builds it (11.2), and it gets kit upgrades through the upgrade task (16).
 
 ---
 
@@ -2960,37 +2988,38 @@ No test can prove these facts, because they need GitHub, Cloudflare, npm and a m
 
 **How work lands.**
 
-- Each milestone lands as one or more PRs with CI green. In the kit repository they go to the build branch `build` (see "Where to build"), and the `merge` job of `kit.yml` merges each green one into it. The owner merges a PR that changes `.github/**` or `.npmrc` by hand (11.1). At M12 the build branch merges into `main` through one pull request. It changes `.github/`, so the owner approves it and merges it by hand (10.1).
-- The kit's own tests run in every milestone. They are unit tests only (14.1), so no milestone builds an Astro project in the kit repository.
-- Every real build runs in the test repository `raess-dev/astro-kit-test` (14.2). Work there lands as PRs in that repository, each gated by its `acceptance` job.
-- **Early integration.** The kit runs inside a real build from M3 on. From that milestone, the `real-site` job of `kit.yml` (11.1) packs the kit and builds the hotel site with it, on every kit PR. Each later milestone extends the hotel site and the acceptance suite in the same step as the kit. A kit milestone is not done until the hotel site passes it.
+- Each milestone lands as one or more PRs with CI green. They go to the build branch `build` (see "Where to build"), and the `merge` job of `kit.yml` merges each green one into it. The owner merges a PR that changes the root `.github/` or the root `.npmrc` by hand (11.1). At M12 the build branch merges into `main` through one pull request. It changes `.github/`, so the owner approves it and merges it by hand (10.1).
+- **One repository, one pull request.** A milestone PR holds the kit change together with the change of the test site in `test/site/` and of the acceptance suite in `test/acceptance/`. The jobs `kit / test` and `kit / acceptance` test them together.
+- The unit tests run in every milestone (14.1). They never build an Astro project.
+- Every real build runs in the acceptance suite (14.2): in a temp copy of the test site, or in the project of a spike.
+- **Early integration.** The kit runs inside a real build from M3 on. From that milestone, the `acceptance` job of `kit.yml` (11.1) packs the kit and builds the test site with it, on every PR. Each later milestone extends the test site and the acceptance suite in the same PR as the kit. A milestone is not done until the test site passes it.
 - **Dependencies.** A milestone uses only modules of earlier milestones. A module may grow: where the table names a part of a module or of a rule, that part lands in that milestone. A rule is active from the milestone that names it.
 
-| # | Milestone | Kit delivers | Test repository delivers | Acceptance |
+| # | Milestone | Kit delivers | Test site and suite deliver | Acceptance |
 |---|---|---|---|---|
 | M0 | Skeleton | `package.json` (with `version` `0.0.0`), tsconfigs, `biome.json`, the presets `config/biome.json` and `config/tsconfig.json` (12.2), `kit.yml` (the `test`, `scan` and `merge` jobs), `kit-approved.yml`, `.github/CODEOWNERS`, `docs/spec.md` (this document), `src/registry.ts` with `Report`, `formatFindings`, levels and waivers, `src/docs.ts`, README, CONTRIBUTING, SECURITY, CHANGELOG, LICENSE; the versions pinned per section 2 | nothing | `npm run check`, `npm test` and `node src/docs.ts --check` pass (with no rule yet, the generated files are empty tables). A test asserts the finding format, a waived finding and a `warn` finding. |
-| M1 | Test repository and spikes | nothing | The repository, created by the owner (16): a `package.json` with `astro` as a dependency and `wrangler` and `@types/node` as devDependencies, at the section 2 pins; the suite harness of 14.2; `test/spikes.test.ts` with S1–S19 (13.2); `acceptance.yml` with its two jobs | Each spike asserts its fact or applies its fallback, in the `acceptance` job. The measured values are in `test/spikes.results.json`. Where a spike used its fallback, a PR changes this specification before the dependent milestone starts. |
+| M1 | Acceptance suite and spikes | The script `acceptance` of `package.json` (3.4); `test/acceptance/` in the root type check (3.1); the `acceptance` job of `kit.yml`, which `merge` needs from this milestone on (11.1) | `test/site/` with a `package.json` and its `package-lock.json`: `astro` as a dependency and `wrangler` as a devDependency, at the section 2 pins. `test/acceptance/` with the harness of 14.2, the stand-in integration `kit/`, and `spikes.test.ts` with S1–S19 in `spikes/` (13.2) | Each spike asserts its fact or applies its fallback, in the `acceptance` job. The measured values are in `test/acceptance/spikes.results.json`. Where a spike used its fallback, a PR changes this specification before the dependent milestone starts. |
 | M2 | Options, facts, preflight | `src/options.ts`, `facts.ts`, `redirects.ts`, `routes.ts`, `shims.ts`, `project.ts`, `preflight.ts`; these config-stage rules: `config-options`, `config-shim` (the three source shims, no other `astro.config.*` file and no other Biome config), `config-overrides`, `config-dep-spec`, `config-dep-allowlist`, `config-imports`, `config-suppression`, `config-server`, `config-waiver`, `config-public-shadow`, `legal-processing`, `facts-schedule`, `images-public`, `images-original`, `routes-redirects` (source half) | nothing | A unit test per rule (one passing and one failing case). `loadOptions` messages name the paths. A looser limit fails. |
-| M3 | Integration, kit CSS, tokens and edge output | `src/index.ts`, `config.ts`, `csp.ts`, `modes.ts` (options, `themeOf`, `modeScript`), `virtual.ts`, `inject.ts`, `build.ts`, `context.ts`, `hosts/cloudflare.ts` (the edge files and the static `renderWrangler`), `audit/index.ts`, `audit/edge.ts`, `islands.ts` (step 6 of 6.1 needs the Solid hash), `env.d.ts`, `css/base.css`, `design/parse.ts`, `design/tokens.ts`, and `src/cli.ts` and `src/ci.ts` with the commands `build` and `tokens`; the rules `config-locked`, `config-adapter`, `config-experimental`, `config-i18n`, `config-wrangler` (for a static site), `routes-on-demand`, `routes-slug` (the endpoint clause), `edge-headers`, `edge-redirects`, `design-format`, `modes-themes`, `design-tokens` (the source half); the `real-site` job in `kit.yml` | The hotel site, stage 1, with `features.forms` false until M7: `astro-kit.json`, the shims, `.npmrc`, `wrangler.jsonc` (the static text of 10.4), `.github/kit-identity.sh` (the text of 10.3), `AGENTS.md`, `CLAUDE.md`, `site.json`, `schedule.json`, `redirects.json`, `glossary.json`, `legal.lock.json` (`{}`), `docs/design.md`, `tokens.css` as the output of `tokens`, `elements.css`, `fonts.css`, a layout component, the three homes, `/404.html` and the six legal pages. The lockfile pins the placeholder kit (11.4). | Hook unit tests with fake Astro arguments (14.1): the recorded `updateConfig` values equal the 6.1 table; one `injectScript('page-ssr')` call holds the four imports in order; the six watch files are added. The `_headers` merge tests cover adapter-first, adapter-after and prefetch. `robots.txt`, `sitemap.xml`, `security.txt`, `release.txt` and `routes.txt` are byte-exact. On a fake dist of HTML strings, `build:done` changes no byte of a page except the mode script insert and the speculation insert. `base.css` is at most 2,048 B compressed and equals the 7.6 text byte for byte. `renderTokens` gives the exact text of setting 1 of 7.7, and for settings 2 to 5 the texts that the test holds, written out from the 7.7 algorithm. The theme function `T` of 7.12 is tested for every option and system state. **The real-site job passes:** `npx --no astro-kit build` of the hotel site with the packed kit succeeds, and a suite case finds the CSP meta, the mode script and the speculation block in every built page. |
-| M4 | CSS analyzers | `src/css/parse.ts`, `values.ts`, `selectors.ts`, `media.ts` | A suite case feeds the built CSS of the hotel site to the parsers and asserts that every rule and declaration parses | Table-driven unit tests: specificity, compounds, the literal classifier, the family map, the length group, the geometry literals, and media preludes. |
-| M5 | Build audits | `src/css/rules.ts`, `design/rules.ts`, `audit/page.ts`, `site.ts`, `budgets.ts`, `html.ts`, `text.ts`; every rule of stage `build`, and the build half of every `config + build` rule, that M3, M7, M8 and M9 do not deliver (so `speculation-block` and `modes-script` too); every css rule; `design-specs` and `design-pairs`; `modes-switch` and `modes-media` | The hotel site, stage 2: all 26 pages, the content of 14.2, images, the PDF, the mode switch. The `build`, `css`, `design` and `modes` planted sets, each with the ids of the rules that exist at this milestone, and the five agent mistakes. The other ids join with their rules: the forms ids at M7; `js-budget`, `legal-origins` and `origins-third-party` at M8; `legal-approved` at M9. | A unit test per rule, with one passing and one failing case on strings or a `BuildContext` built from strings (14.1). The drift matrix and the freedom matrix pass. The real-site job passes, and the planted sets give their exact ids. |
-| M6 | Test server and browser | `src/serve.ts` (127.0.0.1 on a free port; `decodeURIComponent` with a traversal guard so that `%2e%2e` gives 404; `/a` gives 307 to `/a/` when `a/index.html` exists; a path that ends in `/index.html` and names a file that exists gives 307 to the path without `index.html`; `/404.html` gives 307 to `/404`; each of these three redirects keeps the query; `/404` answers 200 with the 404 page; the nearest `404.html` with status 404, else `Not found`; default `content-type` with `; charset=utf-8` for text and `cache-control: public, max-age=0, must-revalidate`; `_headers` applied by path to an answer of any status (13.1 item 19), in order, with `*` as `.*`, `:name` as `[^/]+`, absolute patterns skipped, `!` detach and comma-join; compression only for `text/*`, `image/svg+xml` and `application/(json\|xml\|manifest+json)`, honoring `q=0`, zstd 3 then br 5 then gzip, with `vary: accept-encoding` and `content-length`; HEAD without a body; other methods 405 with `allow: GET, HEAD`; the form stub); `src/browser.ts`; the command `test`; every browser-stage rule except `origins-gesture` (M8) | The `browser` and `prefetch` planted sets; a suite case that sends one request table to `serveDist` of the kit and to `wrangler dev` and compares status, `location`, `cache-control` and the seven kit headers. The table also holds a path that ends in `/index.html`, `/404.html` and `/404` | Server unit tests. Each browser rule passes and fails on a temp `dist/` written from HTML and CSS strings (14.1). The real-site job runs `test --all` on the hotel site. |
-| M7 | Forms | `src/forms/index.ts`, `fields.ts`, `limits.ts`, the feature shim, the forms text of `renderWrangler`; `forms-declared`, `forms-fields`, `forms-safety`, `forms-binding`, and `config-wrangler` for a forms site | Forms on: `astro-kit.json` gets `features.forms` true, the `contact` block, the `contact` and `booking` forms of 14.2 and the processing keys `forms` and `server`; the feature shim `src/pages/api/forms/[form].ts` is copied from `templates/features/forms/`; `@astrojs/cloudflare` joins `package.json`; `wrangler.jsonc` becomes the forms text of 10.4, written with `renderWrangler`; and the two forms sit on the contact pages; the `static` and `forms` variants; the `route` set | A fake Worker env with per-key counters. Every outcome code in both modes. A test asserts the five headers of 9.1 on every outcome, in both modes. CRLF counted as one character. The probe compare. The mail text is byte-exact. The real-site job passes with the forms adapter. |
+| M3 | Integration, kit CSS, tokens and edge output | `src/index.ts`, `config.ts`, `csp.ts`, `modes.ts` (options, `themeOf`, `modeScript`), `virtual.ts`, `inject.ts`, `build.ts`, `context.ts`, `hosts/cloudflare.ts` (the edge files and the static `renderWrangler`), `audit/index.ts`, `audit/edge.ts`, `islands.ts` (step 6 of 6.1 needs the Solid hash), `env.d.ts`, `css/base.css`, `design/parse.ts`, `design/tokens.ts`, and `src/cli.ts` and `src/ci.ts` with the commands `build` and `tokens`; the rules `config-locked`, `config-adapter`, `config-experimental`, `config-i18n`, `config-wrangler` (for a static site), `routes-on-demand`, `routes-slug` (the endpoint clause), `edge-headers`, `edge-redirects`, `design-format`, `modes-themes`, `design-tokens` (the source half) | The test site in `test/site/`, stage 1, with `features.forms` false until M7: `astro-kit.json`, the shims, `.npmrc`, `wrangler.jsonc` (the static text of 10.4), `AGENTS.md`, `CLAUDE.md`, `site.json`, `schedule.json`, `redirects.json`, `glossary.json`, `legal.lock.json` (`{}`), `docs/design.md`, `tokens.css` as the output of `tokens`, `elements.css`, `fonts.css`, a layout component, the three homes, `/404.html` and the six legal pages. Its `package.json` and its lockfile have no entry for the kit (14.2). It has no `.github/` folder, so no `kit-identity.sh`: the rendered protected files come at M9. The first cases on the site, in `site.test.ts`. | Hook unit tests with fake Astro arguments (14.1): the recorded `updateConfig` values equal the 6.1 table; one `injectScript('page-ssr')` call holds the four imports in order; the six watch files are added. The `_headers` merge tests cover adapter-first, adapter-after and prefetch. `robots.txt`, `sitemap.xml`, `security.txt`, `release.txt` and `routes.txt` are byte-exact. On a fake dist of HTML strings, `build:done` changes no byte of a page except the mode script insert and the speculation insert. `base.css` is at most 2,048 B compressed and equals the 7.6 text byte for byte. `renderTokens` gives the exact text of setting 1 of 7.7, and for settings 2 to 5 the texts that the test holds, written out from the 7.7 algorithm. The theme function `T` of 7.12 is tested for every option and system state. **The acceptance job passes:** the `site` case builds the test site with the packed kit; `build` and `tokens --check` end with status 0 and the passed line (6.4); and the case finds the CSP meta, the mode script and the speculation block in every built page. |
+| M4 | CSS analyzers | `src/css/parse.ts`, `values.ts`, `selectors.ts`, `media.ts` | A suite case feeds the built CSS of the test site to the parsers and asserts that every rule and declaration parses | Table-driven unit tests: specificity, compounds, the literal classifier, the family map, the length group, the geometry literals, and media preludes. |
+| M5 | Build audits | `src/css/rules.ts`, `design/rules.ts`, `audit/page.ts`, `site.ts`, `budgets.ts`, `html.ts`, `text.ts`; every rule of stage `build`, and the build half of every `config + build` rule, that M3, M7, M8 and M9 do not deliver (so `speculation-block` and `modes-script` too); every css rule; `design-specs` and `design-pairs`; `modes-switch` and `modes-media` | The test site, stage 2: all 26 pages, the content of 14.2, images, the PDF, the mode switch. The `build`, `css`, `design` and `modes` planted sets, each with the ids of the rules that exist at this milestone, and the five agent mistakes. The other ids join with their rules: the forms ids at M7; `js-budget`, `legal-origins` and `origins-third-party` at M8; `legal-approved` at M9. | A unit test per rule, with one passing and one failing case on strings or a `BuildContext` built from strings (14.1). The drift matrix and the freedom matrix pass. The acceptance job passes, and the planted sets give their exact ids. |
+| M6 | Test server and browser | `src/serve.ts` (127.0.0.1 on a free port; `decodeURIComponent` with a traversal guard so that `%2e%2e` gives 404; `/a` gives 307 to `/a/` when `a/index.html` exists; a path that ends in `/index.html` and names a file that exists gives 307 to the path without `index.html`; `/404.html` gives 307 to `/404`; each of these three redirects keeps the query; `/404` answers 200 with the 404 page; the nearest `404.html` with status 404, else `Not found`; default `content-type` with `; charset=utf-8` for text and `cache-control: public, max-age=0, must-revalidate`; `_headers` applied by path to an answer of any status (13.1 item 19), in order, with `*` as `.*`, `:name` as `[^/]+`, absolute patterns skipped, `!` detach and comma-join; compression only for `text/*`, `image/svg+xml` and `application/(json\|xml\|manifest+json)`, honoring `q=0`, zstd 3 then br 5 then gzip, with `vary: accept-encoding` and `content-length`; HEAD without a body; other methods 405 with `allow: GET, HEAD`; the form stub); `src/browser.ts`; the command `test`; every browser-stage rule except `origins-gesture` (M8) | The `browser` and `prefetch` planted sets; a suite case that sends one request table to `serveDist` of the kit and to `wrangler dev` and compares status, `location`, `cache-control` and the seven kit headers. The table also holds a path that ends in `/index.html`, `/404.html` and `/404` | Server unit tests. Each browser rule passes and fails on a temp `dist/` written from HTML and CSS strings (14.1). The `site` case runs `test --all` on the test site. |
+| M7 | Forms | `src/forms/index.ts`, `fields.ts`, `limits.ts`, the feature shim, the forms text of `renderWrangler`; `forms-declared`, `forms-fields`, `forms-safety`, `forms-binding`, and `config-wrangler` for a forms site | Forms on: `astro-kit.json` gets `features.forms` true, the `contact` block, the `contact` and `booking` forms of 14.2 and the processing keys `forms` and `server`; the feature shim `src/pages/api/forms/[form].ts` is copied from `templates/features/forms/`; `@astrojs/cloudflare` joins `package.json`; `wrangler.jsonc` becomes the forms text of 10.4, written with `renderWrangler`; and the two forms sit on the contact pages; the `static` and `forms` variants; the `route` set | A fake Worker env with per-key counters. Every outcome code in both modes. A test asserts the five headers of 9.1 on every outcome, in both modes. CRLF counted as one character. The probe compare. The mail text is byte-exact. The acceptance job passes with the forms adapter. |
 | M8 | Islands, scripts and origins | The ESLint shim, the origins part of `csp.ts`, `hosts/cloudflare.ts` and the audits; `js-script`, `js-prefetch-attr`, `js-directive`, `js-budget`, `csp-hash` (source half), `origins-third-party`, `origins-gesture`, `legal-origins` | The `islands`, `scripts` and `origins` variants; the `origins` set | Hook unit tests with islands on: the Solid integration is in `integrations`; `solidHydrationHash` of the installed `solid-js` equals the value of 13.1 item 11 for that version and is in the script hashes; the header policy has no Trusted Types. The `js-*` and `origins-*` rules have unit tests on strings. The CSP texts for the five origin cases of 9.4 are byte-exact. |
-| M9 | CLI and templates | The other commands of `src/cli.ts` and `src/ci.ts` (`init`, `check`, `ci`, `legal`, `settings`, `smoke`, `routes import`, `provision`, `feedback`), `src/init.ts`, `smoke.ts`, `provision.ts`, `feedback.ts`, `settings.ts`, all templates and rulesets; `config-shim` (the rendered protected files, the kit block of `AGENTS.md`, `CLAUDE.md`, and the feature shims), `config-kit-identity`, `routes-removed`, `legal-approved`, the smoke and zone rules | From M9, `init --protected` writes the hotel site's protected files, `AGENTS.md` gets the kit block of 12.1 and `CLAUDE.md` the line `@AGENTS.md`, and `legal --write` writes `legal.lock.json`. The owner switches the workflow `site` off, then merges that PR by hand, and keeps the workflow off until the first release (14.2); the fresh init; the `prefetch-*`, `dev`, `check-config`, `modes-*` and `waiver` variants; the `config` set; from M9 every variant also runs `check` | CLI tests in `mkdtemp` folders, with fake bins for the tool runner, so that no test runs Astro (14.1): exit codes; usage gives 2; the proxy re-spawn (a CONNECT-recording proxy sees `example.ch:443`); workflow YAML parses; every `uses` is `actions/x@<40 hex> # vX.Y.Z`; job order and names; the only required context is `site / ci`; the merge script against a fake `gh` (it merges a green agent PR; it leaves a PR that GitHub refuses, a PR with a protected file, a foreign author, a draft and a moved head); the deploy gate and the deploy config check under bash; the rollback step; kit-identity in a scratch git repo with `refs/remotes/origin/main` (it fails an entry from another host, an entry whose tarball is not its own name and version, an alias entry and a linked entry); the SessionStart hook with a fake npm; `.gitignore` lists dist, .astro and .wrangler; the Dependabot file equals the 10.5 text; smoke with a fetch route table keyed `"METHOD url"` (an unknown key rejects with `TypeError` and cause `ENOTFOUND`); provision against a fake Cloudflare API that asserts the Bearer token; feedback signature tests. From this milestone the real-site job runs `astro-kit ci`. |
-| M10 | Acceptance suite complete | The `canary` job of `kit.yml` (11.1) | Every variant, planted set, mistake, the fresh init and the scale case of 14.2, with their full id lists | The real-site job and the `acceptance` job pass with every case. |
+| M9 | CLI and templates | The other commands of `src/cli.ts` and `src/ci.ts` (`init`, `check`, `ci`, `legal`, `settings`, `smoke`, `routes import`, `provision`, `feedback`), `src/init.ts`, `smoke.ts`, `provision.ts`, `feedback.ts`, `settings.ts`, all templates and rulesets; `config-shim` (the rendered protected files, the kit block of `AGENTS.md`, `CLAUDE.md`, and the feature shims), `config-kit-identity`, `routes-removed`, `legal-approved`, the smoke and zone rules | From M9, `init --protected` writes the protected files of the test site into `test/site/`. They are inert files there: GitHub runs a workflow only from the root `.github/` of a repository, so it runs none of them. They exist so that `config-shim` and `check` see a complete project (14.2). Only zizmor in `kit / scan` reads them (11.1). `AGENTS.md` gets the kit block of 12.1 and `CLAUDE.md` the line `@AGENTS.md`, and `legal --write` writes `legal.lock.json`; the `ci` and `identity` cases; the fresh init; the `prefetch-*`, `dev`, `check-config`, `modes-*` and `waiver` variants; the `config` set; from M9 every variant also runs `check` | CLI tests in `mkdtemp` folders, with fake bins for the tool runner, so that no test runs Astro (14.1): exit codes; usage gives 2; the proxy re-spawn (a CONNECT-recording proxy sees `example.ch:443`); workflow YAML parses; every `uses` is `actions/x@<40 hex> # vX.Y.Z`; job order and names; the only required context is `site / ci`; the merge script against a fake `gh` (it merges a green agent PR; it leaves a PR that GitHub refuses, a PR with a protected file, a foreign author, a draft and a moved head); the deploy gate and the deploy config check under bash; the rollback step; kit-identity in a scratch git repo with `refs/remotes/origin/main` (it fails an entry from another host, an entry whose tarball is not its own name and version, an alias entry and a linked entry); the SessionStart hook with a fake npm; `.gitignore` lists dist, .astro and .wrangler; the Dependabot file equals the 10.5 text; smoke with a fetch route table keyed `"METHOD url"` (an unknown key rejects with `TypeError` and cause `ENOTFOUND`); provision against a fake Cloudflare API that asserts the Bearer token; feedback signature tests. From this milestone the `ci` case of the suite runs `astro-kit ci` on a copy of the test site (14.2). `kit / scan` passes with the rendered files of `test/site/.github/` (11.1). |
+| M10 | Acceptance suite complete | The `canary` job of `kit.yml` (11.1) | Every variant, planted set, mistake, the fresh init and the scale case of 14.2, with their full id lists; the variable `KIT_ACCEPTANCE_ASTRO` of the harness (14.2) | The acceptance job passes with every case. |
 | M11 | Docs | INDEX, the twelve recipes, `forms.md`, `islands.md`, `modes.md`, `origins.md`, `standards.md`, the schema | nothing | `docs.test.ts`: `standards.md` equals `renderStandards()` (`--check` gives 1 when stale, `--write` 0, no flag 2); one `<a id>` per rule; every `standards.md#id` link names a rule; relative links resolve; INDEX ≤ 100 lines; the "differs" section ≤ 15 lines; every recipe ≤ 40 lines and routed; every rule id appears in a test other than `docs.test.ts`. The settings test of 5.5. |
-| M12 | Release | `release.yml`; the build branch merges into `main`; then the release PR of 11.4, step 4 (`version` `0.1.0`, the `## Unreleased` lines moved under `## 0.1.0`) | The site moves to `@raess/astro-kit@0.1.0` from the registry (11.4, step 6) | `npm pack --dry-run` lists only the `files` of 3.4. The real-site jobs of `kit.yml` and `release.yml` pass with the packed tarball. The first release steps of 11.4 are done. |
-| M13 | Delivery rehearsal | Fixes found by the rehearsal, as patch releases | `docs/rehearsal.md` with the evidence for R1–R14 (13.3) | Every item of 13.3 has its run URL or command output in `docs/rehearsal.md`. The hotel site is live on its production domain, and its `deploy / production` and `smoke` jobs pass. |
+| M12 | Release | `release.yml`; the build branch merges into `main`; then the release PR of 11.4, step 4 (`version` `0.1.0`, the `## Unreleased` lines moved under `## 0.1.0`) | nothing: the test site never installs the kit from the registry (14.2) | `npm pack --dry-run` lists only the `files` of 3.4, so no file of `test/`. The acceptance jobs of `kit.yml` and `release.yml` pass. Steps 1 to 5 of 11.4 are done: `0.1.0` is approved and on npm. |
+| M13 | Delivery rehearsal | Fixes found by the rehearsal, as patch releases; `docs/rehearsal.md` with the evidence for R1–R14 (13.3) | nothing in `test/`: the content of `test/site/` goes into the rehearsal repository `raess-dev/astro-kit-test`, on its production domain (13.3) | Every item of 13.3 has its run URL or command output in `docs/rehearsal.md`. The site of the rehearsal repository is live on its production domain, and its `deploy / production` and `smoke` jobs pass. |
 
 ### 14.1 Kit unit tests
 
-The kit has unit tests only. `npm test` runs them (`node --test 'test/unit/**/*.test.ts'`). They are table-driven.
+`npm test` runs the unit tests of the kit (`node --test 'test/unit/**/*.test.ts'`). They are table-driven. The acceptance suite is a second set of tests, with its own command (14.2).
 
-**What a kit test never does.**
+**What a unit test never does.**
 
-- It never installs, builds, serves, checks or starts an Astro project. No kit test runs `astro build`, `astro dev` or `astro check`.
-- The kit repository holds no site, no Astro project and no photo. Every build runs in the test repository (14.2).
+- It never installs, builds, serves, checks or starts an Astro project. No unit test runs `astro build`, `astro dev` or `astro check`.
+- It never reads `test/site/`. The kit repository holds one test site in that folder, outside the npm package (3.4). Only the acceptance suite builds it (14.2).
 
 **Inputs.**
 
@@ -3010,14 +3039,14 @@ The kit has unit tests only. `npm test` runs them (`node --test 'test/unit/**/*.
   - the six watch files of step 5;
   - with islands, the Solid integration in `integrations` and its hash in the script hashes;
   - with forms, the Cloudflare adapter in `adapter` and in `integrations`;
-  - a `config-options` finding always throws a `FindingError`; any other finding throws for `build` and goes to `logger.warn` for `dev`.
+  - a `config-options` finding always throws a `FindingError`; any other failing finding throws for `build`; a waived finding does not throw for `build` and goes to `logger.warn`; for `dev`, every other finding goes to `logger.warn`.
 - **`astro:config:done`** gets a fake resolved config. Each locked key, changed in turn, gives `config-locked` with `${actual} instead of ${expected}`.
 - **`astro:routes:resolved`** gets fake route lists, for `routes-on-demand` and the endpoint clause of `routes-slug`. The lists hold an endpoint with a parameter in its first segment (`/[name].txt`), which fails, and one with a parameter in a later segment (`/feeds/[lang].json`), which passes. A second call with the same list gives the same findings.
 - **`astro:build:done`** gets `dir` (the file URL of a fake dist of HTML strings), a fake `assets` map and a logger. The test asserts:
   - with two or more mode options, the mode script lands right after the CSP meta; the speculation insert follows it; no other byte of a page changes;
   - the edge files are byte-exact;
   - the audits run in the order of step 4;
-  - a finding throws.
+  - a failing finding throws; with only a waived finding the hook does not throw, and `logger.warn` gets the text, which has no passed line.
 - **Feature packages.** In the islands and forms cases, the hooks import `@astrojs/solid-js` and `@astrojs/cloudflare` from the kit's devDependencies (3.4). `solidHydrationHash(root)` resolves `solid-js` from the root (6.2). So the islands case adds the symlink `<root>/node_modules/solid-js` → the kit's `node_modules/solid-js`. The hash equals the value that 13.1, item 11 gives for the installed version of `solid-js`.
 - **Missing packages.** Node looks for a package in every folder above a temp folder too. So a test of a missing `astro` or `solid-js` first reads what that search finds from the temp folder. When a folder above it holds the package, the test fails with that path, and it does not call the command. On such a machine `astro-kit build` would otherwise run a real build.
 
@@ -3030,7 +3059,7 @@ The kit has unit tests only. `npm test` runs them (`node --test 'test/unit/**/*.
 - **browser** rules run on a temp `dist/` written from HTML and CSS strings, served by `serveDist` and opened in Chromium (2.1). The `test` job of `kit.yml` installs Chromium (11.1), and so does the `stage` job of `release.yml` (11.2).
 - **ci** rules run on a scratch git repository with `refs/remotes/origin/main`, and on the fetch route table of M9 for the live site.
 - **smoke** and **zone** rules run on the fetch route table and the fake Cloudflare API of M9.
-- The acceptance suite of the test repository proves the config, build and browser rules again on real builds (14.2).
+- The acceptance suite proves the config, build and browser rules again on real builds (14.2).
 
 **The drift matrix.** Each row is a unit test on CSS, HTML or `docs/design.md` strings, or, for a source row, on a small temp folder written from strings. Each row gives exactly its ids.
 
@@ -3104,15 +3133,29 @@ The kit has unit tests only. `npm test` runs them (`node --test 'test/unit/**/*.
 | 23 | `animation-iteration-count: 3` | a count |
 | 24 | in a page file: `@media (width >= 48rem) { .hero { grid-column: span 2; } }` | `@media` in a page file |
 
-### 14.2 The test repository (`raess-dev/astro-kit-test`)
+### 14.2 The test site and the acceptance suite
 
-**What it is.**
+**What they are.**
 
-- It is a second repository. The owner creates it (16). It is built alongside the kit, from milestone M1.
-- It is a normal kit project. Its site is the fictitious **Hotel Lärchenwald** in Sils im Engadin. The builder writes its `docs/spec.md`, `docs/design.md`, content, facts and legal texts as samples, the way a hotel's editor would write them. No text waits for the owner.
-- It is a real site on its own production domain, which the owner provides before M3. `astro-kit.json`, `site.json` and `wrangler.jsonc` use that host from M3 on. Its own `site.yml` deploys it and runs the daily smoke.
-- It keeps the kit repository clean, and it tests the kit's checks and performance in a real setting.
-- It grows with the kit. At each milestone from M3 on, the site uses every kit part that exists, and it passes the kit of that milestone (14).
+- Both live in the kit repository, under `test/`. `test/site/` is the test site, and `test/acceptance/` is the acceptance suite. Neither is in the npm package (3.4).
+- **The test site** is one complete kit project, with the tree of 4.1: its own `package.json`, `package-lock.json`, `astro-kit.json`, shims, `src/`, `docs/` and `public/`. Its site is the fictitious **Hotel Lärchenwald** in Sils im Engadin. The builder writes its `docs/spec.md`, `docs/design.md`, content, facts and legal texts as samples, the way a hotel's editor would write them. No text waits for the owner.
+- **The acceptance suite** tests the kit, not the site. It packs the kit of the checkout, installs it into a copy of the test site in a temp folder, and runs the kit CLI there. So it tests the kit's checks and its performance in a real setting, on every pull request. `npm run acceptance` runs it at the repository root.
+- They grow with the kit. At each milestone from M3 on, the site uses every kit part that exists, and it passes the kit of that milestone (14). One pull request holds the kit change, the site change and the suite change.
+
+**Three kinds of code under `test/`.**
+
+| Folder | What it is | What checks it |
+|---|---|---|
+| `test/unit/` | Kit code: the unit tests (14.1) | The root `npm run check`. `npm test` runs it. |
+| `test/acceptance/` | Kit code: the acceptance suite | The root `npm run check`. `npm run acceptance` runs it. |
+| `test/site/` | A project of its own, with its own `biome.json` and `tsconfig.json`: the kit shims | The `check` command of the kit, in the suite. The root `biome.json` and the root `tsconfig.json` leave the folder out (3.1). |
+
+- **The suite is not part of the site.** The base copy below holds no file of `test/acceptance/`. The suite's files get their Node types from the `@types/node` of the kit repository (3.4), so the site lists no `@types/node`.
+- **No kit in the site's manifest.** `test/site/package.json` does not list `@raess/astro-kit`, and its lockfile has no entry for it. The suite installs the packed kit of the checkout into its base copy. `config-dep-allowlist` allows the kit as a dependency; it does not require it (8). The kit has no exemption for the test site: every rule holds there as in a client site.
+- **A hand build needs a packed kit.** `npm ci` alone in `test/site/` gives a tree that cannot build the site, because the shims import the kit. `test/README.md` says how to build the site by hand with a packed kit.
+- **The host is provisional.** The site uses the host `laerchenwald.example`. Five files hold it: `astro-kit.json` (`site`, `securityContact` and, from M7, the mail addresses of `contact`), `site.json` (the email addresses), `AGENTS.md` and `docs/spec.md` (the address of the site), and the rendered `wrangler.jsonc`. No file under `src/` holds the host. The name does not resolve, so no command of the suite reaches a live site. Nothing in the kit repository deploys the site. Only the rehearsal of M13 needs a production domain, in the rehearsal repository (13.3).
+- **The code owner.** The `codeOwner` of the test site is `@<the KIT_OWNER login>`, as in `.github/CODEOWNERS` of the kit repository (3.1). So the copy in the rehearsal repository names the real owner (13.3).
+- **Its protected files are inert.** From M9, `test/site/` holds the seven rendered protected files of 10.6. GitHub runs a workflow only from the root `.github/` of a repository, so it runs none of the files in `test/site/.github/`. They exist so that `config-shim` and `check` see a complete project. Only zizmor reads them: `kit / scan` audits them like the workflows of the kit (11.1).
 
 **The site.**
 
@@ -3132,7 +3175,7 @@ The kit has unit tests only. `npm test` runs them (`node --test 'test/unit/**/*.
   | Sitemap page | `/sitemap/` | `/fr/plan-du-site/` | `/en/sitemap/` |
 
   Plus the one multilingual `/404.html` (1.4). That makes 26 pages and the 404 page.
-- **Facts** (`site.json`): `type` `Hotel`; `name` `Hotel Lärchenwald`; `legalName` `Hotel Lärchenwald AG`; `email` `info@<host>`; `phone` `+41815550110`; the address `Via da Fex 7`, `7514`, `Sils im Engadin/Segl`, `GR`, `CH`; `uid` `CHE-123.456.789`; `vatId` `CHE-123.456.789 MWST`; six `prices` in CHF minor units (`room-single` 18000, `room-double` 32000, `room-family` 42000, `dog` 2500, `parking` 1500, `dinner-menu` 9800); `documents` `{"speisekarte.pdf": "/restaurant/"}`; two `contacts` (Restaurant with the phone `+41815550120`; Jobs with `jobs@<host>` and `+41815550130`). `<host>` is the site's production host.
+- **Facts** (`site.json`): `type` `Hotel`; `name` `Hotel Lärchenwald`; `legalName` `Hotel Lärchenwald AG`; `email` `info@<host>`; `phone` `+41815550110`; the address `Via da Fex 7`, `7514`, `Sils im Engadin/Segl`, `GR`, `CH`; `uid` `CHE-123.456.789`; `vatId` `CHE-123.456.789 MWST`; six `prices` in CHF minor units (`room-single` 18000, `room-double` 32000, `room-family` 42000, `dog` 2500, `parking` 1500, `dinner-menu` 9800); `documents` `{"speisekarte.pdf": "/restaurant/"}`; two `contacts` (Restaurant with the phone `+41815550120`; Jobs with `jobs@<host>` and `+41815550130`). `<host>` is the provisional host `laerchenwald.example`.
 - **Content that must be there**, because cases depend on it:
   - the rooms page shows the three room prices and the dog and parking prices as text;
   - the restaurant page links the PDF menu and shows the restaurant phone;
@@ -3149,34 +3192,42 @@ The kit has unit tests only. `npm test` runs them (`node --test 'test/unit/**/*.
 - Real images from `src/assets/`.
 - `prefetch.speculationRules` true and `prefetch.astroPrefetch` false, written out in `astro-kit.json`. The `browser` set needs the speculation rules on for `perf-prerender`. The `prefetch-*` variants and the `prefetch` set change these settings.
 - `features.islands`, `features.scripts`, `features.wasm` and `features.workers` off, and `origins` and `waivers` empty. The variants below turn them on.
-- `@types/node` `22.20.5` as a devDependency, listed in `astro-kit.json` `dependencies`, because `astro check` type-checks the TypeScript acceptance suite. The suite's other packages (`playwright-core` and the islands pins) come from the base copy below and are never in `package.json`.
+- Only packages of the allowlist, at the section 2 pins: `astro` as a dependency, `wrangler` as a devDependency and, from M7, `@astrojs/cloudflare`. The `dependencies` list of `astro-kit.json` is empty. The suite's packages (`playwright-core` and the islands pins) come from the base copy below and are never in `package.json`.
 
-**Its own workflow** (`.github/workflows/acceptance.yml`, job `acceptance`, the required check of the test repository from M1):
+**The acceptance suite.** It lives in `test/acceptance/`, and `npm run acceptance` runs it (`node --test 'test/acceptance/**/*.test.ts'`). Most cases copy the site into a temp folder, apply one change, run the kit CLI and assert the exact sorted rule ids. The spikes and the fresh init start from an empty folder.
 
-1. Check out the test repository.
-2. Pick the kit branch: the branch of `raess-dev/astro-kit` with the name of this branch when it exists, else `build` until M12 and `main` from M12 on (the `ref` step of 11.1, with the two repositories swapped and the token `secrets.KIT_REPO_TOKEN || github.token`).
-3. Check out the kit at that ref into `kit/`, run `npm ci --ignore-scripts --no-audit --no-fund` and `npm run build` there, and pack it (the `pack` step of 11.1). The step runs only when `kit/src/index.ts` exists at that ref (from M3). Otherwise it is skipped and `KIT_TARBALL` stays empty.
-4. In the repository root: the install steps of 10.1 (`kit-identity.sh` only once the site has a lockfile entry for the kit, from M3); one `npm install --no-save --ignore-scripts --no-audit --no-fund` of `playwright-core` at the 2.1 pin and, when it is set, the tarball; then `npx --no playwright-core install --with-deps chromium`.
-5. Run `node --test 'test/**/*.test.ts'` with `KIT_TARBALL` set.
-
-The workflow runs on `pull_request` `[opened, synchronize, reopened, ready_for_review]`, on `pull_request_review` `[submitted]` and on a push to `main`. The job holds no secret except the read token of steps 2 and 3. A site change that breaks an acceptance case cannot merge.
-
-**Its second job, `merge`** (`needs: acceptance`; on `pull_request`, and on `pull_request_review` when `review.state == 'approved'`; the `acceptance` job runs first in both cases; contents write, pull-requests write; 5 min) runs the merge script of 10.1 without its last line, with `PR: ${{ github.event.pull_request.number }}` and `TESTED_SHA: ${{ github.event.pull_request.head.sha }}`. So CI merges a green test-repository PR, and no agent merges. The job stays after the first release. From then on the repository has two required checks, and `acceptance` finishes long after `site / ci`. So this job is the one that merges, and from 11.4, step 6 it also runs the last line of the merge script, so that the merge deploys.
-
-**Before the first release.** Until `0.1.0` is on npm (11.4), the site's `package.json` and lockfile pin the placeholder `@raess/astro-kit@0.0.0`. The real-site job and the `acceptance` job install the packed kit over it. The site's own `site / ci` passes, and the site deploys, only after it moves to `0.1.0` (11.4, step 6). `site.yml` reaches the repository at M9. Until the first release, the owner keeps that workflow switched off (the Actions page, the workflow "site", Disable workflow). The owner switches it off before the hand merge of the M9 pull request: the workflow is on the Actions page as soon as the M9 branch has its first push run. So no build, deploy, smoke or alert job runs on `main`. The owner switches it on at 11.4, step 6. Until then `acceptance` is the only required check (16), and the `merge` job of `acceptance.yml` merges a green PR.
-
-**The acceptance suite.** It lives in `test/`, and `node --test 'test/**/*.test.ts'` runs it. It tests the kit, not the site. Most cases copy the site into a temp folder, apply one change, run the kit CLI and assert the exact sorted rule ids. The spikes and the fresh init start from an empty folder.
-
-- **Base copy.** The suite makes `<tmp>` with `mkdtemp(join(tmpdir(), 'kit-acceptance-'))`. It copies the repository's working tree into `<tmp>/base`, without `.git`, `kit`, `node_modules`, `dist`, `.astro` and `.wrangler`. There it runs `npm ci --ignore-scripts --no-audit --no-fund`. Then it runs one `npm install --no-save --ignore-scripts --no-audit --no-fund` command with the islands pins of 9.2, `playwright-core` at the 2.1 pin, `@astrojs/cloudflare` at the 2.1 pin with `@cloudflare/vite-plugin` at the exact version that `test/harness.ts` names (both until M7 puts the adapter into `package.json`, where the lockfile pins its tree) and, when `KIT_TARBALL=<path>` is set, that packed kit. So every case uses the packed kit, not the npm version. It is one command, because a second `--no-save` install removes the packages of the first.
-- **Case copies.** Each case except the spikes and the fresh init copies the base copy into `<tmp>/base/cases/<name>/`, without `node_modules` and `cases`, and applies its change. A spike or the fresh init starts from the empty folder `<tmp>/base/cases/<name>/`. Node, Astro and the kit's tool runner walk up to `<tmp>/base/node_modules` for every package. Astro writes its caches inside the case folder, so the cases share no cache.
-- **`run(name, command)`** spawns `node <tmp>/base/node_modules/@raess/astro-kit/dist/cli.js <command>` in the case folder, with `ASTRO_TELEMETRY_DISABLED=1`, `GITHUB_STEP_SUMMARY=''` and a 600 s timeout. It returns the status, the output and the sorted unique ids (`/✗ \[([a-z0-9-]+)\]/g`). A case uses only the commands that exist at its milestone (14): `build` and `tokens` from M3, `test` from M6, the others from M9.
+- **Layout.** `harness.ts` holds the packed kit, the base copy, the case folders and the runners. `serve.ts` is the suite's own static server. `wrangler.ts` runs `wrangler dev` in local mode, with no login and no network. `photos.ts` makes the photos. `kit/` is the stand-in integration of the spikes (13.2), and `kit.test.ts` compares its texts with this specification. `spikes/sNN.ts` holds one spike each, `spikes.test.ts` runs them all, and `spikes.results.json` holds their measured values. `site.test.ts` holds the cases on the test site. A later milestone may add test files beside it.
+- **The packed kit.** With `KIT_TARBALL=<path>`, the suite tests that packed kit. When the variable is not set, the harness builds and packs the kit of the checkout itself, at the repository root: it removes `dist/`, so that no file of an earlier build gets into the package, and runs `npm run build` and then `npm pack --pack-destination <tmp>`. That needs the installed packages of the kit repository. So every case uses the kit of the checkout as a package: never its sources, and never a version of the registry.
+- **Base copy.** The suite makes `<tmp>` with `mkdtemp(join(tmpdir(), 'kit-acceptance-'))`. It copies `test/site/` into `<tmp>/base`, without `node_modules`, `dist`, `.astro` and `.wrangler`, which a hand build leaves there. So the base copy is a copy of the site, not of the repository. There it runs `npm ci --ignore-scripts --no-audit --no-fund`. Then it runs one `npm install --no-save --ignore-scripts --no-audit --no-fund` command with the islands pins of 9.2, `playwright-core` at the 2.1 pin, `@astrojs/cloudflare` at the 2.1 pin with `@cloudflare/vite-plugin` at the exact version that `harness.ts` names (both until M7 puts the adapter into the `package.json` of the site, where the lockfile pins its tree) and the packed kit. It is one command, because a second `--no-save` install removes the packages of the first. It then writes the file `<tmp>/base/kit-acceptance.json` with the SHA-256 of the packed kit, which is no site file. `<tmp>` is outside the checkout, so no case finds the `node_modules` of the kit repository when Node walks up the folders.
+- **One base copy for a run.** `node --test` starts each test file as a process of its own. The first process that needs the base copy packs the kit and makes the copy. The test files that run at the same time wait for it and use the same copy. They find it through the pointer file `kit-acceptance-<process id of the runner>.json` in the temp folder of the system, which also holds the start time of the runner, so a file that an earlier run left there is never taken for the one of this run. The last process that uses `<tmp>` removes it and the pointer file. So the packages are installed once for a run on a machine with three or more CPUs, such as the CI runner. With `--test-concurrency=1`, or on a machine with one or two CPUs, the runner starts the test files one after the other, and each test file that needs the base copy makes its own. `KIT_ACCEPTANCE_KEEP=1` avoids that: a kept base copy stays with its pointer file for the whole run.
+- **Case copies.** Each case except the spikes and the fresh init copies the site files of the base copy into `<tmp>/base/cases/<name>/`, without `node_modules`, `cases` and `kit-acceptance.json`, and applies its change. A spike or the fresh init starts from the empty folder `<tmp>/base/cases/<name>/`. A spike also gets a copy of the stand-in integration as `kit/` in its folder. Node, Astro and the kit's tool runner walk up to `<tmp>/base/node_modules` for every package. Astro writes its caches inside the case folder, so the cases share no cache.
+- **`run(name, command)`** spawns `node <tmp>/base/node_modules/@raess/astro-kit/dist/cli.js <command>` in the case folder, with `ASTRO_TELEMETRY_DISABLED=1`, `GITHUB_STEP_SUMMARY=''`, `WRANGLER_SEND_METRICS=false`, `CI=1` and a 600 s timeout. The command gets the other variables of the machine, except `CLOUDFLARE_ENV`, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`: no command of the suite needs a token or an account, and `CLOUDFLARE_ENV` would change what a case builds. It returns the status, stdout, the output (stdout and then stderr, in one text) and the sorted unique ids of the output (`/✗ \[([a-z0-9-]+)\]/g`). `passedLine(result)` of the harness says whether the passed line is the last line of that stdout, and how often the output holds it. A case uses only the commands that exist at its milestone (14): `build` and `tokens` from M3, `test` from M6, the others from M9.
 - **Kit functions.** A case that needs a kit function (`renderTokens`, `renderWrangler`, `serveDist`, `modeScript`) imports it by file URL from `<tmp>/base/node_modules/@raess/astro-kit/dist/<module>.js`, because the exports map of 3.4 hides it.
-- **Commands.** A case other than a spike runs `init`, `tokens`, `legal`, `check`, `build` or `test` through `run`. A spike uses no kit (13.2). It spawns `node` with the Astro CLI entry and the argument `build` in its case folder, with the environment and timeout of `run`. The Astro CLI entry is the file that the `bin` field of `<tmp>/base/node_modules/astro/package.json` names (`bin/astro.mjs` in Astro 7.4). A spike that opens pages in Chromium serves the built output with the suite's own static server `test/serve.ts` (`node:http` on 127.0.0.1 and a free port). S9 serves it with `wrangler dev` instead (13.2). The `dev` variant spawns the same entry with the argument `dev`. No case runs `ci`: the ci-stage rules read git and the live site, so `ci` runs only on the checkout itself (11.1).
-- **Assertions.** A failing case asserts `deepEqual(ids, [exact sorted list])`. A passing case asserts status 0.
+- **Commands.** A case other than a spike runs `init`, `tokens`, `legal`, `check`, `build` or `test` through `run`. A spike uses no kit (13.2). It spawns `node` with the Astro CLI entry and the argument `build` in its case folder, with the environment and timeout of `run`. The Astro CLI entry is the file that the `bin` field of `<tmp>/base/node_modules/astro/package.json` names (`bin/astro.mjs` in Astro 7.4). A spike that opens pages in Chromium serves the built output with the suite's own static server `serve.ts` (`node:http` on 127.0.0.1 and a free port). S9 serves it with `wrangler dev` instead (13.2). The `dev` variant spawns the same entry with the argument `dev`. Only the `ci` case below runs `ci`: the ci-stage rules read git and the live site.
+- **Assertions.** A failing case asserts `deepEqual(ids, [exact sorted list])`, and that its output holds no passed line. A passing case asserts status 0. Where its command runs checks, the last line of stdout is the passed line, and the output holds that line once (6.4).
 - **Rendered files.** A case that changes `docs/design.md` or the mode options then runs `tokens`. A case that changes a setting that `wrangler.jsonc` depends on then runs `init --protected` (6.4); before M9 it writes `wrangler.jsonc` with `renderWrangler`. A case that changes a legal page on purpose does not run `legal --write`.
-- **Deterministic photos** (`test/photos.ts`) make the images that a case plants in its `src/assets/`. `sharp` is loaded through `createRequire(<tmp>/base/node_modules/astro/package.json)('sharp')`, so it adds no dependency. For each image: xorshift32 with seed 7 (`seed ^= seed << 13; seed >>>= 0; seed ^= seed >>> 17; seed ^= seed << 5; seed >>>= 0; return seed / 2 ** 32`). Add the noise `n = (r() + r() + r() - 1.5) * 18` to all three channels, clamp, and write with `.jpeg({ quality: 82 })`.
+- **Deterministic photos** (`photos.ts`) make the images that a case plants in its `src/assets/`. `sharp` is loaded through `createRequire(<tmp>/base/node_modules/astro/package.json)('sharp')`, so it adds no dependency. For each image: xorshift32 with seed 7 (`seed ^= seed << 13; seed >>>= 0; seed ^= seed >>> 17; seed ^= seed << 5; seed >>>= 0; return seed / 2 ** 32`). Add the noise `n = (r() + r() + r() - 1.5) * 18` to all three channels, clamp, and write with `.jpeg({ quality: 82 })`.
+- **Variables.**
 
-**Spikes.** `test/spikes.test.ts` holds the spikes of 13.2: S1–S19. Each spike writes a minimal Astro project from strings into its empty case folder and builds it (13.2). A spike that measures a value writes it to `test/spikes.results.json`, and a later run fails when the value changes. On CI, a spike also fails for a value that the committed file does not hold, so no measured value stays out of the file. A spike records no value that depends on the browser version, on the compression libraries of Node, or on timing, such as a computed color text, a compressed size or a time in milliseconds. A spike that compares two colors paints both on a 1×1 canvas, and each of the four channels is equal within 1 of 255 (8).
+  | Variable | What it does |
+  |---|---|
+  | `KIT_TARBALL=<path>` | The packed kit to test, in place of the kit of the checkout |
+  | `KIT_ACCEPTANCE_ASTRO=<version or tag>` | The base copy gets `astro@<value>`. The harness adds it to its one `npm install --no-save` command, so it replaces the Astro of the site's lockfile in the base copy. The harness prints the Astro version of the base copy once, on stderr. The `canary` job sets the value `latest` (11.1). From M10. |
+  | `KIT_ACCEPTANCE_KEEP=1` | Keeps the base copy after the run, and prints its path |
+  | `KIT_ACCEPTANCE_BASE=<path>` | Uses a kept base copy again, which saves the install while a case is written. The harness makes its site files equal to `test/site/` again. The run stops when the packages or the packed kit of that copy are not the ones of this run. |
+  | `KIT_SPIKES_WRITE=1` | Accepts a new measured value of a spike |
+  | `KIT_SPIKES_RESULTS=<file>` | Reads and writes the measured values in that file, in place of `test/acceptance/spikes.results.json`: for a run that must not touch the committed file |
+  | `CHROME_PATH=<file>` | The browser (2.1) |
+
+**The site as it is.** Three cases take the site with no change to a setting, a page or a style. `ci` and `identity` add only what a site repository has and the folder `test/site/` does not: a git history, and the kit in the lockfile.
+
+| Case | What it does | What it asserts |
+|---|---|---|
+| `site` | It runs each command that exists at the milestone (14): `tokens --check` and `build` from M3, `test --all` from M6, `check` and `legal --check` from M9. | Status 0 and the passed line for each command (6.4). Every built page has the CSP meta, right after it the mode script, and then the speculation block. The edge files exist, and `robots.txt` is the text of the kit. |
+| `ci` (from M9) | It makes its copy a git repository: `git init`, one commit of every file, and the ref `refs/remotes/origin/main` at that commit. Then it runs `ci` with `BASE_REF=main`. | Status 0. `routes-removed` finds no dropped redirect source. It skips the live site, because `laerchenwald.example` does not resolve (8). So the case needs no network. |
+| `identity` (from M9) | It makes a git repository like the one of `ci`. Then it runs `npm install --package-lock-only --ignore-scripts --no-audit --no-fund <the packed kit>` in its copy. npm installs nothing: it writes the kit entry and every package of the kit's own tree into `package-lock.json`, as the lockfile of a client site has them. The case sets `resolved` of the entry `node_modules/@raess/astro-kit` to `https://registry.npmjs.org/@raess/astro-kit/-/astro-kit-<version>.tgz`, the form of a registry install, and keeps the `sha512` hash that npm wrote. Then it runs `bash .github/kit-identity.sh`. | Status 0, and the last line that 10.3 gives. So every entry of a complete lockfile passes the script: the packages of the site and the packages that the kit brings. Two more runs of the script fail. On the lockfile of the commit, it fails with `package-lock.json has no node_modules/@raess/astro-kit entry`. Before the change of `resolved`, it fails and names `node_modules/@raess/astro-kit`. |
+
+**Spikes.** `spikes.test.ts` runs the spikes of 13.2: S1–S19, one file `spikes/sNN.ts` for each. Each spike writes a minimal Astro project from strings into its empty case folder and builds it (13.2). A spike that measures a value writes it to `spikes.results.json`, and a later run fails when the value changes. `KIT_SPIKES_WRITE=1` accepts the new value; then check what the change means for this specification. On CI, a spike also fails for a value that the committed file does not hold, so no measured value stays out of the file. A spike records no value that depends on the browser version, on the compression libraries of Node, or on timing, such as a computed color text, a compressed size or a time in milliseconds. A spike that compares two colors paints both on a 1×1 canvas, and each of the four channels is equal within 1 of 255 (8).
 
 **Variants.** Each variant checks its extra assertion. Every variant except `dev` and `check-config` also passes `check`, `build` and `test`. Before M9, a variant runs `build` and `test` only; its `check` run, `init --shims` and `legal --write` join at M9.
 
@@ -3194,7 +3245,7 @@ The workflow runs on `pull_request` `[opened, synchronize, reopened, ready_for_r
 | `modes-off` | `modes` set to the init default `{"auto": true, "light": false, "dark": false, "contrast": false}`; the mode switch removed with everything only it uses: its markup, its component and CSS files, any class of it in `elements.css`, and its rows in `docs/design.md`; the themes unchanged, because `auto` reaches every declared theme (7.12) | no `[data-mode-switch]`, no control named `mode`, no mode script, and no `MODE_HASH` in the CSP |
 | `modes-no-auto` | `modes` set to `{"auto": false, "light": true, "dark": true, "contrast": true, "default": "light"}`; the `auto` control removed from the switch | every page's mode script equals `modeScript(options)`; with JS and no stored mode, `html` gets `data-mode="light"`; with JS off, every page shows the `light` colors in every emulated system state |
 | `modes-select` | the switch's radio group replaced with one labeled `select name="mode"` holding the four options, inside the `[data-mode-switch]` element; a `select` rule added to `elements.css` when it has none (`css-element-coverage`); the switch's CSS and its `docs/design.md` rows reduced to what the new markup uses (`css-unused`, `design-specs`) | `check`, `build` and `test` pass; `modes-behavior` passes with the select |
-| `waiver` | a 200-code-point title on the German jobs page, and the waiver `{"rule": "head-title", "where": "/jobs/", "reason": "Acceptance case for waivers", "until": <today + 30 days>}` | `build` passes, and its output holds one line that starts with `~ [head-title] /jobs/` |
+| `waiver` | a 200-code-point title on the German jobs page, and the waiver `{"rule": "head-title", "where": "/jobs/", "reason": "Acceptance case for waivers", "until": <today + 30 days>}` | `build` passes with the passed line, and its output holds exactly one line that holds `~ [head-title] /jobs/`. The line comes through the Astro logger, so a time and a label can stand before the mark (6.1). |
 
 **Planted-violation sets.** Each set plants every violation of its list in one copy and asserts exactly that list. Each set runs `build`. The `browser`, `origins` and `prefetch` sets run `build` (which passes), plant in the built `dist/`, and then run `test --all`.
 
@@ -3210,7 +3261,7 @@ The workflow runs on `pull_request` `[opened, synchronize, reopened, ready_for_r
 | `origins` (the `origins` variant, then an `iframe` with the map URL as `src` and `title="Map"` planted in the built German home page) | `origins-gesture` |
 | `prefetch` (the `prefetch-astro` settings, then a `/*` rule with `Cache-Control: no-store` appended to the built `_headers`) | `perf-bfcache`, `perf-prefetch` |
 
-**Rules the sets do not plant:** `config-options`, `config-adapter`, `config-locked`, `csp-meta`, `csp-base`, `speculation-block`, `modes-script`, `edge-*`, and the ci, smoke and zone rules. The kit's unit tests cover them (14.1). The real-site job runs `ci` on the checkout. The site's own `site.yml` runs `kit-identity.sh` and the daily smoke in production.
+**Rules the sets do not plant:** `config-options`, `config-adapter`, `config-locked`, `csp-meta`, `csp-base`, `speculation-block`, `modes-script`, `edge-*`, and the ci, smoke and zone rules. The kit's unit tests cover them (14.1). The `ci` case runs `routes-removed` on a copy of the site, and the `identity` case runs `kit-identity.sh` on its lockfile. The smoke and zone rules first run against a live site in the rehearsal of M13 (13.3).
 
 **Typical agent mistakes.** Five mistakes, each made on its own copy of the site. Each case runs `build` and asserts exactly:
 
@@ -3225,7 +3276,7 @@ The workflow runs on `pull_request` `[opened, synchronize, reopened, ready_for_r
 **Fresh init.** In the empty case folder `<tmp>/base/cases/fresh-init/`:
 
 1. `init --site https://example.ch --locales de,fr --owner @example-owner`, then `check`: exactly `['design-format']`.
-2. `test/fresh-init.ts` holds, as strings, the smallest valid `docs/design.md` and `src/styles/elements.css` for init's default settings, with no variant class. With these files written in, `tokens` writes `src/styles/tokens.css`. Then `build`: exactly `['legal-pages', 'routes-404']`, because the site has no pages yet. Astro itself accepts a project with zero pages: it writes no page and reports no error. With no `src/pages` folder it logs the warning `Missing pages directory: src/pages` (S12).
+2. `test/acceptance/fresh-init.ts` holds, as strings, the smallest valid `docs/design.md` and `src/styles/elements.css` for init's default settings, with no variant class. With these files written in, `tokens` writes `src/styles/tokens.css`. Then `build`: exactly `['legal-pages', 'routes-404']`, because the site has no pages yet. Astro itself accepts a project with zero pages: it writes no page and reports no error. With no `src/pages` folder it logs the warning `Missing pages directory: src/pages` (S12).
 
 **Scale.**
 
@@ -3244,24 +3295,24 @@ The workflow runs on `pull_request` `[opened, synchronize, reopened, ready_for_r
 
 - a registry entry with `id`, `group`, `stage`, `level`, `waivable`, `standard`, `message` and `hint` (section 8);
 - a kit unit test with one passing and one failing case (14.1);
-- a planted violation in an acceptance set of the test repository, or a name in the 14.2 list of rules that the sets do not plant;
+- a planted violation in a set of the acceptance suite, or a name in the 14.2 list of rules that the sets do not plant;
 - an anchor in `standards.md`.
 
 `docs.test.ts` fails any rule id that no test names.
 
 **Done when:**
 
-1. `npm run check`, `npm test` and `node src/docs.ts --check` pass locally and in `kit.yml`. zizmor and gitleaks are clean. No kit test builds an Astro project, and the kit repository holds no site.
-2. Spikes S1–S19 pass in the acceptance suite of the test repository. Their measured values are in `test/spikes.results.json` there (13.2).
-3. The real-site job is green: the hotel site passes `astro-kit ci` with the packed kit, and every acceptance case passes with `KIT_TARBALL` set. The `acceptance` job of the test repository is green too.
+1. `npm run check`, `npm test` and `node src/docs.ts --check` pass locally and in `kit.yml`. zizmor and gitleaks are clean. No unit test builds an Astro project.
+2. Spikes S1–S19 pass in the acceptance suite. Their measured values are in `test/acceptance/spikes.results.json` (13.2).
+3. `kit / acceptance` is green: `npm run acceptance` packs the kit of the checkout, and every case passes with that kit. The test site passes `check`, `build`, `test --all` and `ci` (14.2, the `site` and `ci` cases).
 4. Every planted set, the five agent mistakes and the fresh init give their exact ids. Every variant passes its extra assertion. Every drift row gives its id, and every freedom row gives no id, in a kit unit test.
 5. The scale case builds at least 500 pages and meets its limits (14.2).
 6. Size limits hold: `base.css` ≤ 2,048 B compressed.
 7. Docs limits hold: INDEX ≤ 100 lines, recipes ≤ 40 lines each, "differs" ≤ 15 lines, the kit block of AGENTS.md ≤ 18 lines.
 8. Settings: every schema field has a note and a control. `settings --apply` round-trips an `astro-kit.json` string unchanged (5.5).
-9. The package holds no markup, no components, no layouts, no pages and no content model: `npm pack --dry-run` lists only the `files` of 3.4.
-10. `0.1.0` is staged, approved and installable. The test repository installs it from the registry, and its own `site / ci` passes, `kit-identity.sh` included (11.4, step 6).
-11. The delivery rehearsal of 13.3 is complete: each item R1–R14 has its evidence in `docs/rehearsal.md` of the test repository. The `deploy / production` and `smoke` jobs pass on the production domain of the hotel site.
+9. The package holds no markup, no components, no layouts, no pages and no content model: `npm pack --dry-run` lists only the `files` of 3.4, so no file of `test/`.
+10. `0.1.0` is staged, approved and installable from the registry (11.4).
+11. The delivery rehearsal of 13.3 is complete. The rehearsal repository installs `0.1.0` from the registry, and its `site / ci` passes, `kit-identity.sh` included. Each item R1–R14 has its evidence in `docs/rehearsal.md`. The `deploy / production` and `smoke` jobs pass on the production domain of the rehearsal site.
 
 Each item is a CI job or a file that a test reads. No item needs a person to read code.
 
@@ -3269,15 +3320,15 @@ Each item is a CI job or a file that a test reads. No item needs a person to rea
 
 **Known limits.**
 
-- **First build.** A fresh site builds nothing until its design, head, layout, 404, legal pages and form UI exist. The recipes carry the patterns, and the test repository shows them in a real site (14.2).
+- **First build.** A fresh site builds nothing until its design, head, layout, 404, legal pages and form UI exist. The recipes carry the patterns, and the test site shows them in a complete project (14.2).
 - **Shared fixes.** A fix in one site's head does not reach the others. The checks catch the class of bug, the recipes absorb the fix, and KIT-FEEDBACK reports it back.
 - **Look and wording.** No check judges whether a page looks right or reads well. The branch preview (10.1) lets a person look before a merge. The owner decides who looks, and when.
 - **Text the kit cannot check.** The kit protects the legal pages (`legal-approved`) and five kinds of facts (`facts-value`). Any other claim, price in another currency or opening-hours sentence on a page is the agent's text.
 - **Heuristic rules.** `content-language`, `facts-value`, `links-generic`, `legal-statement` and `content-stale` read free text and can be wrong. Each is waivable (8), and each wrong finding gets a KIT-FEEDBACK entry.
 - **Build-time code.** Project code runs in Node during the build. The kit does not sandbox it. The `ci` and `build` jobs hold no secret, and the lockfile check keeps unknown packages out (10.3).
 - **Third-party code.** A declared origin with the `script` directive runs code that the kit never sees. It turns Trusted Types off, and its bytes are in no budget (9.4).
-- **Platform dependence.** The kit depends on `page-ssr` order, the `build:done` inserts and i18n side effects. The spikes run in every real-site run, and the weekly canary builds the test site against `astro@latest`.
-- **Proof in another repository.** The kit has unit tests only, and the build-level proof lives in `raess-dev/astro-kit-test`. So a kit PR that needs a site change needs a paired branch with the same name there (11.1).
+- **Platform dependence.** The kit depends on `page-ssr` order, the `build:done` inserts and i18n side effects. The spikes run in every acceptance run, and the weekly canary runs the acceptance suite with `astro@latest`.
+- **Delivery is proven late.** The acceptance suite proves the config, build and browser rules on every pull request. The site workflow, the rulesets, the deploy and the smoke and zone rules need a real site repository and real accounts. Before `0.1.0` only unit tests cover them (14.1). Their first real proof is the rehearsal of M13 (13.3).
 - **One 404 page.** Version 1 builds one 404 page for all locales. The locked `build.format: 'directory'` writes `src/pages/<code>/404.astro` to `/<code>/404/index.html`, which is an ordinary page. A visitor on `/fr/` who hits a missing URL sees the shared page, which greets every language.
 - **Protected files change only through the owner.** `.github/**`, `wrangler.jsonc` and `.npmrc` are renderings of the kit (4.2). An agent cannot push them. When they are stale, the owner starts the protected task (10.6).
 - **One host, one forge.** The kit supports Cloudflare Workers and GitHub only (1.6).
@@ -3286,7 +3337,7 @@ Each item is a CI job or a file that a test reads. No item needs a person to rea
 
 ## 16. Owner steps
 
-Most steps here are account actions in a web page, decisions or approvals. No step needs the owner to read code. Four steps use a terminal, with commands that this document gives exactly: the placeholder and the trusted publisher (11.4), the approval of a kit version (11.3), and the deploy key of a site (below). An agent cannot do these four, because they need the owner's 2FA or a private key.
+Most steps here are account actions in a web page, decisions or approvals. No step needs the owner to read code. Four steps use a terminal, with commands that this document gives exactly: the name claim and the trusted publisher (11.4), the approval of a kit version (11.3), and the deploy key of a site (below). An agent cannot do these four, because they need the owner's 2FA or a private key.
 
 **Accounts.**
 
@@ -3295,7 +3346,7 @@ Most steps here are account actions in a web page, decisions or approvals. No st
 
 **The agent account.**
 
-- Create one GitHub user account for the coding agents, for example `raess-agent`. Make it a member of the organization with the write role on the kit, the test repository, the feedback repository and every site repository. It is never an organization owner or a repository admin, and no `CODEOWNERS` file names it.
+- Create one GitHub user account for the coding agents, for example `raess-agent`. Make it a member of the organization with the write role on the kit repository, the rehearsal repository, the feedback repository and every site repository. It is never an organization owner or a repository admin, and no `CODEOWNERS` file names it.
 - Connect every coding-agent product (Claude Code, Codex and others) to GitHub as this account. Never connect one as your own account: your approval counts only because no agent can act as you.
 - Set the organization variable `KIT_AGENTS` to a JSON array of the logins whose pull requests CI may merge, for example `["raess-agent"]`.
 
@@ -3319,19 +3370,18 @@ Most steps here are account actions in a web page, decisions or approvals. No st
 **Kit repository.**
 
 - Repository variables `KIT_OWNER` and `KIT_AGENTS`.
-- A branch ruleset on `main` with `deletion`, `non_fast_forward`, the `pull_request` rule of 10.2 (code-owner review) and the required checks `kit / test` and `kit / scan`, and from M3 on also `kit / real-site`. The repository has no push ruleset (11.1).
-- The trusted publisher of 11.4.
+- A branch ruleset on `main` with `deletion`, `non_fast_forward`, the `pull_request` rule of 10.2 (code-owner review) and the required checks `kit / test`, `kit / scan` and `kit / acceptance`. The repository has no push ruleset (11.1).
+- No secret for the checks: the `test`, `acceptance` and `scan` jobs need none (11.1).
+- The name claim and the trusted publisher of 11.4. The trusted publisher comes last, when the release PR is ready: npm lets it expire after two days without a publish.
 - The secret `KIT_FLEET_TOKEN`: a fine-grained token with Contents read on every site repository and the organization permission Custom properties read (11.2).
 
-**Test repository** (`raess-dev/astro-kit-test`, 14.2).
+**Rehearsal repository** (`raess-dev/astro-kit-test`, 13.3).
 
-- Create it before milestone M1, private or public.
-- Before M1, a branch ruleset on its `main`: `deletion`, `non_fast_forward`, the `pull_request` rule of 10.2 and the required check `acceptance`. It stays when `kit-site=true` is set later, so that both `acceptance` and `site / ci` are required.
-- While it is private, create a fine-grained token: resource owner `raess-dev`, repository access `raess-dev/astro-kit-test` only, permission Contents read. In `raess-dev/astro-kit`, save it as the Actions secret `KIT_TEST_REPO_TOKEN` and as the Dependabot secret `KIT_TEST_REPO_TOKEN`. Rotate it before it expires. A public test repository needs no token.
-- While the kit repository is private, create the same kind of token for `raess-dev/astro-kit` and save it in the test repository as the Actions secret `KIT_REPO_TOKEN` and as the Dependabot secret `KIT_REPO_TOKEN`.
-- Its site is the fictitious Hotel Lärchenwald. The builder writes its content, facts and legal texts as samples, so none of them waits for you.
-- Give it a production domain before milestone M3. The site goes live on it at M13.
-- After `0.1.0` (11.4, step 6), set its custom property `kit-site=true`. Then do the per-site steps below for its production domain, and the rehearsal of 13.3 with the agent.
+- A repository with this name exists already. It holds the test site and the suite of an earlier design, which nothing uses any more. Before milestone M13, delete it and create a new private repository with the same name. Let GitHub add a README, so that the branch `main` exists: the init pull request needs it as its base. Add nothing else until M13: no other file, no ruleset, no secret and no custom property. No CI job of the kit repository reads it, so it needs no token.
+- The kit repository needs no secret to reach this repository. Remove any Actions or Dependabot secret that the earlier design added there for a second repository: no workflow reads one.
+- Its site is the fictitious Hotel Lärchenwald. The builder writes its content, facts and legal texts as samples in `test/site/` of the kit repository, so none of them waits for you.
+- Give it a production domain at M13. Until then nothing needs a domain: the test site uses the provisional host `laerchenwald.example`.
+- At M13, after `0.1.0`: merge the init pull request of the agent by hand. Then set the custom property `kit-site=true`, do the per-site steps below for the production domain, and do the rehearsal of 13.3 with the agent.
 
 **Per site, after the init PR merges.**
 

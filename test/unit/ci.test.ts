@@ -221,13 +221,13 @@ const BIN_CASES: readonly BinCase[] = [
   {
     name: 'another package does not count',
     files: fakeTool('tool', 'cli.mjs'),
-    pkg: 'astro-kit-test-no-such-tool',
+    pkg: 'astro-kit-no-such-tool',
     want: undefined,
   },
   {
     name: 'no node_modules folder',
     files: { 'astro-kit.json': '{}' },
-    pkg: 'astro-kit-test-no-such-tool',
+    pkg: 'astro-kit-no-such-tool',
     want: undefined,
   },
 ];
@@ -489,13 +489,13 @@ test('runTool finds the tool of a folder above the root and runs it in the root'
 test('runTool: a package that is not installed prints the message of 6.4 and gives 1', async () => {
   const seen = await inTempAsync(fakeTool('tool', 'bin/tool.mjs'), async (root) => {
     const seenIo = recorder({ [SUMMARY_VARIABLE]: join(root, SUMMARY_FILE) });
-    const code = await runTool(root, 'astro-kit-test-no-such-tool', ['build'], seenIo.io);
+    const code = await runTool(root, 'astro-kit-no-such-tool', ['build'], seenIo.io);
     return { code, out: seenIo.out(), err: seenIo.err(), summary: textOf(join(root, SUMMARY_FILE)) };
   });
   assert.deepEqual(seen, {
     code: 1,
     out: '',
-    err: 'astro-kit: astro-kit-test-no-such-tool is not installed; run npm ci --ignore-scripts\n',
+    err: 'astro-kit: astro-kit-no-such-tool is not installed; run npm ci --ignore-scripts\n',
     summary: undefined,
   });
 });

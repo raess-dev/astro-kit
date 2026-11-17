@@ -1,5 +1,7 @@
+# Installed packages and build folders, at any depth: the ones of the kit and the ones of the test site.
 node_modules/
 dist/
-*.tgz
 .astro/
 .wrangler/
+# A packed kit.
+*.tgz

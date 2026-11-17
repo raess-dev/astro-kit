@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { browse, build, cspMeta, read, record, standIn, type ConsoleMessage, type StandIn } from '../harness.ts';
+import { browse, build, type ConsoleMessage, cspMeta, read, record, type StandIn, standIn } from '../harness.ts';
 import type { Served } from '../serve.ts';
 import { PERMISSIONS_POLICY, PNG, page, project } from './project.ts';
 
@@ -42,7 +42,10 @@ const PROBE = `(() => {
 const seenBy = (server: Served): Seen[] =>
   server.received
     .filter((request) => request.path !== '/favicon.ico')
-    .map((request) => ({ path: request.path, purpose: [request.headers['sec-purpose']].flat().join(',') || undefined }));
+    .map((request) => ({
+      path: request.path,
+      purpose: [request.headers['sec-purpose']].flat().join(',') || undefined,
+    }));
 
 /** Waits until `ready()` holds. A speculative load starts some time after the hover, so the spike never sleeps blind. */
 async function until(ready: () => boolean, ms = 15_000): Promise<boolean> {
@@ -119,10 +122,17 @@ test('S8: the speculation block inserted in build:done passes the CSP in Chromiu
     await tab.hover('#api');
     assert.equal(await until(() => seen().length > 1, 1000), false, 'a link under /api/ starts no load');
     await tab.hover('#next');
-    assert.ok(await until(() => seen().some((request) => request.path === '/next/')), 'the hover starts a load of /next/');
+    assert.ok(
+      await until(() => seen().some((request) => request.path === '/next/')),
+      'the hover starts a load of /next/',
+    );
     const speculative = seen().filter((request) => request.path !== '/');
     const purpose = speculative[0]?.purpose;
-    assert.deepEqual(speculative, [{ path: '/next/', purpose: 'prefetch;prerender' }], 'one prerender, of the matched link');
+    assert.deepEqual(
+      speculative,
+      [{ path: '/next/', purpose: 'prefetch;prerender' }],
+      'one prerender, of the matched link',
+    );
     record('S8.secPurpose', purpose);
 
     assert.deepEqual(await tab.evaluate(() => (window as unknown as { __s8: string[] }).__s8), [], 'no CSP violation');
@@ -133,7 +143,8 @@ test('S8: the speculation block inserted in build:done passes the CSP in Chromiu
       [],
       'Chromium knows every other feature of the Permissions-Policy header',
     );
-    if (unknown.length > 0) t.diagnostic(`S8: this Chromium does not know the Permissions-Policy feature ${unknown.join(', ')}`);
+    if (unknown.length > 0)
+      t.diagnostic(`S8: this Chromium does not know the Permissions-Policy feature ${unknown.join(', ')}`);
 
     // The header CSP is in force on this page: Trusted Types refuses a string at an HTML sink.
     const sink = await tab.evaluate(() => {
@@ -155,7 +166,10 @@ test('S8: the speculation block inserted in build:done passes the CSP in Chromiu
     const violations = await tab.evaluate(() => (window as unknown as { __s8: string[] }).__s8);
     assert.deepEqual(violations, ['script-src-elem inline'], 'a block that the CSP does not name is a violation');
     // The wording of the message changes between Chromium versions. The name of the policy stays.
-    assert.ok(consoleErrors.some((text) => text.includes('Content Security Policy')), 'and a console error');
+    assert.ok(
+      consoleErrors.some((text) => text.includes('Content Security Policy')),
+      'and a console error',
+    );
     assert.equal(await until(() => seen().length > before + 1, 1500), false, 'and its rules start no load');
     record('S8.blockedDirective', violations[0]);
   } finally {

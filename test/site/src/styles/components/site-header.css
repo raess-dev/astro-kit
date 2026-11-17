@@ -33,10 +33,14 @@
       fill: var(--color-brand);
     }
 
+    /*
+     * The first lines of the items share one baseline: the label of the mode switch sits inside a border, and the
+     * language links do not. The baseline of the closed switch is also that of the open one, so nothing moves.
+     */
     .site-header__tools {
       display: flex;
       flex-wrap: wrap;
-      align-items: start;
+      align-items: baseline;
       gap: var(--space-1) var(--space-4);
     }
 

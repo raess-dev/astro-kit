@@ -1,12 +1,13 @@
 /**
  * The harness of the acceptance suite (specification, 14.2).
- * - The base copy: the repository's working tree in a temp folder, with its packages installed once. With
- *   `KIT_TARBALL` it holds the packed kit too.
+ * - The packed kit: the file of `KIT_TARBALL`, else the kit of this checkout, which the harness builds and packs.
+ * - The base copy: a copy of the test site `test/site/` in a temp folder, with its packages, the pins of the suite
+ *   and the packed kit installed once.
  * - Case folders under `<base>/cases/<name>/`. Node, Astro and the kit walk up to `<base>/node_modules` for every
  *   package. A spike starts from an empty folder (`caseDir`). A site case starts from a copy of the site (`siteCase`).
  * - Runners for the kit CLI (`run`), Astro, a static server, Chromium, and the file of measured values.
  */
-import assert from 'node:assert/strict';
+import { AssertionError } from 'node:assert';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -24,19 +25,24 @@ import {
 } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { serve as serveDist, type Served, type ServeOptions } from './serve.ts';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { isDeepStrictEqual, stripVTControlCharacters } from 'node:util';
+import { type Served, type ServeOptions, serve as serveDist } from './serve.ts';
 
-export const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '');
-export const KIT_DIR = join(ROOT, 'test/kit');
+/** The repository root: the checkout of the kit. */
+export const REPO = resolve(import.meta.dirname, '../..');
+/** The test site: one complete kit project. */
+export const SITE = join(REPO, 'test/site');
+/** The stand-in integration of the spikes. It is not the kit. */
+export const STAND_IN = join(import.meta.dirname, 'kit');
 
 /**
- * The pins of section 2 that the base copy installs, and that are never in `package.json`.
+ * The pins of section 2 that the base copy installs, and that are never in the `package.json` of the site.
  * `@cloudflare/vite-plugin` is not a pin of section 2. The adapter asks for the range `^1.67.0` of it, and no lockfile
  * holds the adapter's tree before M7. The plugin brings its own wrangler, which writes the built Worker config, so a
  * new plugin release would change the config with no commit. Its own dependencies are exact versions. The pin goes
- * away at M7, when `package.json` and the lockfile hold the adapter.
+ * away at M7, when the `package.json` and the lockfile of the site hold the adapter.
  */
 export const PINS = {
   playwright: 'playwright-core@1.65.0',
@@ -45,31 +51,52 @@ export const PINS = {
   islandsLint: ['eslint@10.14.0', 'eslint-plugin-solid@0.19.0', 'typescript-eslint@8.72.2'],
 } as const;
 
-/** The top-level names of the working tree that the base copy does not take. */
-const SKIP = new Set(['.git', 'kit', 'node_modules', 'dist', '.astro', '.wrangler']);
+/** The top-level names of `test/site/` that a hand build leaves there. The base copy does not take them. */
+const BUILT = new Set(['node_modules', 'dist', '.astro', '.wrangler']);
 /** The file of the base copy that says which packed kit it holds. */
 const STAMP = 'kit-acceptance.json';
-/** The top-level names of the base copy that are not files of the working tree. */
-const OWN = new Set([...SKIP, 'cases', STAMP]);
-/** The top-level names of the base copy that are not site files: a site case does not take them. */
-const NOT_SITE = new Set([...OWN, 'test']);
+/** The top-level names of the base copy that are not site files. A refresh and a site case leave them out. */
+const OWN = new Set([...BUILT, 'cases', STAMP]);
 const NPM_FLAGS = ['--ignore-scripts', '--no-audit', '--no-fund'];
 const ASTRO_MANIFEST = 'node_modules/astro/package.json';
+const KIT_CLI = 'node_modules/@raess/astro-kit/dist/cli.js';
 
 let cached: string | undefined;
 
-const npm = (cwd: string, args: string[]): void => {
-  execFileSync('npm', args, { cwd, stdio: ['ignore', 'ignore', 'inherit'], timeout: 900_000 });
+/** Runs npm. Its stdout never reaches the stdout of a test file, which belongs to the test runner. */
+const npm = (cwd: string, args: string[], stdout: 'ignore' | 'stderr' = 'ignore'): void => {
+  execFileSync('npm', args, {
+    cwd,
+    stdio: ['ignore', stdout === 'stderr' ? 2 : 'ignore', 'inherit'],
+    timeout: 900_000,
+  });
 };
 
-/** The packed kit of `KIT_TARBALL` as an absolute path, or `undefined` when the variable is not set. */
-const tarball = (): string | undefined => (process.env.KIT_TARBALL ? resolve(process.env.KIT_TARBALL) : undefined);
-
-/** The SHA-256 of the packed kit of `KIT_TARBALL`, or `null` without one. The stamp of a base copy holds it. */
-function kitStamp(): string | null {
-  const file = tarball();
-  return file === undefined ? null : createHash('sha256').update(readFileSync(file)).digest('hex');
+/**
+ * The packed kit of the run. `KIT_TARBALL=<file>` names it. Without the variable, the harness builds the kit of this
+ * checkout and packs it into `tmp`: it removes `dist/`, then runs `npm run build` and `npm pack`, at the repository
+ * root.
+ */
+function packedKit(tmp: string): string {
+  if (process.env.KIT_TARBALL) {
+    const file = resolve(process.env.KIT_TARBALL);
+    if (!existsSync(file)) throw new Error(`kit-acceptance: KIT_TARBALL names no file: ${file}`);
+    return file;
+  }
+  // The `dist/` of an earlier build can hold the file of a module that the sources no longer have. It goes first, so
+  // that the packed kit holds only what this checkout builds.
+  rmSync(join(REPO, 'dist'), { recursive: true, force: true });
+  // `tsc` prints its errors on stdout, so a failed build shows them on stderr.
+  npm(REPO, ['run', '--silent', 'build'], 'stderr');
+  // The log level hides the list of the packed files, which npm prints on stderr.
+  npm(REPO, ['pack', '--loglevel=error', '--pack-destination', tmp]);
+  const name = readdirSync(tmp).find((entry) => entry.endsWith('.tgz'));
+  if (name === undefined) throw new Error(`kit-acceptance: npm pack wrote no .tgz file into ${tmp}`);
+  return join(tmp, name);
 }
+
+/** The SHA-256 of a packed kit. The stamp of a base copy holds it. The same kit files give the same packed kit. */
+const kitStamp = (kit: string): string => createHash('sha256').update(readFileSync(kit)).digest('hex');
 
 /** Every file under `dir` without the top-level names in `skip`, as sorted paths with `/`. */
 function filesOf(dir: string, skip: ReadonlySet<string>): string[] {
@@ -92,87 +119,111 @@ function packages(dir: string): string {
 
 /**
  * Why the base copy `dir` cannot serve this run, or `undefined` when it can. Its packages must be the ones of the
- * working tree, and with `KIT_TARBALL` its kit must be that packed kit. Without `KIT_TARBALL` the run uses the kit
- * that the base copy holds, or none.
+ * site, and its kit must be the packed kit of this run, which has the stamp `stamp`.
  */
-function unfit(dir: string): string | undefined {
-  if (packages(dir) !== packages(ROOT)) return 'its packages come from another package.json or package-lock.json';
-  const wanted = kitStamp();
-  if (wanted === null) return undefined;
-  const stamp = join(dir, STAMP);
-  const held = existsSync(stamp) ? (JSON.parse(readFileSync(stamp, 'utf8')) as { kit?: unknown }).kit : undefined;
-  return held === wanted ? undefined : 'it does not hold the packed kit of KIT_TARBALL';
-}
-
-const TSCONFIG = 'tsconfig.json';
-
-/**
- * The files of the working tree that the base copy `dir` must not hold. It is `tsconfig.json` when the base copy
- * cannot resolve its `extends`: the shim of the site extends the preset of the kit, and a base copy without
- * `KIT_TARBALL` holds no kit. Vite loads every `tsconfig.json` from a project folder up to the root of the file
- * system, also when a nearer one exists. So the file would stop the build of every spike with
- * `Tsconfig not found @raess/astro-kit/tsconfig.json`. Only the site cases need the file, and they need the kit too.
- */
-function unusable(dir: string): ReadonlySet<string> {
-  const file = join(ROOT, TSCONFIG);
-  if (!existsSync(file)) return new Set();
-  const parent = (JSON.parse(readFileSync(file, 'utf8')) as { extends?: unknown }).extends;
-  if (typeof parent !== 'string' || parent.startsWith('.')) return new Set();
-  try {
-    createRequire(join(dir, 'package.json')).resolve(parent);
-    return new Set();
-  } catch {
-    return new Set([TSCONFIG]);
-  }
+function unfit(dir: string, stamp: string): string | undefined {
+  if (packages(dir) !== packages(SITE)) return 'its packages come from another package.json or package-lock.json';
+  const file = join(dir, STAMP);
+  const held = existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as { kit?: unknown }).kit : undefined;
+  if (held === stamp) return undefined;
+  const wanted = process.env.KIT_TARBALL ? 'the one of KIT_TARBALL' : 'the kit of this checkout';
+  return `it holds another packed kit than ${wanted}`;
 }
 
 /**
- * Makes the files of a reused base copy equal to the working tree: a kept base copy is older than the site. It
- * writes only a file that differs, and it puts each file in place with one rename. So the test files of one run,
- * which are separate processes, can do it at the same time. It never touches `node_modules` or `cases`.
+ * Makes the site files of a reused base copy equal to `test/site/`: a kept base copy is older than the site. It
+ * writes only a file that differs. It never touches `node_modules`, `cases` or the stamp.
  */
 function refresh(dir: string): void {
-  const left = unusable(dir);
-  const wanted = filesOf(ROOT, SKIP).filter((file) => !left.has(file));
+  const wanted = filesOf(SITE, BUILT);
   for (const file of wanted) {
-    const source = join(ROOT, file);
+    const source = join(SITE, file);
     const target = join(dir, file);
     if (existsSync(target) && readFileSync(source).equals(readFileSync(target))) continue;
     mkdirSync(dirname(target), { recursive: true });
-    const part = `${target}.${process.pid}.part`;
-    copyFileSync(source, part);
-    renameSync(part, target);
+    copyFileSync(source, target);
   }
   const keep = new Set(wanted);
   for (const file of filesOf(dir, OWN)) {
-    // A `.part` file belongs to another process that is refreshing the same base copy.
-    if (!keep.has(file) && !file.endsWith('.part')) rmSync(join(dir, file), { force: true });
+    if (keep.has(file)) continue;
+    rmSync(join(dir, file), { force: true });
+    // The folders that the file leaves empty go too: `rmdir` works only on an empty folder.
+    try {
+      for (let folder = dirname(join(dir, file)); folder !== dir; folder = dirname(folder)) rmdirSync(folder);
+    } catch {
+      // The folder holds another file.
+    }
   }
 }
 
-/** A new base copy `<tmp>/base`: the working tree, its packages, the pins of the suite and the packed kit. */
-function makeBase(): string {
-  const tmp = mkdtempSync(join(tmpdir(), 'kit-acceptance-'));
-  const dir = join(tmp, 'base');
-  cpSync(ROOT, dir, {
+/** A new base copy in `dir`: the site, its packages, the pins of the suite and the packed kit `kit`. */
+function makeBase(dir: string, kit: string): void {
+  cpSync(SITE, dir, {
     recursive: true,
-    filter: (source) => source === ROOT || !SKIP.has(source.slice(ROOT.length + 1).split('/')[0] ?? ''),
+    filter: (source) => !BUILT.has(relative(SITE, source).split(sep)[0] ?? ''),
   });
   npm(dir, ['ci', ...NPM_FLAGS]);
   const extra: string[] = [PINS.playwright, ...PINS.islands, ...PINS.islandsLint];
-  // `@astrojs/cloudflare` joins `package.json` at M7 (specification, 14). Until then the base copy adds it.
+  // `@astrojs/cloudflare` joins the `package.json` of the site at M7 (specification, 14). Until then the base copy
+  // adds it.
   const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {
     dependencies?: Record<string, string>;
   };
   if (!manifest.dependencies?.['@astrojs/cloudflare']) extra.push(...PINS.cloudflare);
-  const kit = tarball();
-  if (kit !== undefined) extra.push(kit);
   // One command: a second `--no-save` install removes the packages of the first.
-  npm(dir, ['install', '--no-save', ...NPM_FLAGS, ...extra]);
-  for (const file of unusable(dir)) rmSync(join(dir, file), { force: true });
-  writeFileSync(join(dir, STAMP), `${JSON.stringify({ kit: kitStamp() })}\n`);
-  return tmp;
+  npm(dir, ['install', '--no-save', ...NPM_FLAGS, ...extra, kit]);
+  if (!existsSync(join(dir, KIT_CLI))) throw new Error(`kit-acceptance: the packed kit ${kit} holds no dist/cli.js`);
+  writeFileSync(join(dir, STAMP), `${JSON.stringify({ kit: kitStamp(kit) })}\n`);
 }
+
+/** What a run works in: its temp folder and its base copy. A reused base copy is not in the temp folder. */
+interface Prepared {
+  tmp: string;
+  base: string;
+}
+
+/**
+ * Prepares a run. It makes `<tmp>` with the packed kit, and then the base copy `<tmp>/base`.
+ * `KIT_ACCEPTANCE_BASE=<dir>` names a base copy of an earlier run to use instead. It must hold the packages of the
+ * site's lockfile and the packed kit of this run: else the run stops and says so. It gets the site files again, so
+ * it holds the site as it is now.
+ */
+function prepare(): Prepared {
+  const tmp = mkdtempSync(join(tmpdir(), 'kit-acceptance-'));
+  try {
+    const kit = packedKit(tmp);
+    const reuse = process.env.KIT_ACCEPTANCE_BASE ? resolve(process.env.KIT_ACCEPTANCE_BASE) : undefined;
+    if (reuse !== undefined && existsSync(join(reuse, ASTRO_MANIFEST))) {
+      const reason = unfit(reuse, kitStamp(kit));
+      if (reason !== undefined) {
+        throw new Error(
+          `kit-acceptance: the base copy ${reuse} cannot be reused: ${reason}. ` +
+            'Run once without KIT_ACCEPTANCE_BASE and with KIT_ACCEPTANCE_KEEP=1 to make a fresh one.',
+        );
+      }
+      refresh(reuse);
+      return { tmp, base: reuse };
+    }
+    const dir = join(tmp, 'base');
+    makeBase(dir, kit);
+    return { tmp, base: dir };
+  } catch (error) {
+    rmSync(tmp, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+/**
+ * A run with `KIT_ACCEPTANCE_KEEP` keeps the base copy that it made, and says where it is. The temp folder of a
+ * reused base copy holds only the packed kit, so it never stays.
+ */
+function kept(made: Prepared): boolean {
+  return Boolean(process.env.KIT_ACCEPTANCE_KEEP) && made.base === join(made.tmp, 'base');
+}
+
+const sayKept = (made: Prepared): void => {
+  process.stderr.write(`kit-acceptance: the base copy stays at ${made.base}\n`);
+};
 
 const sleep = (ms: number): void => {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -187,10 +238,37 @@ const alive = (pid: number): boolean => {
   }
 };
 
-/** The pointer file of a run: the process that makes the base copy, and the temp folder once the copy is ready. */
-interface Pointer {
+/**
+ * When the runner of this test file started, as a text. Every test file of one run reads the same text. Two
+ * processes that get the same process id, one after the other, have different texts. It is empty when the machine
+ * has neither `/proc` nor a `ps` command that knows `lstart`.
+ */
+function runnerStart(): string {
+  try {
+    // Linux: field 22 of the stat file is the start time in clock ticks. The fields follow the last `)`.
+    const stat = readFileSync(`/proc/${process.ppid}/stat`, 'utf8');
+    return stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19] ?? '';
+  } catch {
+    // The machine has no `/proc`.
+  }
+  try {
+    return execFileSync('ps', ['-o', 'lstart=', '-p', String(process.ppid)], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 10_000,
+    }).trim();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * The pointer file of a run: the runner, the process that prepares the run, and the temp folder and the base copy
+ * once they are ready.
+ */
+interface Pointer extends Partial<Prepared> {
+  runner: string;
   maker: number;
-  tmp?: string;
 }
 
 function readPointer(file: string): Pointer | undefined {
@@ -203,9 +281,18 @@ function readPointer(file: string): Pointer | undefined {
 }
 
 /**
- * Leaves the base copy of the run when this process ends. Each process that uses the copy has a file in
+ * Removes a pointer file that is left over from an earlier run. Another process of this run may have replaced it
+ * already, so the file goes only when it still holds `old`.
+ */
+function dropPointer(file: string, old: Pointer): void {
+  const now = readPointer(file);
+  if (now?.runner === old.runner && now.maker === old.maker && now.tmp === old.tmp) rmSync(file, { force: true });
+}
+
+/**
+ * Leaves the temp folder of the run when this process ends. Each process that uses the folder has a file in
  * `<tmp>/users/`. The last one removes that folder with `rmdir`, which works only on an empty folder, and then the
- * temp folder. A process that comes later cannot add its file, so it makes a new base copy.
+ * temp folder. A process that comes later cannot add its file, so it prepares a new run.
  */
 function leaveAtEnd(tmp: string, pointer: string): void {
   atEnd(() => {
@@ -222,34 +309,34 @@ function leaveAtEnd(tmp: string, pointer: string): void {
 
 /**
  * The base copy of one `node --test` run. The runner starts each test file as a process of its own, and each one
- * needs the base copy. So the first process makes it, and the others wait for it and use the same one. They find it
- * through a pointer file in the temp folder of the system, named after the runner's process id. The last process of
- * the run removes the pointer file with the base copy. With `KIT_ACCEPTANCE_KEEP` both stay, so that a test file
- * that starts later in the run finds the kept copy.
+ * needs the packed kit and the base copy. So the first process prepares the run, and the others wait for it and use
+ * the same base copy. They find it through a pointer file in the temp folder of the system, named after the runner's
+ * process id. The last process of the run removes the pointer file with the temp folder. A kept base copy stays with
+ * its pointer file, so that a test file that starts later in the run finds it.
  */
 function runBase(): string {
   const pointer = join(tmpdir(), `kit-acceptance-${process.ppid}.json`);
-  const keep = Boolean(process.env.KIT_ACCEPTANCE_KEEP);
+  const runner = runnerStart();
   const deadline = Date.now() + 2_400_000;
   for (;;) {
     let maker = false;
     try {
       // `wx` fails when the file exists, so exactly one process of the run becomes the maker.
-      writeFileSync(pointer, JSON.stringify({ maker: process.pid } satisfies Pointer), { flag: 'wx' });
+      writeFileSync(pointer, JSON.stringify({ runner, maker: process.pid } satisfies Pointer), { flag: 'wx' });
       maker = true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     }
     if (maker) {
       try {
-        const tmp = makeBase();
-        mkdirSync(join(tmp, 'users'));
-        writeFileSync(join(tmp, 'users', String(process.pid)), '');
-        writeFileSync(`${pointer}.part`, JSON.stringify({ maker: process.pid, tmp } satisfies Pointer));
+        const made = prepare();
+        mkdirSync(join(made.tmp, 'users'));
+        writeFileSync(join(made.tmp, 'users', String(process.pid)), '');
+        writeFileSync(`${pointer}.part`, JSON.stringify({ runner, maker: process.pid, ...made } satisfies Pointer));
         renameSync(`${pointer}.part`, pointer);
-        if (keep) process.stderr.write(`kit-acceptance: the base copy stays at ${join(tmp, 'base')}\n`);
-        else leaveAtEnd(tmp, pointer);
-        return join(tmp, 'base');
+        if (kept(made)) sayKept(made);
+        else leaveAtEnd(made.tmp, pointer);
+        return made.base;
       } catch (error) {
         // The next process that waits becomes the maker and shows its own error.
         rmSync(pointer, { force: true });
@@ -257,28 +344,29 @@ function runBase(): string {
       }
     }
     const state = readPointer(pointer);
-    if (state?.tmp !== undefined) {
-      const dir = join(state.tmp, 'base');
+    if (state?.tmp !== undefined && state.base !== undefined) {
+      const made: Prepared = { tmp: state.tmp, base: state.base };
       let joined = false;
       try {
-        writeFileSync(join(state.tmp, 'users', String(process.pid)), '');
-        joined = existsSync(join(dir, ASTRO_MANIFEST)) && unfit(dir) === undefined;
+        // A pointer of another runner is left over from an earlier run with the same process id.
+        if (state.runner === runner) {
+          writeFileSync(join(made.tmp, 'users', String(process.pid)), '');
+          joined = existsSync(join(made.base, ASTRO_MANIFEST));
+        }
       } catch {
-        // The folder `users` is gone: the last process of an earlier run removed the base copy.
+        // The folder `users` is gone: the last process of an earlier run removed the temp folder.
       }
       if (joined) {
-        refresh(dir);
-        if (!keep) leaveAtEnd(state.tmp, pointer);
-        return dir;
+        if (!kept(made)) leaveAtEnd(made.tmp, pointer);
+        return made.base;
       }
-      // The pointer is left over from an earlier run with the same process id. Another process of this run may
-      // have replaced it already, so only the old one is removed.
-      rmSync(join(state.tmp, 'users', String(process.pid)), { force: true });
-      if (readPointer(pointer)?.tmp === state.tmp) rmSync(pointer, { force: true });
+      if (state.runner === runner) rmSync(join(made.tmp, 'users', String(process.pid)), { force: true });
+      dropPointer(pointer, state);
       continue;
     }
-    if (state !== undefined && !alive(state.maker)) {
-      rmSync(pointer, { force: true });
+    // A maker of another runner, or one that ended before the run was ready, never finishes the pointer.
+    if (state !== undefined && (state.runner !== runner || !alive(state.maker))) {
+      dropPointer(pointer, state);
       continue;
     }
     if (Date.now() > deadline) throw new Error(`kit-acceptance: no base copy after 40 minutes; remove ${pointer}`);
@@ -288,40 +376,21 @@ function runBase(): string {
 
 /**
  * The base copy. It is made once for each run, also when the run has more than one test file.
- * `KIT_ACCEPTANCE_BASE=<dir>` reuses a base that an earlier run made with `KIT_ACCEPTANCE_KEEP=1`; that saves the
- * install while a case is written. A reused base copy gets the files of the working tree again, so it holds the site
- * as it is now. It must hold the packages of the lockfile and, with `KIT_TARBALL`, that packed kit: else the run stops
- * and says so.
+ * `KIT_ACCEPTANCE_KEEP=1` keeps it and prints its path. `KIT_ACCEPTANCE_BASE=<dir>` uses a kept one again; that
+ * saves the install while a case is written (see `prepare`).
  */
 export function base(): string {
   if (cached) return cached;
-  const reuse = process.env.KIT_ACCEPTANCE_BASE ? resolve(process.env.KIT_ACCEPTANCE_BASE) : undefined;
-  if (reuse !== undefined && existsSync(join(reuse, ASTRO_MANIFEST))) {
-    const reason = unfit(reuse);
-    if (reason !== undefined) {
-      throw new Error(
-        `kit-acceptance: the base copy ${reuse} cannot be reused: ${reason}. ` +
-          'Run once without KIT_ACCEPTANCE_BASE and with KIT_ACCEPTANCE_KEEP=1 to make a fresh one.',
-      );
-    }
-    refresh(reuse);
-    cached = reuse;
-    return reuse;
-  }
   // A child of `node --test` shares the base copy with the other test files of the run.
   if (process.env.NODE_TEST_CONTEXT) {
     cached = runBase();
     return cached;
   }
-  const tmp = makeBase();
-  const dir = join(tmp, 'base');
-  if (process.env.KIT_ACCEPTANCE_KEEP) {
-    process.stderr.write(`kit-acceptance: the base copy stays at ${dir}\n`);
-  } else {
-    atEnd(() => rmSync(tmp, { recursive: true, force: true }));
-  }
-  cached = dir;
-  return dir;
+  const made = prepare();
+  if (kept(made)) sayKept(made);
+  else atEnd(() => rmSync(made.tmp, { recursive: true, force: true }));
+  cached = made.base;
+  return made.base;
 }
 
 /** `require` from the base copy, for packages that the suite must not depend on itself (14.2). */
@@ -344,14 +413,14 @@ export function caseDir(name: string, files: Files = {}, options: { kit?: boolea
   const dir = join(base(), 'cases', name);
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
-  if (options.kit !== false) cpSync(KIT_DIR, join(dir, 'kit'), { recursive: true });
+  if (options.kit !== false) cpSync(STAND_IN, join(dir, 'kit'), { recursive: true });
   write(dir, { 'package.json': `${JSON.stringify({ name, private: true, type: 'module' }, null, 2)}\n`, ...files });
   return dir;
 }
 
 /**
  * A site case: a copy of the site in `<base>/cases/<name>/`, with one change. It takes the site files of the base
- * copy, so not `node_modules`, `cases` and `test`. `change` gets the case folder and plants what the case tests.
+ * copy, so not `node_modules`, `cases` and the stamp. `change` gets the case folder and plants what the case tests.
  */
 export function siteCase(name: string, change?: (dir: string) => void): string {
   const root = base();
@@ -360,7 +429,7 @@ export function siteCase(name: string, change?: (dir: string) => void): string {
   mkdirSync(dir, { recursive: true });
   // Entry by entry: `cpSync` refuses to copy a folder into a folder of its own.
   for (const entry of readdirSync(root)) {
-    if (!NOT_SITE.has(entry)) cpSync(join(root, entry), join(dir, entry), { recursive: true });
+    if (!OWN.has(entry)) cpSync(join(root, entry), join(dir, entry), { recursive: true });
   }
   change?.(dir);
   return dir;
@@ -417,13 +486,18 @@ export function astro(dir: string, args: string[] = ['build'], env: Record<strin
   return { status: result.status, output: `${result.stdout ?? ''}${result.stderr ?? ''}` };
 }
 
-/** The result of a kit command: the run, and the rule ids of its failing findings, sorted and without repeats. */
+/**
+ * The result of a kit command: the run, its stdout alone, and the rule ids of its failing findings, sorted and
+ * without repeats.
+ */
 export interface KitRun extends Run {
+  /** stdout alone. The passed line of a command that runs checks is its last line (specification, 6.4). */
+  stdout: string;
   ids: string[];
 }
 
-/** The entry file of the kit CLI in the base copy. The file is there only when the base copy holds a built kit. */
-export const kitCli = (): string => join(base(), 'node_modules/@raess/astro-kit/dist/cli.js');
+/** The entry file of the kit CLI in the base copy: the CLI of the packed kit. */
+export const kitCli = (): string => join(base(), KIT_CLI);
 
 /** The rule ids of the failing findings in an output (specification, 6.4), sorted and without repeats. */
 export function ruleIds(output: string): string[] {
@@ -445,8 +519,25 @@ export function run(target: string, command: string | readonly string[], env: Re
     timeout: 600_000,
     maxBuffer: 64 * 1024 * 1024,
   });
-  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
-  return { status: result.status, output, ids: ruleIds(output) };
+  const stdout = result.stdout ?? '';
+  const output = `${stdout}${result.stderr ?? ''}`;
+  return { status: result.status, stdout, output, ids: ruleIds(output) };
+}
+
+/** The passed line of the kit CLI (specification, 6.4). */
+export const PASSED_LINE = 'astro-kit: all checks passed.';
+
+/**
+ * Where the passed line stands in the result of a kit command. `last` says that it is the last line of stdout.
+ * `count` says how often the whole output holds it. A passing command that runs checks gives
+ * `{ last: true, count: 1 }`. A failing command, and a command that runs no check, gives `{ last: false, count: 0 }`.
+ */
+export function passedLine(result: KitRun): { last: boolean; count: number } {
+  const stdout = plain(result.stdout);
+  return {
+    last: stdout === `${PASSED_LINE}\n` || stdout.endsWith(`\n${PASSED_LINE}\n`),
+    count: plain(result.output).split(PASSED_LINE).length - 1,
+  };
 }
 
 /**
@@ -457,18 +548,6 @@ export function run(target: string, command: string | readonly string[], env: Re
 export function kitModule<T>(name: string): Promise<T> {
   const file = join(base(), 'node_modules/@raess/astro-kit/dist', `${name}.js`);
   return import(pathToFileURL(file).href) as Promise<T>;
-}
-
-/**
- * Why the cases that need the kit cannot run, or `undefined` when the base copy holds a built kit. The kit is there
- * with `KIT_TARBALL`, or in a reused base copy that got it. The placeholder package of npm has no CLI, so it is no
- * kit. A test file gives the reason to each of its tests as the option `skip`. So a case without a kit is skipped
- * with the reason, never failed: the spikes use no kit, and they must run before the kit can be packed.
- */
-export function noKit(): string | undefined {
-  if (existsSync(kitCli())) return undefined;
-  if (process.env.KIT_TARBALL) throw new Error(`kit-acceptance: KIT_TARBALL is set, but ${kitCli()} is missing`);
-  return 'the base copy holds no built kit; set KIT_TARBALL=<packed kit> to run this case';
 }
 
 const endings = new Set<() => void>();
@@ -509,10 +588,12 @@ export function atEnd(ending: () => void): () => void {
   };
 }
 
-/** Builds the case and fails with the build output when the build fails. */
+/** Builds the case. It throws with the end of the build output when the build fails. */
 export function build(dir: string, env: Record<string, string> = {}): Run {
   const result = astro(dir, ['build'], env);
-  assert.equal(result.status, 0, `astro build failed in ${dir}:\n${result.output.slice(-4000)}`);
+  if (result.status !== 0) {
+    throw new Error(`astro build ended with status ${result.status} in ${dir}:\n${result.output.slice(-4000)}`);
+  }
   return result;
 }
 
@@ -526,10 +607,10 @@ export const tree = (dir: string, prefix = ''): string[] =>
     )
     .sort();
 
-/** The text of a command's output without its color codes. */
-export const plain = (text: string): string => text.replace(/\u001b\[[0-9;]*m/g, '');
+/** The text of a command's output without its color codes and its other terminal control sequences. */
+export const plain = (text: string): string => stripVTControlCharacters(text);
 
-/** What a spike uses from the stand-in integration `test/kit/integration.mjs`, which is plain JavaScript. */
+/** What a spike uses from the stand-in integration `kit/integration.mjs`, which is plain JavaScript. */
 export interface StandIn {
   SPECULATION_JSON: string;
   SPECULATION_HASH: string;
@@ -539,7 +620,7 @@ export interface StandIn {
 }
 
 export const standIn = (): Promise<StandIn> =>
-  import(pathToFileURL(join(KIT_DIR, 'integration.mjs')).href) as Promise<StandIn>;
+  import(pathToFileURL(join(STAND_IN, 'integration.mjs')).href) as Promise<StandIn>;
 
 export function serve(dist: string, options: ServeOptions = {}): Promise<Served> {
   return serveDist(dist, options);
@@ -697,26 +778,37 @@ export function pixelDistance(a: Pixel, b: Pixel): number {
 export const samePixel = (a: Pixel, b: Pixel): boolean => pixelDistance(a, b) <= 1;
 
 // `KIT_SPIKES_RESULTS=<file>` sends the values to another file, for a run that must not touch the committed one.
-const RESULTS = process.env.KIT_SPIKES_RESULTS ?? join(ROOT, 'test/spikes.results.json');
+const RESULTS = process.env.KIT_SPIKES_RESULTS ?? join(import.meta.dirname, 'spikes.results.json');
 
 /**
- * Records a measured value under `key` in `test/spikes.results.json`. A new key is written. A known key must hold
- * the same value, else the spike fails: a platform fact changed. `KIT_SPIKES_WRITE=1` accepts the new value.
- * On CI (`CI` is set) a new key fails the spike: the run throws the written file away, so nothing would ever compare
- * a value that the committed file does not hold.
+ * Records a measured value under `key` in `test/acceptance/spikes.results.json`. A new key is written. A known key
+ * must hold the same value, else the spike fails with an `AssertionError` that holds both values: a platform fact
+ * changed. `KIT_SPIKES_WRITE=1` accepts the new value. On CI (`CI` is set) a new key fails the spike: the run throws
+ * the written file away, so nothing would ever compare a value that the committed file does not hold.
  */
 export function record(key: string, value: unknown): void {
   const all = existsSync(RESULTS) ? (JSON.parse(readFileSync(RESULTS, 'utf8')) as Record<string, unknown>) : {};
   const known = key in all;
-  if (known && !process.env.KIT_SPIKES_WRITE) {
-    assert.deepEqual(value, all[key], `${key} changed; run with KIT_SPIKES_WRITE=1 to accept the new value`);
-    return;
-  }
-  if (!known && process.env.CI && !process.env.KIT_SPIKES_WRITE) {
-    assert.fail(`${key} is not in test/spikes.results.json; run with KIT_SPIKES_WRITE=1 and commit the file`);
+  if (!process.env.KIT_SPIKES_WRITE) {
+    if (known && isDeepStrictEqual(value, all[key])) return;
+    if (known) {
+      throw new AssertionError({
+        message: `${key} changed; run with KIT_SPIKES_WRITE=1 to accept the new value`,
+        actual: value,
+        expected: all[key],
+        operator: 'deepStrictEqual',
+      });
+    }
+    if (process.env.CI) {
+      throw new Error(
+        `${key} is not in test/acceptance/spikes.results.json; run with KIT_SPIKES_WRITE=1 and commit the file`,
+      );
+    }
   }
   all[key] = value;
-  const sorted = Object.fromEntries(Object.entries(all).sort(([a], [b]) => a.localeCompare(b, 'en', { numeric: true })));
+  const sorted = Object.fromEntries(
+    Object.entries(all).sort(([a], [b]) => a.localeCompare(b, 'en', { numeric: true })),
+  );
   writeFileSync(RESULTS, `${JSON.stringify(sorted, null, 2)}\n`);
 }
 

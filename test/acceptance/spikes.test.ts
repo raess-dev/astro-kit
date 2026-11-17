@@ -1,7 +1,8 @@
 /**
  * The spikes of the specification, 13.2: S1 to S19. Each one proves a platform fact in a minimal Astro project that
- * the suite writes from strings. A spike uses no kit. Run: node --test test/spikes.test.ts
- * One spike alone: node --test test/spikes/s05.ts
+ * the suite writes from strings. A spike uses no kit: it uses the stand-in integration of `kit/`.
+ * Run: node --test test/acceptance/spikes.test.ts
+ * One spike alone: node --test test/acceptance/spikes/s05.ts
  */
 import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

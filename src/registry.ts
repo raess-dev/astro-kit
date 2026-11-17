@@ -375,8 +375,9 @@ export function failures(findings: readonly Finding[], rules: RuleMap = RULE_BY_
 
 /**
  * The text of a result (specification, 6.4). A failing finding has `✗`, a `warn` finding has `!`, and a waived
- * finding has `~` on one line. Only the failing findings count in the first line. With none, the last line says
- * that all checks passed.
+ * finding has `~` on one line. Only the failing findings count in the first line: with none, the text has no such
+ * line. With no finding at all, the text is empty. The text never holds the passed line of 6.4: only the command
+ * line prints that line, once (`PASSED_LINE` in `cli.ts`).
  */
 export function formatFindings(findings: readonly Finding[], rules: RuleMap = RULE_BY_ID): string {
   const count = failures(findings, rules).length;
@@ -393,7 +394,6 @@ export function formatFindings(findings: readonly Finding[], rules: RuleMap = RU
     lines.push(`    fix: ${rule.hint}`);
     lines.push(`    rule: ${DOCS_PATH}#${rule.id}`);
   }
-  if (count === 0) lines.push('astro-kit: all checks passed.');
   return lines.join('\n');
 }
 

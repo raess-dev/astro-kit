@@ -11,7 +11,7 @@ const MARKER = 'spike-s10-form';
 
 const files = {
   'src/components/Counter.tsx':
-    "import { createSignal } from 'solid-js';\n\nexport default function Counter() {\n  const [count, setCount] = createSignal(0);\n  return (\n    <button id=\"count\" type=\"button\" onClick={() => setCount(count() + 1)}>\n      {count()}\n    </button>\n  );\n}\n",
+    'import { createSignal } from \'solid-js\';\n\nexport default function Counter() {\n  const [count, setCount] = createSignal(0);\n  return (\n    <button id="count" type="button" onClick={() => setCount(count() + 1)}>\n      {count()}\n    </button>\n  );\n}\n',
   'src/pages/index.astro': page(
     'Home',
     '<p>home</p><Counter client:visible />',
@@ -97,30 +97,49 @@ const serverCode = (dir: string, folder = 'dist/server'): string =>
     )
     .join('\n');
 
-/** What a forms build with an island must give (13.1 item 16). */
-function assertBuilt(dir: string): string {
-  assert.ok(existsSync(join(dir, 'dist/client/index.html')), 'the prerendered home is in dist/client');
-  assert.ok(existsSync(join(dir, 'dist/client/fr/index.html')), 'the prerendered French home is in dist/client');
-  assert.ok(existsSync(join(dir, 'dist/client/404.html')), 'the 404 page is in dist/client');
-  assert.ok(existsSync(join(dir, 'dist/server/entry.mjs')), 'dist/server/entry.mjs exists');
-  const html = read(dir, 'dist/client/index.html');
-  const island = /<astro-island\b[^>]*>/.exec(html)?.[0] ?? '';
-  assert.ok(island.includes('client="visible"'), `the page holds an astro-island with client:visible: ${island}`);
-  assert.ok(/renderer-url="\/_astro\/[^"]+\.js"/.test(island), 'the island names the Solid client renderer');
-  assert.ok(/<button data-hk="[^"]+" id="count"[^>]*>0<\/button>/.test(html), 'Solid rendered the island on the server');
-  assert.equal(read(dir, 'dist/client/fr/index.html').includes('astro-island'), false, 'a page with no island has none');
-  assert.ok(serverCode(dir).includes(MARKER), 'the endpoint is in the server build');
-  const shim = routes(dir).filter((route) => route.origin === 'project' && !route.prerender);
-  assert.deepEqual(shim, [{ pattern: '/api/forms/[form]', origin: 'project', prerender: false }]);
-  return html;
-}
+/** The home page, which holds the island. */
+const HOME = 'dist/client/index.html';
 
 const WAIT = { timeout: 30_000 };
 
 test('S10: the forms adapter and the Solid renderer, both added from updateConfig, build one site, in either order', async () => {
   const dir = project('s10', files, options(WAYS.both), IMPORTS);
-  build(dir);
-  const html = assertBuilt(dir);
+  const other = project('s10-adapter-first', files, options(WAYS.adapterFirst), IMPORTS);
+  // What a forms build with an island must give (13.1 item 16). Each order must give it.
+  for (const [way, built] of [
+    ['both', dir],
+    ['adapterFirst', other],
+  ] as const) {
+    build(built);
+    assert.ok(existsSync(join(built, HOME)), `${way}: the prerendered home is in dist/client`);
+    assert.ok(
+      existsSync(join(built, 'dist/client/fr/index.html')),
+      `${way}: the prerendered French home is in dist/client`,
+    );
+    assert.ok(existsSync(join(built, 'dist/client/404.html')), `${way}: the 404 page is in dist/client`);
+    assert.ok(existsSync(join(built, 'dist/server/entry.mjs')), `${way}: dist/server/entry.mjs exists`);
+    const home = read(built, HOME);
+    const island = /<astro-island\b[^>]*>/.exec(home)?.[0] ?? '';
+    assert.ok(
+      island.includes('client="visible"'),
+      `${way}: the page holds an astro-island with client:visible: ${island}`,
+    );
+    assert.ok(/renderer-url="\/_astro\/[^"]+\.js"/.test(island), `${way}: the island names the Solid client renderer`);
+    assert.ok(
+      /<button data-hk="[^"]+" id="count"[^>]*>0<\/button>/.test(home),
+      `${way}: Solid rendered the island on the server`,
+    );
+    assert.equal(
+      read(built, 'dist/client/fr/index.html').includes('astro-island'),
+      false,
+      `${way}: a page with no island has none`,
+    );
+    assert.ok(serverCode(built).includes(MARKER), `${way}: the endpoint is in the server build`);
+    const shim = routes(built).filter((route) => route.origin === 'project' && !route.prerender);
+    assert.deepEqual(shim, [{ pattern: '/api/forms/[form]', origin: 'project', prerender: false }]);
+  }
+
+  const html = read(dir, HOME);
   const seen = probe(dir);
   assert.equal(seen.buildOutput, 'server', 'the on-demand route makes the build output "server"');
   assert.equal(seen.adapter, '@astrojs/cloudflare', 'config.adapter is the adapter');
@@ -129,11 +148,8 @@ test('S10: the forms adapter and the Solid renderer, both added from updateConfi
   record('S10.both', seen);
 
   // The other order gives the same client output. Only the id of the island differs between two builds.
-  const other = project('s10-adapter-first', files, options(WAYS.adapterFirst), IMPORTS);
-  build(other);
-  const otherHtml = assertBuilt(other);
   const uid = (text: string): string => text.replace(/ uid="[^"]*"/, '');
-  assert.equal(uid(otherHtml), uid(html), 'the same home page');
+  assert.equal(uid(read(other, HOME)), uid(html), 'the same home page');
   assert.deepEqual(tree(join(other, 'dist/client')), tree(join(dir, 'dist/client')), 'the same client files');
   assert.deepEqual(probe(other).integrations, ['spike-kit', '@astrojs/cloudflare', '@astrojs/solid-js', 's10-probe']);
   record('S10.adapterFirst', probe(other));
@@ -153,7 +169,11 @@ test('S10: the forms adapter and the Solid renderer, both added from updateConfi
       await tab.waitForFunction(() => document.querySelector('astro-island:not([ssr])') !== null, undefined, WAIT);
       await tab.click('#count');
       await tab.waitForFunction(() => document.querySelector('#count')?.textContent === '1', undefined, WAIT);
-      assert.deepEqual(await tab.evaluate(() => (window as unknown as { __s10: string[] }).__s10), [], 'no CSP violation');
+      assert.deepEqual(
+        await tab.evaluate(() => (window as unknown as { __s10: string[] }).__s10),
+        [],
+        'no CSP violation',
+      );
     } finally {
       await browser.close();
     }
@@ -167,14 +187,21 @@ test('S10: the forms adapter and the Solid renderer, both added from updateConfi
 function failure(dir: string): { status: number | null; error: string | null; output: string } {
   const run = astro(dir);
   const output = plain(run.output);
-  return { status: run.status, error: /\[([A-Z][A-Za-z_]+)\] /.exec(output.replace(/\[(ERROR|WARNING)\]/g, ''))?.[1] ?? null, output };
+  return {
+    status: run.status,
+    error: /\[([A-Z][A-Za-z_]+)\] /.exec(output.replace(/\[(ERROR|WARNING)\]/g, ''))?.[1] ?? null,
+    output,
+  };
 }
 
 test('S10: an adapter that is only pushed into integrations fails the build: Astro reads config.adapter', () => {
   const dir = project('s10-pushed-only', files, options(WAYS.pushedOnly), IMPORTS);
   const run = failure(dir);
   assert.notEqual(run.status, 0, 'the build fails');
-  assert.ok(run.output.includes('[NoAdapterInstalled]'), `Astro reports NoAdapterInstalled:\n${run.output.slice(-2000)}`);
+  assert.ok(
+    run.output.includes('[NoAdapterInstalled]'),
+    `Astro reports NoAdapterInstalled:\n${run.output.slice(-2000)}`,
+  );
   // The adapter's hooks ran, and the build output is "server", but `config.adapter` is empty.
   const seen = probe(dir);
   assert.equal(seen.adapter, null, 'config.adapter is empty in astro:config:done');

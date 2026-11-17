@@ -84,10 +84,9 @@ the width of the containing block, so they are for `padding` only.
 | `--space-2` | `0.5rem` | Small gaps inside a control. |
 | `--space-3` | `0.75rem` | The gap of a cluster. |
 | `--space-4` | `1rem` | The gap between paragraphs. |
-| `--space-5` | `1.5rem` | The padding of a card; the gap of a grid. |
-| `--space-6` | `2rem` | The space before an `h2` inside running text. |
+| `--space-5` | `1.5rem` | The padding of a card; the gap of a grid; the space before an `h2` or `h3` inside running text. |
+| `--space-6` | `2rem` | The padding and the column gap of a wide card; the gap between the blocks of the footer. |
 | `--space-7` | `3rem` | The padding of a section, above and below. |
-| `--space-8` | `4rem` | Large distances on wide viewports. |
 | `--space-gutter` | `clamp(1rem, 5%, 2.5rem)` | The side padding of the page (`--center-gutter`). Padding only. |
 | `--space-section` | `clamp(3rem, 9%, 7rem)` | The padding of the hero, above and below. Padding only. |
 
@@ -157,9 +156,9 @@ The site has one animation: the hero text rises once when the page opens. Nothin
 
 | Name | Width | Use |
 |---|---|---|
-| card | 30rem | A container query: a card this wide puts its heading beside its text. |
+| card | 40rem | A container query: a card this wide puts its heading beside its text. Only a card that takes a whole row is this wide. |
 | medium | 48rem | Tablets and wider: the open mode switch lies over the page and no longer pushes it down. |
-| wide | 64rem | Desktops: a grid has three columns, and the first card of the home page takes a whole row. |
+| section | 59rem | A container query: a text section this wide has three columns in its grid. The first card of the home page then takes a whole row. The width is three times `--size-card`, two times `--grid-gap` and two times the largest `--space-gutter`. |
 
 ## Layout helpers
 

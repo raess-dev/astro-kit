@@ -87,7 +87,11 @@ export function call(origin: string, path: string, options: Call = {}): Promise<
         const chunks: Buffer[] = [];
         response.on('data', (chunk: Buffer) => chunks.push(chunk));
         response.on('end', () =>
-          resolve({ status: response.statusCode ?? 0, headers: response.headers, body: Buffer.concat(chunks).toString('utf8') }),
+          resolve({
+            status: response.statusCode ?? 0,
+            headers: response.headers,
+            body: Buffer.concat(chunks).toString('utf8'),
+          }),
         );
         response.on('error', reject);
       },
@@ -186,7 +190,10 @@ export async function wranglerDev(dir: string, config = 'wrangler.jsonc'): Promi
   };
   try {
     const origin = await new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`wrangler dev was not ready in 120 s:\n${plain(output)}`)), 120_000);
+      const timer = setTimeout(
+        () => reject(new Error(`wrangler dev was not ready in 120 s:\n${plain(output)}`)),
+        120_000,
+      );
       const read = (chunk: Buffer): void => {
         output += chunk.toString('utf8');
         const ready = /Ready on (http:\/\/[^\s]+)/.exec(plain(output));
