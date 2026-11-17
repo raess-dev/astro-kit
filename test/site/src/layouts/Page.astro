@@ -1,0 +1,110 @@
+---
+/**
+ * The document of every page: the head, the skip link, the header, the one `main` and the footer.
+ * It imports no CSS. The kit adds the CSP meta, the mode script and the speculation rules to the built head.
+ *
+ * A page names its key of `src/data/routes.ts` and its locale. The layout takes the canonical URL, the
+ * alternates and the language links from the route table. The 404 page has no key: it gets `noindex` and no
+ * canonical URL, no alternates and no Open Graph data.
+ */
+import SiteFooter from '../components/SiteFooter.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SkipLink from '../components/SkipLink.astro';
+import { organizationNode, site, WEBSITE_ID } from '../data/facts.ts';
+import { DEFAULT_LOCALE, type Locale, tagOf } from '../data/locales.ts';
+import { absoluteUrl, alternatesOf, linkTo, type PageKey } from '../data/routes.ts';
+import { UI } from '../data/ui.ts';
+
+interface Props {
+  locale: Locale;
+  /** The key of the page in the route table. The 404 page has none. */
+  page?: PageKey;
+  /** The `title` element: 15 to 70 characters, unique in its locale. */
+  title: string;
+  /** The meta description: 50 to 160 characters, unique in its locale, and not a copy of another locale's. */
+  description: string;
+  /** The day of the last change to the page's content, as `YYYY-MM-DD`. It becomes `lastmod` in the sitemap. */
+  modified?: string;
+}
+
+const { locale, page, title, description, modified } = Astro.props;
+const tag = tagOf(locale);
+const text = UI[locale];
+
+/** The id of `main`, and the target of the skip link. */
+const MAIN_ID = 'content';
+
+// A route file must sit at the path of its row in the route table.
+const path = page === undefined ? undefined : linkTo(page, locale);
+if (path !== undefined && Astro.url.pathname !== path) {
+  throw new Error(
+    `The page ${page} (${locale}) is built at ${Astro.url.pathname}, but src/data/routes.ts says ${path}`,
+  );
+}
+
+const canonical = path === undefined ? undefined : absoluteUrl(path);
+const alternates = page === undefined ? [] : alternatesOf(page);
+const fallback = alternates.find((alternate) => alternate.locale === DEFAULT_LOCALE);
+
+// The JSON-LD of the page: the hotel on every page, the page itself, and the website on a home page only.
+const graph: Record<string, unknown>[] = [organizationNode()];
+if (canonical !== undefined) {
+  graph.push({
+    '@type': 'WebPage',
+    '@id': `${canonical}#webpage`,
+    url: canonical,
+    name: title,
+    description,
+    inLanguage: tag,
+    ...(modified === undefined ? {} : { dateModified: modified }),
+  });
+}
+if (page === 'home' && canonical !== undefined) {
+  graph.push({
+    '@type': 'WebSite',
+    '@id': WEBSITE_ID,
+    url: absoluteUrl(linkTo('home', DEFAULT_LOCALE)),
+    name: site.name,
+  });
+}
+// `<` is written as an escape, so that no text of the data can end the script element.
+const jsonLd = JSON.stringify({ '@context': 'https://schema.org', '@graph': graph }).replaceAll('<', '\\u003c');
+---
+
+<!doctype html>
+<html lang={tag}>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{title}</title>
+    <meta name="description" content={description}>
+    {canonical === undefined && <meta name="robots" content="noindex" />}
+    {canonical !== undefined && <link rel="canonical" href={canonical} />}
+    {alternates.map((alternate) => (
+      <link rel="alternate" hreflang={alternate.tag} href={absoluteUrl(alternate.path)} />
+    ))}
+    {fallback !== undefined && <link rel="alternate" hreflang="x-default" href={absoluteUrl(fallback.path)} />}
+    {canonical !== undefined && (
+      <>
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content={site.name} />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={description} />
+        <meta property="og:url" content={canonical} />
+        <meta property="og:locale" content={tag.replace('-', '_')} />
+      </>
+    )}
+    <link rel="icon" href="/favicon.ico" sizes="32x32">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <script type="application/ld+json" set:html={jsonLd} />
+  </head>
+  <body>
+    <SkipLink target={MAIN_ID} label={text.skipToContent} />
+    <SiteHeader locale={locale} page={page} />
+    <main id={MAIN_ID}>
+      <slot />
+    </main>
+    <SiteFooter locale={locale} />
+  </body>
+</html>

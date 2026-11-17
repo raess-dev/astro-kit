@@ -1,0 +1,8 @@
+@layer page {
+  /* On a wide viewport the first card of the grid takes a whole row, and the other three share the next one. */
+  @media (width >= 64rem) {
+    .feature-card:first-child {
+      grid-column: 1 / -1;
+    }
+  }
+}

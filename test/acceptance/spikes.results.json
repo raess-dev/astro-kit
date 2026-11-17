@@ -1,0 +1,949 @@
+{
+  "S1.astroImagesPosition": "after the global CSS",
+  "S2.shippedByPage": {
+    "/": [
+      "card",
+      "page"
+    ],
+    "/about/": [
+      "badge"
+    ],
+    "/plain/": [],
+    "/cond/": [
+      "note"
+    ],
+    "/dyn/": [
+      "lazy"
+    ],
+    "/lay/": [
+      "deep"
+    ],
+    "/many/a/": [
+      "card",
+      "badge"
+    ],
+    "/many/b/": [
+      "card",
+      "badge"
+    ],
+    "/many/c/": [
+      "card",
+      "badge"
+    ]
+  },
+  "S3.relativeImport": "inlined by Vite: one <style>, no @import left",
+  "S3.remoteImport": "a second inline <style> that starts with the @import",
+  "S4.containerVar": {
+    "status": 1,
+    "error": "Unexpected token Function(\"var\")"
+  },
+  "S4.mediaVar": {
+    "status": 1,
+    "error": "Unexpected token Function(\"var\")"
+  },
+  "S4.mediaVarLegacy": {
+    "status": 1,
+    "error": "Invalid media query"
+  },
+  "S4.mediaVarNoMinify": "builds; the prelude ships as written",
+  "S4.scopedStyle": "unlayered, top level, selector p[data-astro-cid-*]",
+  "S5.outlineWidth": {
+    "no project rule": "1px",
+    "outline-style: none": "1px",
+    "outline: none": "3px",
+    "outline: 0": "0px"
+  },
+  "S6.chunkHashesOfFiveCssFilesWithThreeImportSets": 3,
+  "S6.hashesOfOneDynamicRouteWith60Pages": 1,
+  "S6.hashesOfTwoRoutesWithIdenticalCss": 1,
+  "S6.metaBytesRaw": {
+    "plainHome": 825,
+    "plainLargest": 879,
+    "with60Home": 4065,
+    "with60Largest": 4119
+  },
+  "S6.metaSameOnEveryPage": false,
+  "S6.rawBytesPerHash": 54,
+  "S6.styleHashes.plain": {
+    "home": 4,
+    "pageWithOwnChunk": 5
+  },
+  "S6.styleHashes.with60": {
+    "home": 64,
+    "pageWithOwnChunk": 65
+  },
+  "S7.currentLocale": {
+    "404.html": "de",
+    "en/index.html": "en",
+    "en/kontakt/index.html": "en",
+    "en/location/index.html": "en",
+    "fr/index.html": "fr",
+    "fr/kontakt/index.html": "fr",
+    "fr/situation/index.html": "fr",
+    "france/x/index.html": "de",
+    "index.html": "de",
+    "kontakt/index.html": "de",
+    "lage/index.html": "de",
+    "zimmer/index.html": "de"
+  },
+  "S7.getRelativeLocaleUrl": "/fr/kontakt/",
+  "S8.blockedDirective": "script-src-elem inline",
+  "S8.secPurpose": "prefetch;prerender",
+  "S9.forms.missing": {
+    "paths": [
+      "/x/",
+      "/fr/x/",
+      "/a/b/c/",
+      "/api/x/",
+      "/x"
+    ],
+    "status": 404,
+    "body": "/404.html",
+    "cache": "public, max-age=0, must-revalidate",
+    "headerRule": {
+      "x-spike-one": "one",
+      "x-spike-two": "two words; x=1"
+    }
+  },
+  "S9.forms.workerAnswer": {
+    "path": "POST /api/forms/kontakt/",
+    "status": 200,
+    "headerRule": {}
+  },
+  "S9.forms.workerNotFound": {
+    "path": "GET /api/forms/kontakt/",
+    "status": 404,
+    "body": "/404.html",
+    "headerRule": {
+      "x-spike-one": "one",
+      "x-spike-two": "two words; x=1"
+    }
+  },
+  "S9.fr404": {
+    "status": 200,
+    "body": "/fr/404/index.html",
+    "cache": "public, max-age=0, must-revalidate"
+  },
+  "S9.headerRuleOn": {
+    "200": {
+      "x-spike-one": "one",
+      "x-spike-two": "two words; x=1"
+    },
+    "307": {
+      "x-spike-one": "one",
+      "x-spike-two": "two words; x=1"
+    },
+    "404": {
+      "x-spike-one": "one",
+      "x-spike-two": "two words; x=1"
+    },
+    "405": {
+      "x-spike-one": "one",
+      "x-spike-two": "two words; x=1"
+    }
+  },
+  "S9.htmlCacheControl": "public, max-age=0, must-revalidate",
+  "S9.missing": {
+    "paths": [
+      "/x/",
+      "/fr/x/",
+      "/a/b/c/",
+      "/fr/a/b/c/",
+      "/x",
+      "/x.png",
+      "/FR/"
+    ],
+    "status": 404,
+    "body": "/404.html",
+    "type": "text/html; charset=utf-8",
+    "cache": "public, max-age=0, must-revalidate"
+  },
+  "S9.missingAsset": {
+    "path": "/_astro/x.css",
+    "status": 404,
+    "body": "/404.html",
+    "cache": "public, max-age=31536000, immutable"
+  },
+  "S9.missingPost": {
+    "status": 405
+  },
+  "S9.nearest": {
+    "/x/": "/404.html",
+    "/de/x/": "/404.html",
+    "/fr/x/": "/fr/404.html",
+    "/fr/a/b/": "/fr/404.html"
+  },
+  "S9.own404": {
+    "path": "/404",
+    "status": 200
+  },
+  "S9.redirects": {
+    "/fr": {
+      "status": 307,
+      "location": "/fr/"
+    },
+    "/fr?a=1": {
+      "status": 307,
+      "location": "/fr/?a=1"
+    },
+    "/fr/404": {
+      "status": 307,
+      "location": "/fr/404/"
+    },
+    "/index.html": {
+      "status": 307,
+      "location": "/"
+    },
+    "/fr/index.html": {
+      "status": 307,
+      "location": "/fr/"
+    },
+    "/404.html": {
+      "status": 307,
+      "location": "/404"
+    },
+    "/404/": {
+      "status": 307,
+      "location": "/404"
+    },
+    "//x/": {
+      "status": 307,
+      "location": "/x/"
+    }
+  },
+  "S10.adapterFirst": {
+    "adapter": "@astrojs/cloudflare",
+    "integrations": [
+      "spike-kit",
+      "@astrojs/cloudflare",
+      "@astrojs/solid-js",
+      "s10-probe"
+    ],
+    "buildOutput": "server"
+  },
+  "S10.adapterOnly": {
+    "status": 1,
+    "error": "UNRESOLVED_ENTRY",
+    "adapter": "@astrojs/cloudflare",
+    "integrations": [
+      "spike-kit",
+      "@astrojs/solid-js",
+      "s10-probe"
+    ],
+    "buildOutput": "server"
+  },
+  "S10.both": {
+    "adapter": "@astrojs/cloudflare",
+    "integrations": [
+      "spike-kit",
+      "@astrojs/solid-js",
+      "s10-probe",
+      "@astrojs/cloudflare"
+    ],
+    "buildOutput": "server"
+  },
+  "S10.pushedOnly": {
+    "status": 1,
+    "error": "NoAdapterInstalled",
+    "adapter": null,
+    "integrations": [
+      "spike-kit",
+      "@astrojs/solid-js",
+      "@astrojs/cloudflare",
+      "s10-probe"
+    ],
+    "buildOutput": "server"
+  },
+  "S11.error": {
+    "status": 1,
+    "conflict": {
+      "path": "/kontakt",
+      "from": "/[slug]",
+      "winner": "/kontakt"
+    }
+  },
+  "S11.pageAndEndpointOneFile": {
+    "status": 0,
+    "conflicts": 0,
+    "winner": "page"
+  },
+  "S11.warn": {
+    "status": 0,
+    "warnings": 2,
+    "built": {
+      "/kontakt/": "static",
+      "/zimmer/": "slug",
+      "/lage/": "rest"
+    }
+  },
+  "S12.emptyFolder": "builds: exit 0, empty dist, no warning",
+  "S12.gitkeep": "builds: exit 0, empty dist, no warning, no route for .gitkeep",
+  "S12.internalRoutes": [
+    "/_server-islands/[name]",
+    "/_image",
+    "/404"
+  ],
+  "S12.noFolder": "builds: exit 0, empty dist, one warning text (Missing pages directory)",
+  "S13.attributes": {
+    "img": [
+      "alt",
+      "data-astro-image",
+      "data-astro-image-fit",
+      "data-astro-image-pos",
+      "decoding",
+      "height",
+      "loading",
+      "sizes",
+      "src",
+      "srcset",
+      "width"
+    ],
+    "imgPriority": [
+      "alt",
+      "data-astro-image",
+      "data-astro-image-fit",
+      "data-astro-image-pos",
+      "decoding",
+      "fetchpriority",
+      "height",
+      "loading",
+      "sizes",
+      "src",
+      "srcset",
+      "width"
+    ],
+    "imgMarkdown": [
+      "alt",
+      "data-astro-image",
+      "data-astro-image-pos",
+      "decoding",
+      "height",
+      "loading",
+      "sizes",
+      "src",
+      "srcset",
+      "width"
+    ],
+    "picture": [],
+    "source": [
+      "srcset",
+      "type"
+    ],
+    "sourceWithSizesProp": [
+      "sizes",
+      "srcset",
+      "type"
+    ]
+  },
+  "S13.classNames": [],
+  "S13.imagesLayerBytes": 1612,
+  "S13.sizes": {
+    "image": "(min-width: 1000px) 1000px, 100vw",
+    "markdown": "(min-width: 1000px) 1000px, 100vw"
+  },
+  "S14.output": {
+    "buildDoneDir": "dist/client",
+    "dist": [
+      "client",
+      "server"
+    ],
+    "client": [
+      ".assetsignore",
+      "_headers",
+      "index.html"
+    ],
+    "headers": "/_astro/*\n  Cache-Control: public, max-age=31536000, immutable\n",
+    "assetsignore": "wrangler.json\n.dev.vars\n",
+    "redirect": {
+      "configPath": "../../dist/server/wrangler.json",
+      "auxiliaryWorkers": []
+    }
+  },
+  "S14.preview": {
+    "keys": [
+      "agent_memory",
+      "ai_search",
+      "ai_search_namespaces",
+      "analytics_engine_datasets",
+      "artifacts",
+      "assets",
+      "cloudchamber",
+      "compatibility_date",
+      "compatibility_flags",
+      "configPath",
+      "connect",
+      "d1_databases",
+      "definedEnvironments",
+      "dev",
+      "dispatch_namespaces",
+      "durable_objects",
+      "exports",
+      "flagship",
+      "hyperdrive",
+      "jsx_factory",
+      "jsx_fragment",
+      "k2",
+      "kv_namespaces",
+      "logfwdr",
+      "main",
+      "migrations",
+      "mtls_certificates",
+      "name",
+      "no_bundle",
+      "observability",
+      "pipelines",
+      "preview_urls",
+      "previews",
+      "python_modules",
+      "queues",
+      "r2_buckets",
+      "ratelimits",
+      "routes",
+      "rules",
+      "secrets_store_secrets",
+      "send_email",
+      "services",
+      "targetEnvironment",
+      "topLevelName",
+      "triggers",
+      "unsafe_hello_world",
+      "upload_source_maps",
+      "userConfigPath",
+      "vars",
+      "vectorize",
+      "vpc_networks",
+      "vpc_services",
+      "worker_loaders",
+      "workers_dev",
+      "workflows"
+    ],
+    "targetEnvironment": "preview",
+    "name": "example-ch-preview",
+    "routes": [],
+    "workers_dev": true,
+    "preview_urls": true,
+    "send_email": [],
+    "ratelimits": [],
+    "kv_namespaces": [],
+    "previews": {},
+    "bindings": [
+      "env.ASSETS: Assets"
+    ],
+    "worker": "POST /api/forms/kontakt/ answers 200"
+  },
+  "S14.production": {
+    "keys": [
+      "agent_memory",
+      "ai_search",
+      "ai_search_namespaces",
+      "analytics_engine_datasets",
+      "artifacts",
+      "assets",
+      "cloudchamber",
+      "compatibility_date",
+      "compatibility_flags",
+      "configPath",
+      "connect",
+      "d1_databases",
+      "definedEnvironments",
+      "dev",
+      "dispatch_namespaces",
+      "durable_objects",
+      "exports",
+      "flagship",
+      "hyperdrive",
+      "jsx_factory",
+      "jsx_fragment",
+      "k2",
+      "kv_namespaces",
+      "logfwdr",
+      "main",
+      "migrations",
+      "mtls_certificates",
+      "name",
+      "no_bundle",
+      "observability",
+      "pipelines",
+      "preview_urls",
+      "previews",
+      "python_modules",
+      "queues",
+      "r2_buckets",
+      "ratelimits",
+      "routes",
+      "rules",
+      "secrets_store_secrets",
+      "send_email",
+      "services",
+      "topLevelName",
+      "triggers",
+      "unsafe_hello_world",
+      "upload_source_maps",
+      "userConfigPath",
+      "vars",
+      "vectorize",
+      "vpc_networks",
+      "vpc_services",
+      "worker_loaders",
+      "workers_dev",
+      "workflows"
+    ],
+    "name": "example-ch",
+    "routes": [
+      {
+        "pattern": "example.ch",
+        "custom_domain": true
+      }
+    ],
+    "workers_dev": false,
+    "preview_urls": false,
+    "compatibility_date": "2026-11-01",
+    "send_email": [
+      {
+        "name": "EMAIL",
+        "allowed_destination_addresses": [
+          "info@example.ch"
+        ]
+      }
+    ],
+    "ratelimits": [
+      {
+        "name": "FORM_RATE_LIMIT",
+        "namespace_id": "1001",
+        "simple": {
+          "limit": 3,
+          "period": 60
+        }
+      },
+      {
+        "name": "FORM_RATE_LIMIT_ALL",
+        "namespace_id": "1002",
+        "simple": {
+          "limit": 20,
+          "period": 60
+        }
+      }
+    ],
+    "kv_namespaces": [],
+    "previews": {},
+    "assets": {
+      "directory": "../client",
+      "not_found_handling": "404-page",
+      "html_handling": "auto-trailing-slash",
+      "run_worker_first": [
+        "/api/forms/*"
+      ],
+      "binding": "ASSETS"
+    },
+    "main": "entry.mjs",
+    "no_bundle": true
+  },
+  "S14.withoutSessionFalse": {
+    "production": {
+      "kv_namespaces": [
+        {
+          "binding": "SESSION"
+        }
+      ],
+      "previews": {
+        "kv_namespaces": [
+          {
+            "binding": "SESSION"
+          }
+        ]
+      }
+    },
+    "preview": {
+      "kv_namespaces": [
+        {
+          "binding": "SESSION"
+        }
+      ],
+      "previews": {
+        "kv_namespaces": [
+          {
+            "binding": "SESSION"
+          }
+        ]
+      },
+      "bindings": [
+        "env.SESSION: KV Namespace",
+        "env.ASSETS: Assets"
+      ]
+    }
+  },
+  "S15.firstPaint": {
+    "dataModeBeforeBody": true,
+    "dataModeBeforeStyle": true,
+    "background": "#111111",
+    "cls": 0
+  },
+  "S15.headOrder": [
+    "meta charset",
+    "meta viewport",
+    "title",
+    "meta description",
+    "link icon",
+    "meta csp",
+    "script mode",
+    "script speculationrules",
+    "style"
+  ],
+  "S16.builtTokens.setting1": "@layer tokens{:root{color-scheme:light dark;--color-page:light-dark(#fff,#111);--color-text:light-dark(#222,#eee);--color-muted:light-dark(#555,#bbb);--font-body:system-ui, sans-serif;--text-m:1rem;--space-2:.5rem;--stack-gap:var(--space-2)}:root[data-mode=light]{color-scheme:light}:root[data-mode=dark]{color-scheme:dark}:root[data-mode=contrast]{--color-text:light-dark(#000,#fff);--color-muted:light-dark(#333,#ddd)}@media (prefers-contrast:more){:root:not([data-mode]),:root[data-mode=auto]{--color-text:light-dark(#000,#fff);--color-muted:light-dark(#333,#ddd)}}}",
+  "S16.cases": 37,
+  "S16.nestedColorScheme": "decides the tokens below it",
+  "S16.oneOption.dataModeAuto": "shows T(auto, S), the contrast themes included",
+  "S16.readings.designs": 4680,
+  "S16.replacedInTheBuild": {
+    "--color-mix": "light-dark(#793f3f,#123456)",
+    "--color-mix-hue": "light-dark(oklch(81.4793% .0618126 161.106),#123456)",
+    "--color-p3": "light-dark(#ff8004,#123456)",
+    "--color-pair": "light-dark(#03edf4,#87f400)",
+    "supportsRules": 3
+  },
+  "S16.states.designs": 428,
+  "S16.states.outside": 32,
+  "S16.states.settings": 60,
+  "S16.tokenItself": "the light-dark() text, not a color",
+  "S17.bfcache": {
+    "restored": true,
+    "modeAfterPageshow": "dark",
+    "storageEventAfterRestore": true
+  },
+  "S17.prerender": {
+    "activatedWithNoDevTools": true,
+    "storageEventWhilePrerendered": true,
+    "modeAfterActivation": "dark"
+  },
+  "S17.prerenderWithDevTools": "PrerenderingDisabledByDevTools",
+  "S18.blocked": {
+    "bad-frame": [
+      "frame-src https://other.example (meta)"
+    ],
+    "bad-script": [
+      "script-src-elem https://other.example/x.js (meta)"
+    ],
+    "bad-fetch": [
+      "connect-src https://other.example/data (meta)"
+    ],
+    "cross-fetch": [
+      "connect-src https://maps.example.org/data (meta)"
+    ],
+    "cross-frame": [
+      "frame-src https://js.pay.example (meta)"
+    ],
+    "cross-script": [
+      "script-src-elem https://api.pay.example/x.js (meta)"
+    ],
+    "cross-style": [
+      "style-src-elem https://js.pay.example/v1.css (meta)"
+    ],
+    "cross-image": [
+      "img-src https://js.pay.example/logo.png (meta)"
+    ],
+    "bad-submit": [
+      "form-action https://other.example/subscribe (header)",
+      "form-action https://other.example/subscribe (meta)"
+    ],
+    "bad-script-submit": [
+      "form-action https://other.example/subscribe (header)",
+      "form-action https://other.example/subscribe (meta)"
+    ]
+  },
+  "S18.bundledScript": "inline module script, hashed by Astro",
+  "S18.declaredForm": [
+    "requestSubmit() of the bundled script",
+    "the button of the form"
+  ],
+  "S18.notBlocked": [
+    "window.open",
+    "link"
+  ],
+  "S18.trustedTypesBlocks": [
+    "require-trusted-types-for trusted-types-sink (header)"
+  ],
+  "S19.actions": {
+    "route": {
+      "pattern": "/_actions/[...path]",
+      "origin": "internal",
+      "prerender": false,
+      "entrypoint": "node_modules/astro/dist/actions/runtime/entrypoints/route.js",
+      "type": "endpoint"
+    },
+    "routed": {
+      "/_actions/ping/": {
+        "get": 404,
+        "post": 405
+      },
+      "/_actions/ping": {
+        "get": 404,
+        "post": 405
+      }
+    },
+    "worker": {
+      "/_actions/ping/": {
+        "get": 404,
+        "post": 200
+      },
+      "/_actions/ping": {
+        "get": 404,
+        "post": 404
+      },
+      "/_actions/x/": {
+        "get": 404,
+        "post": 404
+      }
+    },
+    "noList": {
+      "/_actions/ping/": {
+        "get": 404,
+        "post": 200
+      },
+      "navigation": 405
+    }
+  },
+  "S19.calls": [
+    [
+      "/",
+      "/404",
+      "/_image",
+      "/_server-islands/[name]",
+      "/api/forms/[form]"
+    ],
+    [
+      "/",
+      "/404",
+      "/_image",
+      "/_server-islands/[name]",
+      "/api/forms/[form]"
+    ]
+  ],
+  "S19.checkOrigin": {
+    "sameOrigin": 200,
+    "crossOrigin": 403,
+    "crossSite": 403,
+    "noOrigin": 200,
+    "jsonCrossOrigin": 200
+  },
+  "S19.middleware.file": {
+    "builtPage": true,
+    "shimHeader": true,
+    "pageHeader": false,
+    "routes": [
+      "/",
+      "/404",
+      "/_image",
+      "/_server-islands/[name]",
+      "/api/forms/[form]"
+    ]
+  },
+  "S19.middleware.folder": {
+    "builtPage": true,
+    "shimHeader": true,
+    "pageHeader": false,
+    "routes": [
+      "/",
+      "/404",
+      "/_image",
+      "/_server-islands/[name]",
+      "/api/forms/[form]"
+    ]
+  },
+  "S19.reach": {
+    "/": {
+      "get": 200,
+      "post": 405,
+      "worker": false
+    },
+    "/x/": {
+      "get": 404,
+      "post": 405,
+      "worker": false
+    },
+    "/api/": {
+      "get": 404,
+      "post": 405,
+      "worker": false
+    },
+    "/api/x/": {
+      "get": 404,
+      "post": 405,
+      "worker": false
+    },
+    "/api/forms": {
+      "get": 404,
+      "post": 405,
+      "worker": false
+    },
+    "/api/forms/": {
+      "get": 404,
+      "post": 404,
+      "worker": true
+    },
+    "/api/forms/contact": {
+      "get": 301,
+      "post": 308,
+      "worker": true
+    },
+    "/api/forms/contact/": {
+      "get": 404,
+      "post": 200,
+      "worker": true
+    },
+    "/api/forms/a/b/": {
+      "get": 404,
+      "post": 404,
+      "worker": true
+    },
+    "/API/forms/contact/": {
+      "get": 404,
+      "post": 405,
+      "worker": false
+    },
+    "/_actions/x": {
+      "get": 404,
+      "post": 405,
+      "worker": false
+    },
+    "/_actions/x/": {
+      "get": 404,
+      "post": 405,
+      "worker": false
+    },
+    "/_server-islands/x": {
+      "get": 404,
+      "post": 405,
+      "worker": false
+    },
+    "/_server-islands/x/": {
+      "get": 404,
+      "post": 405,
+      "worker": false
+    },
+    "/_image": {
+      "get": 404,
+      "post": 405,
+      "worker": false
+    }
+  },
+  "S19.routes": [
+    {
+      "pattern": "/",
+      "origin": "project",
+      "prerender": true,
+      "entrypoint": "src/pages/index.astro",
+      "type": "page"
+    },
+    {
+      "pattern": "/404",
+      "origin": "project",
+      "prerender": true,
+      "entrypoint": "src/pages/404.astro",
+      "type": "page"
+    },
+    {
+      "pattern": "/_image",
+      "origin": "internal",
+      "prerender": false,
+      "entrypoint": "node_modules/@astrojs/cloudflare/dist/entrypoints/image-passthrough-endpoint.js",
+      "type": "endpoint"
+    },
+    {
+      "pattern": "/_server-islands/[name]",
+      "origin": "internal",
+      "prerender": false,
+      "entrypoint": "_server-islands.astro",
+      "type": "page"
+    },
+    {
+      "pattern": "/api/forms/[form]",
+      "origin": "project",
+      "prerender": false,
+      "entrypoint": "src/pages/api/forms/[form].ts",
+      "type": "endpoint"
+    }
+  ],
+  "S19.serverIsland": {
+    "addedRoutes": [],
+    "request": "/_server-islands/Late/?e=…&p=&s=",
+    "routed": 404,
+    "worker": 200
+  },
+  "S19.static.calls": [
+    [
+      "/",
+      "/404"
+    ],
+    [
+      "/",
+      "/404",
+      "/_image",
+      "/_server-islands/[name]"
+    ]
+  ],
+  "S19.static.planted": {
+    "actions": "ActionsWithoutServerOutputError",
+    "serverIsland": "NoAdapterInstalledServerIslands",
+    "middleware": "runs in the build"
+  },
+  "S19.static.routes": [
+    {
+      "pattern": "/",
+      "origin": "project",
+      "prerender": true,
+      "entrypoint": "src/pages/index.astro",
+      "type": "page"
+    },
+    {
+      "pattern": "/404",
+      "origin": "project",
+      "prerender": true,
+      "entrypoint": "src/pages/404.astro",
+      "type": "page"
+    },
+    {
+      "pattern": "/_image",
+      "origin": "internal",
+      "prerender": false,
+      "entrypoint": "node_modules/astro/dist/assets/endpoint/dev.js",
+      "type": "endpoint"
+    },
+    {
+      "pattern": "/_server-islands/[name]",
+      "origin": "internal",
+      "prerender": false,
+      "entrypoint": "_server-islands.astro",
+      "type": "page"
+    }
+  ],
+  "S19.worker": {
+    "/_actions/x": {
+      "get": 404,
+      "post": 404
+    },
+    "/_actions/x/": {
+      "get": 404,
+      "post": 404
+    },
+    "/_server-islands/x": {
+      "get": 404,
+      "post": 404
+    },
+    "/_server-islands/x/": {
+      "get": 400,
+      "post": 404
+    },
+    "/_image": {
+      "get": 404,
+      "post": 404
+    },
+    "/_image?href=%2F_astro%2Fx.png&w=10&f=webp": {
+      "get": 404,
+      "post": 404
+    },
+    "/x/": {
+      "get": 404,
+      "post": 404
+    }
+  }
+}

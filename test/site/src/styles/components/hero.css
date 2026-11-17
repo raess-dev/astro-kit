@@ -1,0 +1,31 @@
+@layer components {
+  .hero {
+    padding-block: var(--space-section);
+    background-image: var(--gradient-hero);
+
+    --stack-gap: var(--space-5);
+
+    /* The one animation of the site. The kit switches it off for visitors who prefer reduced motion. */
+    .hero__content {
+      animation-name: hero-rise;
+      animation-duration: var(--duration-slow);
+      animation-timing-function: var(--ease-out);
+      animation-fill-mode: backwards;
+    }
+
+    .hero__eyebrow {
+      font-size: var(--text-s);
+      font-weight: var(--weight-strong);
+      letter-spacing: var(--tracking-wide);
+      text-transform: uppercase;
+      color: var(--color-title);
+    }
+  }
+
+  @keyframes hero-rise {
+    from {
+      opacity: 0;
+      translate: 0 var(--space-4);
+    }
+  }
+}

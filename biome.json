@@ -2,6 +2,9 @@
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "root": true,
   "extends": ["./config/biome.json"],
+  "files": {
+    "includes": ["!**/dist", "!**/.astro", "!**/.wrangler", "!**/node_modules", "!test/site", "!test/acceptance"]
+  },
   "overrides": [
     {
       "includes": ["css/base.css"],

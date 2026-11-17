@@ -1,0 +1,22 @@
+---
+/**
+ * A section of running text at the width of the page: headings, paragraphs, lists, and any component in between.
+ * It gives its content the rhythm of the text. A legal page is one text section, and a home page has several.
+ */
+import '../styles/components/text-section.css';
+
+interface Props {
+  /** The id of the section, when a link of the page leads to it. */
+  id?: string;
+  /** The language tag of the section, when it is not the language of the page. */
+  lang?: string;
+}
+
+const { id, lang } = Astro.props;
+---
+
+<section class="text-section" id={id} lang={lang}>
+  <div class="center stack">
+    <slot />
+  </div>
+</section>

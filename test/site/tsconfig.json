@@ -1,0 +1,5 @@
+{
+  "extends": "@raess/astro-kit/tsconfig.json",
+  "include": [".astro/types.d.ts", "**/*"],
+  "exclude": ["dist", "node_modules"]
+}

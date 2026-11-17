@@ -1,0 +1,23 @@
+---
+/**
+ * A card with a heading and a short text, for a grid of offers. A wide card puts its heading beside its text:
+ * the card is a container, and a container query asks for its own width.
+ */
+import '../styles/components/feature-card.css';
+
+interface Props {
+  /** The text of the card's `h3`. */
+  title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<article class="feature-card">
+  <div class="feature-card__body">
+    <h3>{title}</h3>
+    <div class="stack">
+      <slot />
+    </div>
+  </div>
+</article>

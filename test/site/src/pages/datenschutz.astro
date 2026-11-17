@@ -1,0 +1,104 @@
+---
+import TextSection from '../components/TextSection.astro';
+import { mailHref, site } from '../data/facts.ts';
+import { UI } from '../data/ui.ts';
+import Page from '../layouts/Page.astro';
+
+const locale = 'de';
+const text = UI[locale];
+---
+
+<Page
+  locale={locale}
+  page="privacy"
+  title="Datenschutzerklärung – Hotel Lärchenwald"
+  description="Welche Personendaten beim Besuch dieser Website anfallen, wer sie für uns bearbeitet und welche Rechte Ihnen das Schweizer Datenschutzgesetz gibt."
+  modified="2026-11-13"
+>
+  <TextSection>
+    <h1>Datenschutz</h1>
+    <p class="lede">
+      Wir bearbeiten so wenige Personendaten wie möglich. Diese Erklärung sagt, welche Daten beim Besuch dieser Website
+      anfallen, wozu wir sie brauchen und welche Rechte Sie haben. Sie richtet sich nach dem Schweizer Datenschutzgesetz
+      (DSG).
+    </p>
+
+    <h2>Verantwortliche</h2>
+    <p>Verantwortlich für die Bearbeitung Ihrer Personendaten ist:</p>
+    <address>
+      {site.legalName}<br>
+      {site.address.street}<br>
+      {site.address.postalCode}
+      {site.address.locality}<br>
+      {text.email}{text.colon} <a href={mailHref(site.email)}>{site.email}</a>
+    </address>
+
+    <h2>Besuch der Website</h2>
+    <p>
+      Diese Website wird über das Netzwerk von Cloudflare ausgeliefert. Wenn Sie eine Seite aufrufen, bearbeitet
+      Cloudflare in unserem Auftrag technische Daten, die Ihr Browser bei jedem Aufruf sendet:
+    </p>
+    <ul>
+      <li>Ihre IP-Adresse,</li>
+      <li>die Kennung Ihres Browsers und Ihres Betriebssystems (User-Agent),</li>
+      <li>die Adresse der aufgerufenen Seite (URL).</li>
+    </ul>
+    <p>
+      Cloudflare braucht diese Daten, um Ihnen die Seite zu senden und um die Website vor Angriffen zu schützen. Wir
+      selbst werten diese Daten nicht aus und verbinden sie nicht mit Ihrer Person.
+    </p>
+
+    <h2>Auftragsbearbeiterin und Bekanntgabe ins Ausland</h2>
+    <p>
+      Auftragsbearbeiterin ist die Cloudflare, Inc., 101 Townsend Street, San Francisco, CA 94107, USA. Cloudflare
+      bearbeitet die Daten in Rechenzentren auf der ganzen Welt, auch in den USA. Die Bekanntgabe in die USA stützt sich
+      auf das <span lang="en">Swiss-U.S. Data Privacy Framework</span> und auf das
+      <span lang="en">EU-U.S. Data Privacy Framework</span>, unter denen Cloudflare zertifiziert ist.
+    </p>
+
+    <h2>Vorschau neuer Seiten</h2>
+    <p>
+      Bevor wir neue Seiten veröffentlichen, prüfen wir sie in einer geschützten Vorschau. Der Zugang läuft über
+      Cloudflare Access: Wer eine Vorschau öffnen will, gibt seine E-Mail-Adresse an und erhält dorthin einen einmaligen
+      Code. Das betrifft nur Personen, die wir zur Prüfung einladen, nicht die Besucherinnen und Besucher dieser
+      Website.
+    </p>
+
+    <h2>Cookies, Statistik und Darstellung</h2>
+    <p>
+      Diese Website setzt keine Cookies und führt keine Besucherstatistik. Wir erstellen keine Profile und verfolgen
+      nicht, welche Seiten Sie ansehen.
+    </p>
+    <p>
+      Wenn Sie oben auf der Seite die Darstellung wählen (hell, dunkel oder mehr Kontrast), speichert Ihr Browser diese
+      Wahl auf Ihrem Gerät. Sie wird nicht an uns oder an Dritte übermittelt. Sie können sie jederzeit ändern oder in
+      den Einstellungen Ihres Browsers löschen.
+    </p>
+
+    <h2>Kontakt per E-Mail oder Telefon</h2>
+    <p>
+      Wenn Sie uns schreiben oder anrufen, bearbeiten wir Ihre Angaben, um Ihre Anfrage zu beantworten und eine Buchung
+      vorzubereiten. Wir geben sie nicht weiter und bewahren sie nur so lange auf, wie es für die Anfrage, die Buchung
+      und die gesetzlichen Aufbewahrungspflichten nötig ist.
+    </p>
+
+    <h2>Ihre Rechte</h2>
+    <p>
+      Sie können von uns Auskunft darüber verlangen, welche Personendaten wir über Sie bearbeiten. Sie können verlangen,
+      dass wir unrichtige Daten berichtigen, Daten löschen oder Ihnen Ihre Daten in einem gängigen Format herausgeben.
+      Schreiben Sie uns dafür an <a href={mailHref(site.email)}>{site.email}</a>. Wir antworten innert 30 Tagen.
+    </p>
+    <p>
+      Sind Sie mit unserer Antwort nicht einverstanden, können Sie sich an den Eidgenössischen Datenschutz- und
+      Öffentlichkeitsbeauftragten (EDÖB) in Bern wenden.
+    </p>
+
+    <h2>Änderungen dieser Erklärung</h2>
+    <p>
+      Wir passen diese Erklärung an, wenn sich die Website oder das Recht ändert. Es gilt die Fassung, die hier
+      veröffentlicht ist.
+    </p>
+
+    <p><small>Stand: 13. November 2026</small></p>
+  </TextSection>
+</Page>

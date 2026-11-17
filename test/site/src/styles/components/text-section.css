@@ -1,0 +1,15 @@
+@layer components {
+  .text-section {
+    padding-block: var(--space-7);
+
+    /* Two sections in a row share one distance, not two. */
+    & + .text-section {
+      padding-block-start: 0;
+    }
+
+    /* A heading belongs to the text after it: more space before it than after it. */
+    :is(h2, h3):not(:first-child) {
+      margin-block-start: var(--space-5);
+    }
+  }
+}

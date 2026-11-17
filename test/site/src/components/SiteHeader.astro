@@ -1,0 +1,53 @@
+---
+/**
+ * The header of every page: the brand name as a link to the home page of the locale, the language links and the
+ * mode switch. Without a page (the 404 page), every language link leads to the home page of its locale.
+ */
+import '../styles/components/site-header.css';
+import { site } from '../data/facts.ts';
+import type { Locale } from '../data/locales.ts';
+import { languageLinks, linkTo, type PageKey } from '../data/routes.ts';
+import { UI } from '../data/ui.ts';
+import ModeSwitch from './ModeSwitch.astro';
+
+interface Props {
+  locale: Locale;
+  page: PageKey | undefined;
+}
+
+const { locale, page } = Astro.props;
+const text = UI[locale];
+const languages = languageLinks(page, locale);
+---
+
+<header class="site-header">
+  <div class="site-header__inner center">
+    <a class="site-header__brand" href={linkTo('home', locale)}>
+      <svg class="site-header__mark" viewBox="0 0 32 32" width="32" height="32" aria-hidden="true">
+        <path d="M16 2l5.5 9H19l5 7.5h-3l5.5 8h-9V30h-3v-3.5h-9l5.5-8H8l5-7.5h-2.5z"></path>
+      </svg>
+      {site.name}
+    </a>
+    <div class="site-header__tools">
+      <nav aria-label={text.languageNav}>
+        <ul class="site-header__languages">
+          {languages.map((language) => (
+            <li>
+              <a
+                class="site-header__language"
+                href={language.path}
+                lang={language.tag}
+                hreflang={language.tag}
+                aria-current={language.current ? 'page' : undefined}
+              >
+                {language.locale.toUpperCase()}
+                <span class="visually-hidden">– {language.name}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+      <ModeSwitch locale={locale} />
+    </div>
+  </div>
+</header>

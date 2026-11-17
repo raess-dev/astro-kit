@@ -1,0 +1,17 @@
+---
+/**
+ * The skip link: the first focusable element of every page. The kit class `visually-hidden` hides it until it
+ * has the focus.
+ */
+import '../styles/components/skip-link.css';
+
+interface Props {
+  /** The id of the page's `main` element. */
+  target: string;
+  label: string;
+}
+
+const { target, label } = Astro.props;
+---
+
+<a class="skip-link visually-hidden" href={`#${target}`}>{label}</a>

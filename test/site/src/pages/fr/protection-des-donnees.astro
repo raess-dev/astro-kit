@@ -1,0 +1,105 @@
+---
+import TextSection from '../../components/TextSection.astro';
+import { mailHref, site } from '../../data/facts.ts';
+import { UI } from '../../data/ui.ts';
+import Page from '../../layouts/Page.astro';
+
+// French typography: `&#8239;` is the narrow no-break space before a colon.
+const locale = 'fr';
+const text = UI[locale];
+---
+
+<Page
+  locale={locale}
+  page="privacy"
+  title="Déclaration de protection des données – Hotel Lärchenwald"
+  description="Les données personnelles traitées lors de votre visite sur ce site, le sous-traitant qui s’en charge et les droits que vous donne la loi suisse (LPD)."
+  modified="2026-11-13"
+>
+  <TextSection>
+    <h1>Protection des données</h1>
+    <p class="lede">
+      Nous traitons aussi peu de données personnelles que possible. Cette déclaration indique quelles données sont
+      traitées lorsque vous visitez ce site, à quoi elles nous servent et quels sont vos droits. Elle se fonde sur la
+      loi fédérale sur la protection des données (LPD).
+    </p>
+
+    <h2>Responsable du traitement</h2>
+    <p>Le responsable du traitement de vos données personnelles est{text.colon}</p>
+    <address>
+      {site.legalName}<br>
+      {site.address.street}<br>
+      {site.address.postalCode}
+      {site.address.locality}<br>
+      {text.email}{text.colon} <a href={mailHref(site.email)}>{site.email}</a>
+    </address>
+
+    <h2>Visite du site</h2>
+    <p>
+      Ce site vous est transmis par le réseau de Cloudflare. Lorsque vous ouvrez une page, Cloudflare traite pour notre
+      compte des données techniques que votre navigateur envoie à chaque requête&#8239;:
+    </p>
+    <ul>
+      <li>votre adresse IP,</li>
+      <li>l’identifiant de votre navigateur et de votre système d’exploitation (agent utilisateur),</li>
+      <li>l’adresse de la page demandée (URL).</li>
+    </ul>
+    <p>
+      Cloudflare a besoin de ces données pour vous transmettre la page et pour protéger le site contre les attaques.
+      Pour notre part, nous n’exploitons pas ces données et ne les relions pas à votre personne.
+    </p>
+
+    <h2>Sous-traitant et communication à l’étranger</h2>
+    <p>
+      Le sous-traitant est Cloudflare, Inc., 101 Townsend Street, San Francisco, CA 94107, États-Unis. Cloudflare traite
+      les données dans ses centres de données du monde entier, y compris aux États-Unis. La communication vers les
+      États-Unis repose sur le cadre de protection des données entre la Suisse et les États-Unis (<span lang="en"
+        >Swiss-U.S. Data Privacy Framework</span
+      >) et sur celui entre l’Union européenne et les États-Unis (<span lang="en">EU-U.S. Data Privacy Framework</span
+      >), au titre desquels Cloudflare est certifiée.
+    </p>
+
+    <h2>Aperçu des nouvelles pages</h2>
+    <p>
+      Avant de publier de nouvelles pages, nous les vérifions dans un aperçu protégé. L’accès passe par Cloudflare
+      Access&#8239;: la personne qui veut ouvrir un aperçu indique son adresse e-mail et y reçoit un code à usage
+      unique. Cela ne concerne que les personnes que nous invitons à relire les pages, et non les visiteuses et
+      visiteurs de ce site.
+    </p>
+
+    <h2>Cookies, statistiques et affichage</h2>
+    <p>
+      Ce site ne dépose aucun cookie et ne tient aucune statistique de fréquentation. Nous n’établissons aucun profil et
+      ne suivons pas les pages que vous consultez.
+    </p>
+    <p>
+      Si vous choisissez l’affichage en haut de la page (clair, sombre ou contraste élevé), votre navigateur enregistre
+      ce choix sur votre appareil. Il n’est transmis ni à nous ni à des tiers. Vous pouvez le modifier à tout moment ou
+      l’effacer dans les réglages de votre navigateur.
+    </p>
+
+    <h2>Contact par e-mail ou par téléphone</h2>
+    <p>
+      Lorsque vous nous écrivez ou nous appelez, nous traitons vos indications pour répondre à votre demande et préparer
+      une réservation. Nous ne les communiquons à personne et ne les conservons que le temps nécessaire à la demande, à
+      la réservation et au respect des obligations légales de conservation.
+    </p>
+
+    <h2>Vos droits</h2>
+    <p>
+      Vous pouvez nous demander quelles données personnelles nous traitons à votre sujet. Vous pouvez aussi demander la
+      rectification de données inexactes, l’effacement de données ou la remise de vos données dans un format courant.
+      Écrivez-nous pour cela à <a href={mailHref(site.email)}>{site.email}</a>. Nous répondons dans un délai de 30
+      jours.
+    </p>
+    <p>
+      Si notre réponse ne vous convient pas, vous pouvez vous adresser au Préposé fédéral à la protection des données et
+      à la transparence (PFPDT), à Berne.
+    </p>
+
+    <h2>Modifications de cette déclaration</h2>
+    <p>Nous adaptons cette déclaration lorsque le site ou le droit change. La version publiée ici fait foi.</p>
+
+    <p><small>État au 13 novembre 2026</small></p>
+  </TextSection>
+</Page>

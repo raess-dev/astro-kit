@@ -1,0 +1,75 @@
+---
+import TextSection from '../../components/TextSection.astro';
+import { formatPhone, mailHref, site, telHref, vatId } from '../../data/facts.ts';
+import { UI } from '../../data/ui.ts';
+import Page from '../../layouts/Page.astro';
+
+const locale = 'en';
+const text = UI[locale];
+---
+
+<Page
+  locale={locale}
+  page="legalNote"
+  title="Legal note – Hotel Lärchenwald in Sils im Engadin"
+  description="Who runs this website: the operator, its address and contact details, the commercial register entry and the VAT number of Hotel Lärchenwald AG in Sils."
+  modified="2026-11-13"
+>
+  <TextSection>
+    <h1>Legal note</h1>
+    <p class="lede">This website is run by {site.legalName}. This page says who we are and how you can reach us.</p>
+
+    <h2>Operator of this website</h2>
+    <address>
+      {site.legalName}<br>
+      {site.address.street}<br>
+      {site.address.postalCode}
+      {site.address.locality}<br>
+      Switzerland
+    </address>
+
+    <h2>Contact</h2>
+    <address>
+      {text.phone}{text.colon} <a href={telHref(site.phone)}>{formatPhone(site.phone)}</a><br>
+      {text.email}{text.colon} <a href={mailHref(site.email)}>{site.email}</a>
+    </address>
+
+    <h2>Commercial register and VAT</h2>
+    <p>
+      {site.legalName}
+      is entered in the commercial register of the Canton of Graubünden. Its registered office is in Sils im
+      Engadin/Segl.
+    </p>
+    <ul>
+      <li>Business identification number (UID): {site.uid}</li>
+      <li>VAT number: {vatId(locale)}</li>
+    </ul>
+
+    <h2>Authorised signatories</h2>
+    <ul>
+      <li>Gian Clalüna, Chairman of the Board of Directors</li>
+      <li>Seraina Clalüna, Managing Director</li>
+    </ul>
+
+    <h2>Prices and offers</h2>
+    <p>
+      All prices on this website are in Swiss francs and include value added tax. The visitor’s tax of the municipality
+      is charged in addition. A contract is concluded only when we confirm your request in writing.
+    </p>
+
+    <h2>Liability</h2>
+    <p>
+      We maintain the content of this website with care. Even so, we cannot guarantee that every detail is correct,
+      complete and up to date at all times. The operators of the third-party websites to which we refer are alone
+      responsible for those websites.
+    </p>
+
+    <h2>Copyright</h2>
+    <p>
+      The texts, images and graphics on this website belong to {site.legalName} or to the authors named. Anyone who
+      wishes to reuse them needs our written consent beforehand.
+    </p>
+
+    <p><small>Last updated: 13 November 2026</small></p>
+  </TextSection>
+</Page>

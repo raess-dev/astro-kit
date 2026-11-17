@@ -1,0 +1,121 @@
+---
+import FeatureCard from '../../components/FeatureCard.astro';
+import GuestQuote from '../../components/GuestQuote.astro';
+import Hero from '../../components/Hero.astro';
+import TextSection from '../../components/TextSection.astro';
+import { closures, formatPhone, mailHref, openingHours, price, site, telHref } from '../../data/facts.ts';
+import { UI } from '../../data/ui.ts';
+import Page from '../../layouts/Page.astro';
+import '../../styles/pages/fr/index.css';
+
+// French typography: `&#8239;` is the narrow no-break space inside « » and before a colon or a semicolon.
+const locale = 'fr';
+const text = UI[locale];
+---
+
+<Page
+  locale={locale}
+  page="home"
+  title="Hotel Lärchenwald – hôtel de famille à Sils, en Engadine"
+  description="Hôtel de famille à l’orée des mélèzes, au-dessus du lac de Sils. Chambres en bois d’arole, cuisine de l’Engadine et sentiers au départ de la maison."
+>
+  <Hero eyebrow={'Sils, en Engadine · 1809\u00a0m d’altitude'} title="Le calme entre les mélèzes et le lac">
+    <p class="lede">
+      L’Hotel Lärchenwald se trouve à l’entrée du val Fex, à dix minutes à pied du lac de Sils. Depuis trois
+      générations, la famille Clalüna y accueille des hôtes qui cherchent le silence, une bonne table et de longues
+      promenades.
+    </p>
+    <p><a class="button" href={mailHref(site.email)}>Demander une chambre</a></p>
+    <p>Ou appelez-nous{text.colon} <a href={telHref(site.phone)}>{formatPhone(site.phone)}</a></p>
+  </Hero>
+
+  <TextSection>
+    <h2>Une maison qui a une histoire</h2>
+    <p>
+      Construite en 1926 comme pension pour les hôtes d’été, la maison est restée une entreprise familiale. Les 24
+      chambres sont lambrissées d’arole, le poêle en pierre ollaire d’origine chauffe toujours la salle, et en été vous
+      prenez place sur la terrasse, à l’ombre de vieux mélèzes.
+    </p>
+    <p>
+      Nous faisons simple&#8239;: un bon lit, une cuisine honnête et du temps pour nos hôtes. Si vous le souhaitez, nous
+      apportons un téléviseur dans votre chambre&#8239;; le wifi fonctionne dans toute la maison.
+    </p>
+  </TextSection>
+
+  <TextSection>
+    <h2>Ce qui vous attend chez nous</h2>
+    <div class="grid">
+      <FeatureCard title="Des chambres avec vue sur le val Fex">
+        <p>
+          Des chambres simples, doubles et familiales, lambrissées d’arole, avec balcon et vue sur le lac ou sur le val
+          Fex. Le buffet du petit-déjeuner, avec le pain du village et le fromage d’alpage de l’Engadine, est compris
+          dans le prix.
+        </p>
+        <p><strong>Chambre double dès {price('room-double', locale)} par nuit</strong></p>
+      </FeatureCard>
+      <FeatureCard title="La cuisine de l’Engadine">
+        <p>
+          Le soir, le chef Reto Caduff prépare un menu en quatre plats&#8239;: soupe à l’orge, capuns, gibier de la
+          vallée et tourte aux noix selon la recette de sa grand-mère.
+        </p>
+        <p><strong>Menu du soir {price('dinner-menu', locale)} par personne</strong></p>
+      </FeatureCard>
+      <FeatureCard title="La randonnée dès le pas de la porte">
+        <p>
+          Le chemin du val Fex commence derrière la maison, et le téléphérique de Furtschellas est à cinq minutes. En
+          hiver, la piste de ski de fond passe devant l’hôtel.
+        </p>
+      </FeatureCard>
+      <FeatureCard title="Du temps pour soi">
+        <p>
+          Un petit sauna avec vue sur la forêt, une bibliothèque avec cheminée et un jardin avec des chaises longues.
+          Votre chien est lui aussi le bienvenu.
+        </p>
+      </FeatureCard>
+    </div>
+  </TextSection>
+
+  <TextSection>
+    <h2>Ce que disent nos hôtes</h2>
+    <GuestQuote source="Claire et Bernard M., de Lausanne, en séjour en février">
+      <p>
+        «&#8239;Nous venons chaque hiver depuis douze ans. La piste de ski de fond passe devant la porte, la soupe à
+        l’orge nous attend au retour, et le soir on n’entend plus que le poêle. Nous avons déjà retenu notre chambre
+        pour l’an prochain.&#8239;»
+      </p>
+    </GuestQuote>
+  </TextSection>
+
+  <TextSection>
+    <h2>Accès et contact</h2>
+    <p>
+      Vous prenez le train des Chemins de fer rhétiques jusqu’à Saint-Moritz, puis le bus, qui vous amène à Sils en
+      vingt minutes. L’arrêt «&#8239;Sils/Segl Maria, Posta&#8239;» est à cinq minutes à pied de l’hôtel. Si vous le
+      souhaitez, nous venons vous y chercher avec vos bagages.
+    </p>
+    <address>
+      {site.name}<br>
+      {site.address.street}<br>
+      {site.address.postalCode}
+      {site.address.locality}<br>
+      {text.phone}{text.colon} <a href={telHref(site.phone)}>{formatPhone(site.phone)}</a><br>
+      {text.email}{text.colon} <a href={mailHref(site.email)}>{site.email}</a>
+    </address>
+    <dl>
+      {openingHours(locale, text.everyDay).map((row) => (
+        <>
+          <dt>{text.reception}</dt>
+          <dd>
+            {row.days}, {row.hours} {text.hoursSuffix}
+          </dd>
+        </>
+      ))}
+      {closures(locale).map((range) => (
+        <>
+          <dt>{text.closed}</dt>
+          <dd>{range}</dd>
+        </>
+      ))}
+    </dl>
+  </TextSection>
+</Page>

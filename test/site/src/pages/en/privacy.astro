@@ -1,0 +1,102 @@
+---
+import TextSection from '../../components/TextSection.astro';
+import { mailHref, site } from '../../data/facts.ts';
+import { UI } from '../../data/ui.ts';
+import Page from '../../layouts/Page.astro';
+
+const locale = 'en';
+const text = UI[locale];
+---
+
+<Page
+  locale={locale}
+  page="privacy"
+  title="Privacy policy – Hotel Lärchenwald"
+  description="What personal data a visit to this website involves, who processes the data for us, and what rights the Swiss Federal Act on Data Protection gives you."
+  modified="2026-11-13"
+>
+  <TextSection>
+    <h1>Privacy</h1>
+    <p class="lede">
+      We process as little personal data as possible. This policy says what data a visit to this website involves, what
+      we need the data for and what rights you have. It follows the Swiss Federal Act on Data Protection (FADP).
+    </p>
+
+    <h2>Controller</h2>
+    <p>The controller responsible for processing your personal data is:</p>
+    <address>
+      {site.legalName}<br>
+      {site.address.street}<br>
+      {site.address.postalCode}
+      {site.address.locality}<br>
+      {text.email}{text.colon} <a href={mailHref(site.email)}>{site.email}</a>
+    </address>
+
+    <h2>Visiting the website</h2>
+    <p>
+      This website is delivered through the network of Cloudflare. When you open a page, Cloudflare processes on our
+      behalf the technical data that your browser sends with every request:
+    </p>
+    <ul>
+      <li>your IP address,</li>
+      <li>the identifier of your browser and of your operating system (user agent),</li>
+      <li>the address of the page that you request (URL).</li>
+    </ul>
+    <p>
+      Cloudflare needs this data to send you the page and to protect the website against attacks. We ourselves do not
+      analyse this data, and we do not link it to you as a person.
+    </p>
+
+    <h2>Processor and disclosure abroad</h2>
+    <p>
+      The processor is Cloudflare, Inc., 101 Townsend Street, San Francisco, CA 94107, USA. Cloudflare processes the
+      data in data centres around the world, including in the United States. The disclosure to the United States rests
+      on the Swiss-U.S. Data Privacy Framework and on the EU-U.S. Data Privacy Framework, under which Cloudflare is
+      certified.
+    </p>
+
+    <h2>Preview of new pages</h2>
+    <p>
+      Before we publish new pages, we check them in a protected preview. Access to it runs through Cloudflare Access:
+      anyone who wants to open a preview enters an email address and receives a one-time code at that address. This
+      concerns only the people whom we invite to review a page, not the visitors of this website.
+    </p>
+
+    <h2>Cookies, statistics and display</h2>
+    <p>
+      This website sets no cookies and keeps no visitor statistics. We create no profiles, and we do not track which
+      pages you look at.
+    </p>
+    <p>
+      When you choose the display at the top of the page (light, dark or more contrast), your browser stores this choice
+      on your device. It is not sent to us or to third parties. You can change it at any time, or delete it in the
+      settings of your browser.
+    </p>
+
+    <h2>Contact by email or phone</h2>
+    <p>
+      When you write to us or call us, we process your details to answer your enquiry and to prepare a booking. We do
+      not pass them on, and we keep them only for as long as the enquiry, the booking and the statutory retention
+      periods require.
+    </p>
+
+    <h2>Your rights</h2>
+    <p>
+      You may ask us what personal data we process about you. You may ask us to correct inaccurate data, to delete data
+      or to hand your data over to you in a commonly used format. To do so, write to us at
+      <a href={mailHref(site.email)}>{site.email}</a>. We reply within 30 days.
+    </p>
+    <p>
+      If you do not agree with our reply, you may turn to the Federal Data Protection and Information Commissioner
+      (FDPIC) in Bern.
+    </p>
+
+    <h2>Changes to this policy</h2>
+    <p>
+      We adapt this policy when the website or the law changes. The version that is published here is the one that
+      applies.
+    </p>
+
+    <p><small>Last updated: 13 November 2026</small></p>
+  </TextSection>
+</Page>

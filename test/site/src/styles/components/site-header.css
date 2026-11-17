@@ -1,0 +1,74 @@
+@layer components {
+  .site-header {
+    border-block-end-width: var(--line-thin);
+    border-block-end-style: solid;
+    border-block-end-color: var(--color-line);
+
+    /* The items start at the top, so the brand name stays in place when the mode switch opens. */
+    .site-header__inner {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: start;
+      justify-content: space-between;
+      gap: var(--space-1) var(--space-5);
+      padding-block: var(--space-3);
+    }
+
+    .site-header__brand {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-2);
+      min-block-size: var(--size-target);
+      font-family: var(--font-display);
+      font-size: var(--text-l);
+      line-height: var(--leading-snug);
+      color: var(--color-title);
+      text-decoration-line: none;
+    }
+
+    .site-header__mark {
+      flex-shrink: 0;
+      inline-size: var(--size-mark);
+      block-size: var(--size-mark);
+      fill: var(--color-brand);
+    }
+
+    .site-header__tools {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: start;
+      gap: var(--space-1) var(--space-4);
+    }
+
+    .site-header__languages {
+      display: flex;
+      gap: var(--space-1);
+      padding-inline-start: 0;
+      list-style-type: none;
+    }
+
+    .site-header__language {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-inline-size: var(--size-target);
+      min-block-size: var(--size-target);
+      font-size: var(--text-s);
+      letter-spacing: var(--tracking-wide);
+      text-decoration-line: none;
+      border-radius: var(--radius-s);
+    }
+
+    .site-header__language:hover {
+      text-decoration-line: underline;
+    }
+
+    /* The language of the page: marked by weight and a line, not by color alone. */
+    .site-header__language[aria-current="page"] {
+      font-weight: var(--weight-bold);
+      color: var(--color-title);
+      text-decoration-line: underline;
+      text-decoration-thickness: var(--line-thick);
+    }
+  }
+}

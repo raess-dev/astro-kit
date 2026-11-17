@@ -1,0 +1,23 @@
+---
+/**
+ * The words of a guest, in the language in which the guest wrote them, with the guest's name below.
+ * The default slot holds the quote as one or more paragraphs.
+ */
+import '../styles/components/guest-quote.css';
+
+interface Props {
+  /** The language tag of the quote, when it is not the language of the page. */
+  lang?: string;
+  /** Who said it: a name and a place. */
+  source: string;
+}
+
+const { lang, source } = Astro.props;
+---
+
+<figure class="guest-quote">
+  <blockquote lang={lang}>
+    <slot />
+  </blockquote>
+  <figcaption>{source}</figcaption>
+</figure>

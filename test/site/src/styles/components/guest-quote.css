@@ -1,0 +1,8 @@
+@layer components {
+  .guest-quote {
+    padding-inline-start: var(--space-5);
+    border-inline-start-width: var(--line-thick);
+    border-inline-start-style: solid;
+    border-inline-start-color: var(--color-brand);
+  }
+}

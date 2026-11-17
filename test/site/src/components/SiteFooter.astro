@@ -1,0 +1,62 @@
+---
+/**
+ * The footer of every page: the address and the contact data of `site.json`, the reception hours and the next
+ * closure of `schedule.json`, and the links to the two legal pages of the locale.
+ */
+import '../styles/components/site-footer.css';
+import { closures, formatPhone, mailHref, openingHours, site, telHref } from '../data/facts.ts';
+import type { Locale } from '../data/locales.ts';
+import { linkTo } from '../data/routes.ts';
+import { UI } from '../data/ui.ts';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const text = UI[locale];
+const hours = openingHours(locale, text.everyDay);
+const closed = closures(locale);
+// One text, so that no line break of the template puts a space before the colon.
+const closedLabel = `${text.closed}${text.colon}`;
+const year = new Date().getFullYear();
+---
+
+<footer class="site-footer">
+  <div class="site-footer__inner center stack">
+    <div class="grid">
+      <div class="stack">
+        <p class="site-footer__title">{site.name}</p>
+        <address>
+          {site.address.street}<br>
+          {site.address.postalCode}
+          {site.address.locality}
+        </address>
+        <p>
+          {text.phone}{text.colon} <a href={telHref(site.phone)}>{formatPhone(site.phone)}</a><br>
+          {text.email}{text.colon} <a href={mailHref(site.email)}>{site.email}</a>
+        </p>
+      </div>
+      <div class="stack">
+        <p class="site-footer__title">{text.reception}</p>
+        {hours.map((row) => (
+          <p>
+            {row.days}, {row.hours} {text.hoursSuffix}
+          </p>
+        ))}
+        {closed.map((range) => (
+          <p>
+            {closedLabel} {range}
+          </p>
+        ))}
+      </div>
+      <nav aria-label={text.legalNav}>
+        <ul class="site-footer__links">
+          <li><a class="site-footer__link" href={linkTo('legalNote', locale)}>{text.legalNote}</a></li>
+          <li><a class="site-footer__link" href={linkTo('privacy', locale)}>{text.privacy}</a></li>
+        </ul>
+      </nav>
+    </div>
+    <p class="site-footer__copyright">© {year} {site.legalName}</p>
+  </div>
+</footer>

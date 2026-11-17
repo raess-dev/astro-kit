@@ -1,0 +1,24 @@
+@layer components {
+  .feature-card {
+    container-type: inline-size;
+    background-color: var(--color-surface);
+    border-radius: var(--radius-l);
+    box-shadow: var(--shadow-card);
+
+    --stack-gap: var(--space-3);
+
+    .feature-card__body {
+      display: grid;
+      gap: var(--space-3) var(--space-6);
+      padding: var(--space-5);
+    }
+
+    /* The card's own width decides, not the viewport: the same card is narrow in a grid of three and wide alone. */
+    @container (inline-size >= 30rem) {
+      .feature-card__body {
+        grid-template-columns: 1fr 2fr;
+        padding: var(--space-6);
+      }
+    }
+  }
+}
