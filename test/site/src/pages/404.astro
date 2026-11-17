@@ -1,0 +1,35 @@
+---
+/**
+ * The one 404 page of the site, for every locale: Cloudflare answers a missing URL in any folder with this file.
+ * The document is in the default language. Each locale has a block in its own language, marked with `lang`, with
+ * a link to its home page.
+ */
+import TextSection from '../components/TextSection.astro';
+import { DEFAULT_LOCALE, LOCALES } from '../data/locales.ts';
+import { linkTo } from '../data/routes.ts';
+import { UI } from '../data/ui.ts';
+import Page from '../layouts/Page.astro';
+
+const others = LOCALES.filter((info) => info.code !== DEFAULT_LOCALE);
+const text = UI[DEFAULT_LOCALE];
+const title = LOCALES.map((info) => UI[info.code].notFoundTitle).join(' · ');
+---
+
+<Page locale={DEFAULT_LOCALE} title={title} description={text.notFoundText}>
+  <TextSection>
+    <h1>{text.notFoundTitle}</h1>
+    <p class="lede">{text.notFoundText}</p>
+    <p><a class="button" href={linkTo('home', DEFAULT_LOCALE)}>{text.notFoundHome}</a></p>
+  </TextSection>
+  {others.map((info) => (
+    <TextSection lang={info.tag}>
+      <h2>{UI[info.code].notFoundTitle}</h2>
+      <p class="lede">{UI[info.code].notFoundText}</p>
+      <p>
+        <a class="button" href={linkTo('home', info.code)} hreflang={info.tag}>
+          {UI[info.code].notFoundHome}
+        </a>
+      </p>
+    </TextSection>
+  ))}
+</Page>

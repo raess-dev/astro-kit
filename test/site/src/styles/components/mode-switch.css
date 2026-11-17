@@ -1,0 +1,29 @@
+@layer components {
+  /* The width is fixed, so the header does not move when the switch opens. */
+  .mode-switch {
+    position: relative;
+    inline-size: var(--size-mode-switch);
+    font-size: var(--text-s);
+
+    .mode-switch__panel {
+      display: grid;
+      padding-block: var(--space-1);
+      padding-inline: var(--space-3);
+      border-width: 0;
+    }
+
+    /* On a narrow viewport the open panel pushes the page down. On a wide one it lies over the page. */
+    @media (width >= 48rem) {
+      .mode-switch__panel {
+        position: absolute;
+        inset-block-start: 100%;
+        inset-inline: 0;
+        z-index: var(--z-overlay);
+        margin-block-start: var(--space-1);
+        background-color: var(--color-surface);
+        border-width: var(--line-thin);
+        box-shadow: var(--shadow-overlay);
+      }
+    }
+  }
+}

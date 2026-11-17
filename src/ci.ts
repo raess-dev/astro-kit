@@ -1,341 +1,210 @@
 /**
- * The commands that run tools, and the route checks that need the base branch or the live site.
- * Each tool runs as one process with the current Node and the bin script from the project's node_modules:
- * never npm, npx or a shell string.
+ * The commands that run tools or write a rendered file, and the tool runner (specification, 6.4).
+ *
+ * This milestone has the commands `build` and `tokens`. The tool runner starts each tool as one process, with the
+ * running Node and the bin script from `node_modules`: never npm, npx or a shell.
  */
-import { spawn, spawnSync } from 'node:child_process';
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join, relative, sep } from 'node:path';
+import { spawn } from 'node:child_process';
+import { appendFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
-import { urlPathOf } from './build.ts';
-import type { RedirectRow } from './context.ts';
-import { changedFeatureShims, KIT_VERSION } from './init.ts';
-import { buildManifest, PAGES_DIR } from './manifest.ts';
-import { type KitOptions, loadOptions, OPTIONS_FILE } from './options.ts';
-import { preflight } from './preflight.ts';
-import { loadRedirects, REDIRECTS_FILE } from './redirects.ts';
-import { formatFindings, Report } from './registry.ts';
+import { loadDesign } from './design/parse.ts';
+import { checkTokens, renderTokens, TOKENS_FILE } from './design/tokens.ts';
+import { checkModeThemes } from './modes.ts';
+import { loadOptions } from './options.ts';
+import { type Finding, Report } from './registry.ts';
 
-export const USER_AGENT = `astro-kit/${KIT_VERSION} (+https://github.com/raess-dev/astro-kit; route check)`;
-const QUERY = 'query strings cannot be matched; mark it gone or add a zone Single Redirect';
+export { TOKENS_FILE } from './design/tokens.ts';
 
-/** Appends to the GitHub job summary when there is one. */
-export function summary(text: string, env = process.env): void {
-  if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, `\n\`\`\`text\n${text}\n\`\`\`\n`);
+/** The environment of a command: the variables of the process, or the ones of a test. */
+export type Env = Readonly<Record<string, string | undefined>>;
+
+/** Where a command writes, and the environment it reads. `out` and `err` write a text as it is. */
+export interface ToolIo {
+  out: (text: string) => void;
+  err: (text: string) => void;
+  env: Env;
 }
 
-export function reportFindings(report: Report): number {
-  if (report.ok) return 0;
-  const text = formatFindings(report.findings);
-  console.error(text);
-  summary(text);
-  return 1;
+// The job summary
+
+/** The variable that names the file of the job summary on GitHub. */
+export const SUMMARY_VARIABLE = 'GITHUB_STEP_SUMMARY';
+
+/** A text inside a `text` fence, so that the job summary shows it line by line. */
+export const fenced = (text: string): string => `\`\`\`text\n${text}\n\`\`\``;
+
+/**
+ * Appends a text to the job summary: an empty line, the text and a newline. The empty line keeps the text apart
+ * from what the file holds. It does nothing when `GITHUB_STEP_SUMMARY` is not set or empty.
+ */
+export function summary(text: string, env: Env = process.env): void {
+  const file = env[SUMMARY_VARIABLE];
+  if (file === undefined || file === '') return;
+  appendFileSync(file, `\n${text}\n`);
 }
 
-/** A package's bin script, found the way Node finds the package: up from the project root. */
-export function binPath(root: string, pkg: string, name = pkg.split('/').pop() ?? pkg): string {
-  for (let dir = root; ; dir = dirname(dir)) {
-    const manifest = join(dir, 'node_modules', pkg, 'package.json');
-    if (existsSync(manifest)) {
-      const { bin } = JSON.parse(readFileSync(manifest, 'utf8')) as { bin?: string | Record<string, string> };
-      const rel = typeof bin === 'string' ? bin : bin?.[name];
-      if (!rel) throw new Error(`astro-kit: ${pkg} has no bin ${name}`);
-      return join(dirname(manifest), rel);
-    }
-    if (dirname(dir) === dir) throw new Error(`astro-kit: ${pkg} is not installed; run npm ci --ignore-scripts`);
+// The tool runner
+
+/** The lines of a tool's output that go to the job summary: the lines of a finding (6.4). */
+export const FINDING_LINE = /✗ \[|^\s+(fix|rule): /;
+
+/** The message for a package that no `node_modules` folder holds (6.4). */
+export const notInstalled = (pkg: string): string => `astro-kit: ${pkg} is not installed; run npm ci --ignore-scripts`;
+
+/** The summary text for a failed tool that printed no finding (6.4). */
+export const toolFailed = (pkg: string, args: readonly string[]): string =>
+  `${[pkg, ...args].join(' ')} failed; see the job log.`;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** The name that npm gives the bin of a package with one bin: the package name without its scope. */
+const binNameOf = (pkg: string): string => pkg.slice(pkg.lastIndexOf('/') + 1);
+
+/**
+ * The bin script of a package. The search starts in `<root>/node_modules` and walks up, as Node does. The path of
+ * the script comes from the `bin` field of the package's `package.json`: a string, or the entry with the bin name.
+ * The default bin name is the package name without its scope.
+ *
+ * Returns `undefined` when no folder holds the package. Throws when the package has no such bin.
+ */
+export function findBin(root: string, pkg: string, bin: string = binNameOf(pkg)): string | undefined {
+  for (let folder = resolve(root); ; folder = dirname(folder)) {
+    const home = join(folder, 'node_modules', pkg);
+    const manifest = join(home, 'package.json');
+    if (statSync(manifest, { throwIfNoEntry: false })?.isFile()) return join(home, binField(manifest, pkg, bin));
+    if (dirname(folder) === folder) return undefined;
   }
 }
 
-/** Runs a tool and streams its output; on failure the kit's finding lines also go to the job summary. */
-export function runTool(
-  root: string,
-  pkg: string,
-  args: readonly string[],
-  env: Record<string, string> = {},
-): Promise<number> {
-  const bin = binPath(root, pkg);
-  return new Promise((resolve) => {
-    const child = spawn(process.execPath, [bin, ...args], {
-      cwd: root,
-      env: { ...process.env, ASTRO_TELEMETRY_DISABLED: '1', ...env },
-      stdio: ['inherit', 'pipe', 'pipe'],
-    });
-    let out = '';
-    const tee = (target: NodeJS.WriteStream) => (chunk: Buffer) => {
-      target.write(chunk);
-      out = (out + chunk.toString()).slice(-1_000_000);
-    };
-    child.stdout.on('data', tee(process.stdout));
-    child.stderr.on('data', tee(process.stderr));
-    child.on('error', (error) => {
-      console.error(`astro-kit: ${pkg} did not start: ${error.message}`);
-      resolve(1);
-    });
-    child.on('close', (code) => {
-      if (code !== 0) {
-        const lines = stripVTControlCharacters(out)
-          .split('\n')
-          .filter((l) => /✗ \[|^\s+(fix|rule): /.test(l));
-        summary(lines.length ? lines.join('\n') : `${pkg} ${args.join(' ')} failed; see the job log.`);
-      }
-      resolve(code ?? 1);
-    });
-  });
-}
-
-/** The kit's project checks, Biome, the islands lint, then astro check for types. Any finding fails. */
-export async function check(root: string): Promise<number> {
-  const report = new Report();
-  const options = preflight(root, report)?.options;
-  if (options?.features.islands)
-    for (const path of changedFeatureShims(root, options.features))
-      report.add('config-shim', path, 'differs from the kit copy');
-  const codes = [
-    reportFindings(report),
-    await runTool(root, '@biomejs/biome', ['ci', '--colors=off', '--error-on-warnings', '.']),
-  ];
-  if (options?.features.islands) {
-    if (existsSync(join(root, 'src/islands')))
-      codes.push(await runTool(root, 'eslint', ['--max-warnings', '0', 'src/islands']));
-  }
-  codes.push(await runTool(root, 'astro', ['check']));
-  return codes.some((c) => c !== 0) ? 1 : 0;
-}
-
-export const build = (root: string): Promise<number> => runTool(root, 'astro', ['build']);
-
-// ── routes ───────────────────────────────────────────────────────────────────
-
-function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) walk(path, out);
-    else out.push(path);
-  }
-  return out;
-}
-
-/** The static output: dist/client when the adapter builds a Worker, else dist. */
-export const staticDir = (root: string): string =>
-  existsSync(join(root, 'dist/client')) ? join(root, 'dist/client') : join(root, 'dist');
-
-/** Every path dist serves: pages by URL, other files by file path. */
-export function builtPaths(dist: string): Set<string> {
-  return new Set(
-    walk(dist).map((f) => (f.endsWith('.html') ? urlPathOf(dist, f) : `/${relative(dist, f).split(sep).join('/')}`)),
-  );
-}
-
-/** auto-trailing-slash answers /a with /a/, and /a/index.html with /a/. */
-export const isBuilt = (path: string, built: ReadonlySet<string>): boolean =>
-  built.has(path) ||
-  built.has(`${path}/`) ||
-  (path.endsWith('/index.html') && built.has(path.slice(0, -'index.html'.length)));
-
-const matches = (from: string, path: string): boolean => {
-  if (!/[*:]/.test(from)) return from === path;
-  const pattern = from
-    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '.*')
-    .replace(/:[A-Za-z]\w*/g, '[^/]+');
-  return new RegExp(`^${pattern}$`).test(path);
-};
-
-export const isRedirected = (path: string, rows: readonly { from: string }[]): boolean =>
-  rows.some((r) => matches(r.from, path));
-
-/** Sources that were on the base branch and are gone now. A path that is built again is no loss. */
-export const droppedSources = (
-  base: readonly string[],
-  current: readonly string[],
-  built: ReadonlySet<string>,
-): string[] => base.filter((from) => !current.includes(from) && !isBuilt(from, built));
-
-/** <loc> values of a sitemap, or one URL or path per line of a list (# starts a comment). */
-export function parseUrlList(text: string): string[] {
-  if (/<(urlset|sitemapindex)\b/.test(text)) {
-    return [...text.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/g)].map((m) => (m[1] ?? '').replace(/&amp;/g, '&'));
-  }
-  return text
-    .split(/\r?\n/)
-    .map((l) => l.replace(/#.*$/, '').trim())
-    .filter(Boolean);
-}
-
-/** The path of a URL or path; query is set when the URL has one. */
-export function pathOf(raw: string): { path: string; query: boolean } | undefined {
+/** The path of a bin from the folder of its package, as `package.json` gives it. */
+function binField(manifest: string, pkg: string, bin: string): string {
+  let data: unknown;
   try {
-    const url = new URL(raw, 'https://kit.invalid');
-    return { path: url.pathname, query: url.search !== '' };
+    data = JSON.parse(readFileSync(manifest, 'utf8'));
   } catch {
-    return undefined;
+    throw new Error(`astro-kit: ${manifest} is not valid JSON`);
   }
+  const field = isRecord(data) ? data.bin : undefined;
+  const path = isRecord(field) ? field[bin] : field;
+  if (typeof path !== 'string' || path === '') throw new Error(`astro-kit: ${pkg} has no bin ${bin}`);
+  return path;
 }
 
-/** The redirects.json sources on a git ref, or undefined when the ref is not there. */
-export function baseSources(root: string, ref: string): string[] | undefined {
-  const git = (...args: string[]) => spawnSync('git', args, { cwd: root, encoding: 'utf8' });
-  if (git('rev-parse', '--verify', '--quiet', `${ref}^{commit}`).status !== 0) return undefined;
-  const shown = git('show', `${ref}:${REDIRECTS_FILE}`);
-  if (shown.status !== 0) return [];
-  const rows = JSON.parse(shown.stdout) as unknown;
-  return Array.isArray(rows)
-    ? rows.map((r) => (r as { from?: unknown }).from).filter((f): f is string => typeof f === 'string')
-    : [];
+/** Collects the finding lines of one output stream. A line can arrive in more than one piece. */
+function lineReader(keep: (line: string) => void): { push: (text: string) => void; end: () => void } {
+  let rest = '';
+  const read = (line: string): void => {
+    const plain = stripVTControlCharacters(line).replace(/\r$/, '');
+    if (FINDING_LINE.test(plain)) keep(plain);
+  };
+  return {
+    push: (text) => {
+      const lines = `${rest}${text}`.split('\n');
+      rest = lines.pop() ?? '';
+      for (const line of lines) read(line);
+    },
+    end: () => {
+      if (rest !== '') read(rest);
+      rest = '';
+    },
+  };
 }
 
 /**
- * The page paths published on a git ref, from its astro-kit.json and src/content/pages.
- * No build is needed: the kit's manifest gives every URL. Undefined when the ref has no kit site.
+ * Runs the bin of a package in the project root and returns its exit code.
+ *
+ * - The process is `process.execPath` with the bin script and the arguments. No shell reads them.
+ * - The tool gets the environment of `io` plus `ASTRO_TELEMETRY_DISABLED=1`. It has no input.
+ * - Its output goes to `io` while it runs.
+ * - On a code other than 0, the finding lines of the output go to the job summary inside a `text` fence. Without
+ *   such a line, the summary gets one sentence that names the tool.
+ * - A package that is not installed prints one message and gives 1. So does a tool that does not start. A tool
+ *   that a signal ends gives 1.
+ * - A package without the bin rejects, as does a job summary that cannot be written.
  */
-export function basePagePaths(root: string, ref: string): string[] | undefined {
-  const git = (...args: string[]) =>
-    spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-  const files = git('ls-tree', '-r', '--name-only', ref, '--', OPTIONS_FILE, PAGES_DIR);
-  if (files.status !== 0 || !files.stdout.includes(OPTIONS_FILE)) return undefined;
-  const tmp = mkdtempSync(join(tmpdir(), 'kit-base-'));
-  try {
-    for (const file of files.stdout.split('\n').filter(Boolean)) {
-      const shown = git('show', `${ref}:${file}`);
-      if (shown.status !== 0) continue;
-      mkdirSync(dirname(join(tmp, file)), { recursive: true });
-      writeFileSync(join(tmp, file), shown.stdout);
+export function runTool(root: string, pkg: string, args: readonly string[], io: ToolIo): Promise<number> {
+  return new Promise((done, fail) => {
+    // A throw in here rejects the promise.
+    const bin = findBin(root, pkg);
+    if (bin === undefined) {
+      io.err(`${notInstalled(pkg)}\n`);
+      done(1);
+      return;
     }
-    const report = new Report();
-    const options = loadOptions(tmp, report);
-    return options ? buildManifest(tmp, options, report, {}).pages.map((p) => p.path) : undefined;
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
-  }
-}
-
-type Fetch = typeof fetch;
-type Live = { paths: string[] } | { skip: string } | { error: string };
-
-/** The live sitemap's paths, following one level of sitemap index. A host that does not resolve or a 404 is a skip. */
-export async function liveSitemap(site: string, call: Fetch = fetch): Promise<Live> {
-  const get = async (url: string): Promise<{ text: string } | { skip: string } | { error: string }> => {
-    try {
-      const response = await call(url, {
-        headers: { 'user-agent': USER_AGENT },
-        redirect: 'follow',
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (response.status === 404) return { skip: `${url} answers 404` };
-      if (!response.ok) return { error: `${url} answers ${response.status}` };
-      return { text: await response.text() };
-    } catch (error) {
-      const code = ((error as { cause?: { code?: string } }).cause?.code ?? '') as string;
-      if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return { skip: `${new URL(url).host} does not resolve` };
-      return { error: `${url}: ${(error as Error).message}${code ? ` (${code})` : ''}` };
-    }
-  };
-  const root = await get(`${site}/sitemap.xml`);
-  if (!('text' in root)) return root;
-  if (!/<sitemapindex\b/.test(root.text)) return { paths: parseUrlList(root.text) };
-  const paths: string[] = [];
-  for (const child of parseUrlList(root.text).slice(0, 50)) {
-    const part = await get(child);
-    if ('error' in part) return part;
-    if ('text' in part) paths.push(...parseUrlList(part.text));
-  }
-  return { paths };
-}
-
-/** routes-removed: no base-branch source is dropped, and every live sitemap URL is built or redirected. */
-export async function checkRoutes(
-  root: string,
-  options: KitOptions,
-  report: Report,
-  call: Fetch = fetch,
-  env = process.env,
-): Promise<void> {
-  const dist = staticDir(root);
-  const built = existsSync(dist) ? builtPaths(dist) : new Set<string>();
-  const rows: RedirectRow[] = loadRedirects(root, new Report());
-  const ref = `origin/${env.GITHUB_BASE_REF || 'main'}`;
-  const base = baseSources(root, ref);
-  if (!base) {
-    if (env.GITHUB_ACTIONS === 'true')
-      report.add('routes-removed', ref, 'the base branch is not fetched; check out with fetch-depth: 0');
-    else console.log(`astro-kit: ${ref} not found; the base-branch redirect check is skipped`);
-  }
-  for (const from of droppedSources(
-    base ?? [],
-    rows.map((r) => r.from),
-    built,
-  )) {
-    report.add('routes-removed', REDIRECTS_FILE, `${from} is a source on ${ref} and is gone`);
-  }
-  // A page published on the base branch keeps its URL: built again, or redirected.
-  if (base) {
-    for (const path of basePagePaths(root, ref) ?? []) {
-      if (!isBuilt(path, built) && !isRedirected(path, rows))
-        report.add('routes-removed', path, `published on ${ref}; add a redirects.json row for it`);
-    }
-  }
-  const live = await liveSitemap(options.site, call);
-  if ('skip' in live) console.log(`astro-kit: live sitemap check skipped: ${live.skip}`);
-  else if ('error' in live) report.add('routes-removed', `${options.site}/sitemap.xml`, live.error);
-  else {
-    for (const raw of live.paths) {
-      const url = pathOf(raw);
-      if (!url) report.add('routes-removed', `${options.site}/sitemap.xml`, `${raw} is not a URL`);
-      else if (url.query) report.add('routes-removed', `${options.site}/sitemap.xml`, `${raw}: ${QUERY}`);
-      else if (!isBuilt(url.path, built) && !isRedirected(url.path, rows)) {
-        report.add(
-          'routes-removed',
-          `${options.site}/sitemap.xml`,
-          `${url.path} is neither built nor a redirects.json source`,
-        );
+    const found: string[] = [];
+    const readers = [lineReader((line) => found.push(line)), lineReader((line) => found.push(line))] as const;
+    let settled = false;
+    /** Ends the run once: the summary of a failure, then the code. */
+    const settle = (code: number): void => {
+      if (settled) return;
+      settled = true;
+      try {
+        for (const reader of readers) reader.end();
+        if (code !== 0) summary(found.length > 0 ? fenced(found.join('\n')) : toolFailed(pkg, args), io.env);
+        done(code);
+      } catch (error) {
+        fail(error);
       }
-    }
-  }
-}
-
-/** Adds {from, gone: true} for every listed path that is neither built nor already a source. */
-export function importRoutes(root: string, list: string): { added: string[]; rejected: string[] } {
-  const dist = staticDir(root);
-  if (!existsSync(dist)) throw new Error('astro-kit routes import: no dist/; run `npx --no astro-kit build` first');
-  const built = builtPaths(dist);
-  const file = join(root, REDIRECTS_FILE);
-  const rows = existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as RedirectRow[]) : [];
-  if (!Array.isArray(rows)) throw new Error(`astro-kit routes import: ${REDIRECTS_FILE} must be an array`);
-  const added: string[] = [];
-  const rejected: string[] = [];
-  for (const raw of parseUrlList(readFileSync(list, 'utf8'))) {
-    const url = pathOf(raw);
-    if (!url) rejected.push(`${raw}: not a URL or path`);
-    else if (url.query) rejected.push(`${raw}: ${QUERY}`);
-    else if (!isBuilt(url.path, built) && !isRedirected(url.path, rows) && !added.includes(url.path)) {
-      rows.push({ from: url.path, gone: true });
-      added.push(url.path);
-    }
-  }
-  if (added.length) writeFileSync(file, `${JSON.stringify(rows, null, 2)}\n`);
-  return { added, rejected };
-}
-
-/** check, build, test --all, then the route checks. A failed check or build stops; a failed test still runs the route checks. */
-export async function runCi(root: string, test: () => Promise<number>): Promise<number> {
-  if ((await check(root)) !== 0) return 1;
-  if ((await build(root)) !== 0) return 1;
-  const tested = await test().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : String(error));
-    return 1;
+    };
+    const child = spawn(process.execPath, [bin, ...args], {
+      cwd: root,
+      env: { ...io.env, ASTRO_TELEMETRY_DISABLED: '1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (text: string) => {
+      io.out(text);
+      readers[0].push(text);
+    });
+    child.stderr.on('data', (text: string) => {
+      io.err(text);
+      readers[1].push(text);
+    });
+    child.on('error', (error) => {
+      io.err(`astro-kit: ${pkg} did not start: ${error.message}\n`);
+      settle(1);
+    });
+    child.on('close', (code) => settle(code ?? 1));
   });
+}
+
+// The commands
+
+/** The command `build`: `astro build`. The integration of the kit runs every check inside it. */
+export const build = (root: string, io: ToolIo): Promise<number> => runTool(root, 'astro', ['build'], io);
+
+/** What the command `tokens` did. */
+export interface TokensResult {
+  findings: Finding[];
+  /** True when the command wrote `src/styles/tokens.css`. */
+  written: boolean;
+}
+
+/**
+ * The command `tokens` (7.7). It renders `src/styles/tokens.css` from `docs/design.md` and the mode options, and
+ * writes it. With `check` it writes nothing and compares the file with the rendering (`design-tokens`).
+ *
+ * It writes nothing when the settings or `docs/design.md` are not valid, or when the themes do not serve the mode
+ * options: then it returns the findings of `config-options`, `design-format` or `modes-themes`. It never throws
+ * for a finding.
+ */
+export function tokens(root: string, { check }: { check: boolean }): TokensResult {
   const report = new Report();
+  const stop = (): TokensResult => ({ findings: report.findings, written: false });
+  // Both loaders run, so that one run reports the findings of both files.
   const options = loadOptions(root, report);
-  if (options) await checkRoutes(root, options, report);
-  return reportFindings(report) || tested;
+  const design = loadDesign(root, report);
+  if (options === undefined || design === undefined) return stop();
+  if (!checkModeThemes(options, design.themes, report)) return stop();
+  if (check) {
+    checkTokens(root, design, options, report);
+    return stop();
+  }
+  const file = join(root, TOKENS_FILE);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, renderTokens(design, options));
+  return { findings: report.findings, written: true };
 }

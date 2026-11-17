@@ -1,0 +1,40 @@
+@layer components {
+  .site-footer {
+    padding-block: var(--space-7) var(--space-5);
+    font-size: var(--text-s);
+    background-color: var(--color-surface);
+    border-block-start: var(--line-thin) solid var(--color-line);
+
+    --stack-gap: var(--space-3);
+
+    .site-footer__inner {
+      gap: var(--space-6);
+    }
+
+    .site-footer__title {
+      font-family: var(--font-display);
+      font-size: var(--text-l);
+      line-height: var(--leading-snug);
+      color: var(--color-title);
+    }
+
+    .site-footer__links {
+      padding-inline-start: 0;
+      list-style-type: none;
+    }
+
+    /* A link that stands alone is a target of 44 px. */
+    .site-footer__link {
+      display: inline-flex;
+      align-items: center;
+      min-block-size: var(--size-target);
+    }
+
+    .site-footer__copyright {
+      max-inline-size: none;
+      padding-block-start: var(--space-4);
+      color: var(--color-muted);
+      border-block-start: var(--line-thin) solid var(--color-line);
+    }
+  }
+}

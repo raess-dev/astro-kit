@@ -3,59 +3,35 @@
   "root": true,
   "extends": ["./config/biome.json"],
   "files": {
-    "includes": [
-      "!**/dist",
-      "!**/.astro",
-      "!**/node_modules",
-      "!test/fixtures/good",
-      "!test/fixtures/islands",
-      "!test/fixtures/.work",
-      "!docs/standards.md"
-    ]
+    "includes": ["!**/dist", "!**/.astro", "!**/.wrangler", "!**/node_modules", "!test/site"]
   },
   "overrides": [
     {
-      "includes": ["src/**", "test/**"],
-      "linter": {
-        "rules": {
-          "suspicious": {
-            "noConsole": "off",
-            "noBitwiseOperators": "off"
-          }
-        }
-      }
-    },
-    {
-      "includes": ["test/**"],
-      "linter": {
-        "rules": {
-          "suspicious": {
-            "useAwait": "off",
-            "noTemplateCurlyInString": "off"
-          }
-        }
-      }
-    },
-    {
-      "includes": ["src/browser.ts"],
-      "linter": {
-        "rules": {
-          "suspicious": {
-            "noPlaywrightWaitForTimeout": "off",
-            "noLoopFunc": "off"
-          }
-        }
-      }
-    },
-    {
-      "includes": ["css/base.css"],
+      "includes": ["css/base.css", "test/acceptance/kit/base.css"],
       "linter": {
         "rules": {
           "complexity": {
             "noImportantStyles": "off"
-          },
-          "style": {
-            "noDescendingSpecificity": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "test/acceptance/kit/speculation.json",
+        "test/acceptance/kit/tokens-setting-1.css",
+        "test/acceptance/spikes.results.json"
+      ],
+      "formatter": {
+        "enabled": false
+      }
+    },
+    {
+      "includes": ["src/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
           }
         }
       }

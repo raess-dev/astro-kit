@@ -1,0 +1,26 @@
+{
+  "de": {
+    "banned": {
+      "Hotel Laerchenwald": "Hotel Lärchenwald",
+      "Reservierung": "Reservation",
+      "Fahrrad": "Velo",
+      "Email": "E-Mail",
+      "Frühstücksbüffet": "Frühstücksbuffet"
+    }
+  },
+  "fr": {
+    "banned": {
+      "Hôtel Lärchenwald": "Hotel Lärchenwald",
+      "petit déjeuner": "petit-déjeuner",
+      "soixante-dix": "septante",
+      "quatre-vingt-dix": "nonante",
+      "courriel": "e-mail"
+    }
+  },
+  "en": {
+    "banned": {
+      "Hotel Laerchenwald": "Hotel Lärchenwald",
+      "Engadine": "Engadin"
+    }
+  }
+}

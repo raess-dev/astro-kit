@@ -1,0 +1,16 @@
+{
+const key = 'astro-kit:mode';
+const modes = ${MODES};
+const fallback = ${DEFAULT};
+const root = document.documentElement;
+const controls = '[data-mode-switch] [name="mode"]';
+const read = () => { try { const m = localStorage.getItem(key); return modes.includes(m) ? m : fallback; } catch { return fallback; } };
+const sync = () => { for (const c of document.querySelectorAll(controls)) { if (c.type === 'radio') c.checked = c.value === root.dataset.mode; else c.value = root.dataset.mode; } };
+const apply = () => { root.dataset.mode = read(); sync(); };
+apply();
+document.addEventListener('DOMContentLoaded', sync);
+document.addEventListener('change', (e) => { const c = e.target; if (c instanceof Element && c.matches(controls) && modes.includes(c.value)) { root.dataset.mode = c.value; try { localStorage.setItem(key, c.value); } catch {} } });
+document.addEventListener('prerenderingchange', apply);
+window.addEventListener('pageshow', (e) => { if (e.persisted) apply(); });
+window.addEventListener('storage', (e) => { if (e.key === key) apply(); });
+}

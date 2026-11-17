@@ -1,0 +1,24 @@
+---
+/**
+ * The hero of a home page: a short label, the `h1` of the page, and below them the lede and the main links
+ * (the default slot). Its background is the hero gradient, and its text rises once when the page opens.
+ */
+import '../styles/components/hero.css';
+
+interface Props {
+  /** A short label above the heading, such as the place. */
+  eyebrow: string;
+  /** The text of the page's `h1`. */
+  title: string;
+}
+
+const { eyebrow, title } = Astro.props;
+---
+
+<section class="hero">
+  <div class="hero__content center stack">
+    <p class="hero__eyebrow">{eyebrow}</p>
+    <h1>{title}</h1>
+    <slot />
+  </div>
+</section>

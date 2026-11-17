@@ -1,0 +1,11 @@
+@layer page {
+  /*
+   * The text section is the container. At this width its grid has three columns: then the first card takes a
+   * whole row, and the other three share the next one.
+   */
+  @container (inline-size >= 59rem) {
+    .feature-card:first-child {
+      grid-column: 1 / -1;
+    }
+  }
+}

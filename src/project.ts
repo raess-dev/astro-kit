@@ -1,255 +1,608 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { extname, join, relative } from 'node:path';
-import type { KitOptions } from './options.ts';
+/**
+ * The checks on the files of a project: `package.json`, the sources under `src/`, the files under `public/` and the
+ * image originals (specification, section 8). Each exported check is one rule. A check adds every finding to the
+ * report: it never stops at the first one, and it never throws for a finding.
+ */
+import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from 'node:fs';
+import { dirname, extname, join, relative, sep } from 'node:path';
+import { fieldPlace, LIMITS, type Limits, type Options, readJson } from './options.ts';
 import type { Report } from './registry.ts';
-import { normalize, SHIMS } from './shims.ts';
 
-/** Packages the kit itself allows in a site's package.json. */
-export const BASE_DEPENDENCIES = ['astro', '@raess/astro-kit'];
-export const FEATURE_DEPENDENCIES = {
-  forms: ['@astrojs/cloudflare', 'wrangler'],
-  islands: ['@astrojs/solid-js', 'solid-js', 'eslint', 'eslint-plugin-solid', 'typescript-eslint'],
-  scripts: [] as string[],
-} as const;
+// Files and folders
 
-/** Files the kit generates; a copy in public/ would shadow it. */
-export const GENERATED_PUBLIC = ['robots.txt', '_headers', '_redirects', '.well-known/security.txt', '_kit'];
-export const PUBLIC_RASTER_ALLOW = ['favicon.ico', 'apple-touch-icon.png', 'og.png', 'og.jpg'];
+/**
+ * The folder names that Biome never checks under the kit preset (12.2), at any depth. A file under `src/` or
+ * `public/` that lies in such a folder is a finding of `config-suppression`.
+ */
+export const UNCHECKED_FOLDERS: readonly string[] = ['node_modules', 'dist', '.astro', '.wrangler'];
 
-const SUPPRESSIONS = /(biome-ignore|@ts-ignore|@ts-expect-error|@ts-nocheck)/;
-const INTL = /(\.toLocale(Date|Time)?String\s*\(|\bnew\s+Intl\.)/;
-const FORBIDDEN_IMPORT = /from\s+['"](astro:i18n|astro:transitions(\/client)?)['"]/;
-const RASTER = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.bmp', '.tif', '.tiff']);
+/** The two folders that the checks of this module walk. */
+export const WALKED_FOLDERS: readonly string[] = ['src', 'public'];
 
-function walk(dir: string, out: string[] = []): string[] {
-  if (!existsSync(dir)) return out;
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === 'node_modules' || entry.name.startsWith('.git')) continue;
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) walk(path, out);
-    else out.push(path);
-  }
-  return out;
+/** The largest file that Biome checks: its default `files.maxSize`. The source checks read no larger file. */
+export const SOURCE_MAX_BYTES = 1_048_576;
+
+/** One file of the project. */
+export interface ProjectFile {
+  /** The path from the root, with `/` between the parts: `src/pages/index.astro`. */
+  path: string;
+  /** The path on disk. */
+  file: string;
+  /** False for a symbolic link to a file outside the root. No check reads such a file. */
+  inside: boolean;
 }
 
-export function checkShims(root: string, report: Report): void {
-  for (const [file, expected] of Object.entries(SHIMS)) {
-    const path = join(root, file);
-    if (!existsSync(path)) {
-      report.add('config-shim', file, 'missing');
+/** What the walk of one folder found. Each list is sorted. */
+export interface Walk {
+  files: ProjectFile[];
+  /**
+   * The places that Biome does not check: a folder with a name of `UNCHECKED_FOLDERS` (with a final `/`), or a
+   * symbolic link that leads into such a folder. The walk names the topmost place only, not what lies below it.
+   */
+  unchecked: string[];
+  /** The symbolic links whose target lies outside the root. The walk does not follow them. */
+  outside: string[];
+}
+
+type Kind = 'file' | 'folder' | 'none';
+
+const byText = (a: string, b: string): number => {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+};
+
+/** The path with every symbolic link resolved, or `undefined` when nothing is there. */
+function realPath(path: string): string | undefined {
+  try {
+    return realpathSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Says what the path names. A symbolic link counts as its target. */
+function kindOf(path: string): Kind {
+  try {
+    const stats = statSync(path);
+    if (stats.isDirectory()) return 'folder';
+    return stats.isFile() ? 'file' : 'none';
+  } catch {
+    return 'none';
+  }
+}
+
+const isWithin = (base: string, path: string): boolean =>
+  path === base || path.startsWith(base.endsWith(sep) ? base : `${base}${sep}`);
+
+/** A folder of the project that a check may read: it exists, and it lies inside the root. */
+interface Folder {
+  /** The real path of the folder. */
+  real: string;
+  /** The names in the folder, sorted. */
+  names: string[];
+}
+
+function openFolder(root: string, path: string): Folder | undefined {
+  const base = realPath(root);
+  const real = realPath(join(root, path));
+  if (base === undefined || real === undefined || !isWithin(base, real) || kindOf(real) !== 'folder') return undefined;
+  return { real, names: readdirSync(real).sort(byText) };
+}
+
+/**
+ * Walks one folder of the project. No folder name is skipped. The walk follows a symbolic link only while the target
+ * lies inside the root, and it never walks a folder that it is already in. A link to a file outside the root is
+ * listed with `inside: false`, so that a check on file names still sees it.
+ */
+export function walk(root: string, folder: string): Walk {
+  const found: Walk = { files: [], unchecked: [], outside: [] };
+  const base = realPath(root);
+  if (base === undefined || kindOf(join(root, folder)) !== 'folder') return found;
+  const isUnchecked = (real: string): boolean =>
+    relative(base, real)
+      .split(sep)
+      .some((part) => UNCHECKED_FOLDERS.includes(part));
+  /** `flagged` says that a folder above this path is already in `unchecked`. */
+  const visit = (path: string, trail: readonly string[], flagged: boolean): void => {
+    const file = join(root, path);
+    const real = realPath(file);
+    const kind = real === undefined ? 'none' : kindOf(real);
+    if (real === undefined || kind === 'none') return;
+    if (!isWithin(base, real)) {
+      found.outside.push(path);
+      if (kind === 'file') found.files.push({ path, file, inside: false });
+      return;
+    }
+    // A file with such a name is no folder: only the folders above it count.
+    const unchecked = !flagged && isUnchecked(kind === 'file' ? dirname(real) : real);
+    if (unchecked) found.unchecked.push(kind === 'folder' ? `${path}/` : path);
+    if (kind === 'file') {
+      found.files.push({ path, file, inside: true });
+      return;
+    }
+    if (trail.includes(real)) return;
+    for (const name of readdirSync(real)) visit(`${path}/${name}`, [...trail, real], flagged || unchecked);
+  };
+  visit(folder, [], false);
+  found.files.sort((a, b) => byText(a.path, b.path));
+  found.unchecked.sort(byText);
+  found.outside.sort(byText);
+  return found;
+}
+
+/** Lists every file under one folder of the project, sorted by path. See `walk`. */
+export function listFiles(root: string, folder: string): ProjectFile[] {
+  return walk(root, folder).files;
+}
+
+const hasExtension = (path: string, extensions: readonly string[]): boolean => extensions.includes(extname(path));
+
+/** One source file. `text` is `undefined` for a file of more than `SOURCE_MAX_BYTES`, which no check reads. */
+interface Source {
+  path: string;
+  bytes: number;
+  text: string | undefined;
+}
+
+/** The files under `src/` with one of the extensions, one at a time. A link to a file outside the root is left out. */
+function* sources(root: string, extensions: readonly string[]): Generator<Source> {
+  for (const file of listFiles(root, 'src')) {
+    if (!file.inside || !hasExtension(file.path, extensions)) continue;
+    const bytes = statSync(file.file).size;
+    yield { path: file.path, bytes, text: bytes > SOURCE_MAX_BYTES ? undefined : readFileSync(file.file, 'utf8') };
+  }
+}
+
+interface Hit {
+  /** The line of the match, from 1. */
+  line: number;
+  match: RegExpExecArray;
+}
+
+/** Every match of a global pattern in a text, with its line. `offset` moves the place inside the match. */
+function hits(text: string, pattern: RegExp, offset: (match: RegExpExecArray) => number = () => 0): Hit[] {
+  return [...text.matchAll(pattern)].map((match) => ({
+    line: text.slice(0, match.index + offset(match)).split('\n').length,
+    match,
+  }));
+}
+
+// package.json
+
+export const PACKAGE_FILE = 'package.json';
+
+/** The npm name of the kit. */
+export const KIT_PACKAGE = '@raess/astro-kit';
+
+/**
+ * A dependency spec of the npm registry: a version, a range or a tag (section 8, `config-dep-spec`). Every other
+ * form has a `:`, a `/`, a `#` or an `@`, starts with a dot, or ends like an archive, so it does not match: a git or
+ * URL spec, a file or a link, a GitHub shorthand and an alias.
+ */
+export const REGISTRY_SPEC = /^(?!\.)(?!.*\.(tgz|tar|tar\.gz)$)[\w.*~^<>=|+ -]*$/i;
+
+/** The sections of `package.json` that `config-dep-spec` reads. */
+export const DEP_SPEC_SECTIONS: readonly string[] = ['dependencies', 'devDependencies', 'optionalDependencies'];
+
+/** The sections that `config-dep-allowlist` reads: every section that makes npm install a package. */
+export const DEP_ALLOWLIST_SECTIONS: readonly string[] = [...DEP_SPEC_SECTIONS, 'peerDependencies'];
+
+/** The packages that every site may depend on. */
+export const BASE_DEPENDENCIES: readonly string[] = ['astro', KIT_PACKAGE, 'wrangler'];
+
+/** The packages that a site may depend on with `features.forms`. */
+export const FORMS_DEPENDENCIES: readonly string[] = ['@astrojs/cloudflare'];
+
+/** The packages that a site may depend on with `features.islands`. */
+export const ISLANDS_DEPENDENCIES: readonly string[] = [
+  '@astrojs/solid-js',
+  'solid-js',
+  'eslint',
+  'eslint-plugin-solid',
+  'typescript-eslint',
+];
+
+/** The package names that the site may depend on: the kit's list for its features, plus `dependencies`. */
+export function allowedDependencies(options: Pick<Options, 'features' | 'dependencies'>): string[] {
+  return [
+    ...BASE_DEPENDENCIES,
+    ...(options.features.forms ? FORMS_DEPENDENCIES : []),
+    ...(options.features.islands ? ISLANDS_DEPENDENCIES : []),
+    ...options.dependencies,
+  ];
+}
+
+type Json = Record<string, unknown>;
+
+const isRecord = (value: unknown): value is Json =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+type PackageFile = { state: 'ok'; value: Json } | { state: 'missing' } | { state: 'invalid'; message: string };
+
+function readPackage(root: string): PackageFile {
+  const read = readJson(root, PACKAGE_FILE);
+  if (read.state === 'missing') return read;
+  if (read.state === 'invalid') return { state: 'invalid', message: `the file is not valid JSON: ${read.message}` };
+  if (!isRecord(read.value)) return { state: 'invalid', message: 'the file must hold a JSON object' };
+  return { state: 'ok', value: read.value };
+}
+
+/** The entries of one dependency section, in the order of the file. */
+function dependenciesOf(pkg: Json, section: string): [name: string, spec: unknown][] {
+  const value = pkg[section];
+  return isRecord(value) ? Object.entries(value) : [];
+}
+
+/** `config-overrides`: `package.json` has no `overrides` and no `resolutions`, not even an empty one. */
+export function checkOverrides(root: string, report: Report): void {
+  const pkg = readPackage(root);
+  if (pkg.state !== 'ok') return;
+  for (const key of ['overrides', 'resolutions']) {
+    if (Object.hasOwn(pkg.value, key)) report.add('config-overrides', fieldPlace(PACKAGE_FILE, [key]));
+  }
+}
+
+/**
+ * `config-dep-spec`: every dependency other than the kit has a spec that matches `REGISTRY_SPEC`. The check trims
+ * the spec first, as npm does.
+ */
+export function checkDepSpecs(root: string, report: Report): void {
+  const pkg = readPackage(root);
+  if (pkg.state !== 'ok') return;
+  for (const section of DEP_SPEC_SECTIONS) {
+    for (const [name, spec] of dependenciesOf(pkg.value, section)) {
+      if (name === KIT_PACKAGE) continue;
+      const place = fieldPlace(PACKAGE_FILE, [section, name]);
+      if (typeof spec !== 'string') report.add('config-dep-spec', place, 'the version is not a string');
+      else if (!REGISTRY_SPEC.test(spec.trim())) report.add('config-dep-spec', place, spec);
+    }
+  }
+}
+
+/**
+ * `config-dep-allowlist`: every dependency is on the list of `allowedDependencies`. This check also reports a
+ * `package.json` that it cannot read, because then nothing says which packages npm installs.
+ */
+export function checkDepAllowlist(
+  root: string,
+  options: Pick<Options, 'features' | 'dependencies'>,
+  report: Report,
+): void {
+  const pkg = readPackage(root);
+  if (pkg.state === 'missing') return;
+  if (pkg.state === 'invalid') {
+    report.add('config-dep-allowlist', PACKAGE_FILE, pkg.message);
+    return;
+  }
+  const allowed = allowedDependencies(options);
+  for (const section of DEP_ALLOWLIST_SECTIONS) {
+    if (Object.hasOwn(pkg.value, section) && !isRecord(pkg.value[section])) {
+      report.add('config-dep-allowlist', fieldPlace(PACKAGE_FILE, [section]), 'the section must be an object');
+    }
+    for (const [name] of dependenciesOf(pkg.value, section)) {
+      if (allowed.includes(name)) continue;
+      const place = fieldPlace(PACKAGE_FILE, [section, name]);
+      if (FORMS_DEPENDENCIES.includes(name)) report.add('config-dep-allowlist', place, 'only with features.forms');
+      else if (ISLANDS_DEPENDENCIES.includes(name)) {
+        report.add('config-dep-allowlist', place, 'only with features.islands');
+      } else report.add('config-dep-allowlist', place);
+    }
+  }
+}
+
+// Sources
+
+/** The extensions of the files under `src/` that `config-imports` reads. */
+export const IMPORT_EXTENSIONS: readonly string[] = [
+  '.astro',
+  '.ts',
+  '.tsx',
+  '.js',
+  '.mjs',
+  '.jsx',
+  '.mts',
+  '.cts',
+  '.cjs',
+];
+
+/** The files that `config-suppression` reads. */
+export const SUPPRESSION_EXTENSIONS: readonly string[] = [...IMPORT_EXTENSIONS, '.css', '.md', '.mdx'];
+
+/** What may stand between two tokens of an import: white space, a block comment or a line comment. */
+const GAP = String.raw`(?:\s|\/\*(?:[^*]|\*(?!\/))*\*\/|\/\/[^\n]*)*`;
+
+/** A static import, a re-export, a dynamic import or a `require` of `astro:transitions` or its client module. */
+const TRANSITIONS_IMPORT = new RegExp(
+  String.raw`\b(?:from|import|require)${GAP}(?:\(${GAP})?(['"\x60])(astro:transitions(?:\/client)?)\1`,
+  'g',
+);
+
+/**
+ * The four comments that switch a check of Biome or TypeScript off, in any letter case: TypeScript reads
+ * `@ts-nocheck` in any case.
+ */
+const SUPPRESSION = /biome-ignore|@ts-ignore|@ts-expect-error|@ts-nocheck/gi;
+
+const SERVER_DEFER = /\bserver:defer\b/g;
+
+/** The names at the top of `src/` that make Astro load server code: as a folder, or as a file with an extension. */
+const SERVER_NAMES: readonly string[] = ['middleware', 'actions'];
+
+/** `config-imports`: no source imports `astro:transitions` or `astro:transitions/client`. */
+export function checkImports(root: string, report: Report): void {
+  const specifier = (match: RegExpExecArray): number => match[0].lastIndexOf(match[2] ?? '');
+  for (const source of sources(root, IMPORT_EXTENSIONS)) {
+    for (const hit of hits(source.text ?? '', TRANSITIONS_IMPORT, specifier)) {
+      report.add('config-imports', `${source.path}:${hit.line}`, hit.match[2]);
+    }
+  }
+}
+
+/**
+ * `config-suppression`: nothing takes a file out of the checks. No source holds a comment that switches a check off,
+ * and no source is larger than Biome reads. No file under `src/` or `public/` lies in a folder that Biome skips, and
+ * no symbolic link there leads out of the project.
+ */
+export function checkSuppression(root: string, report: Report): void {
+  for (const source of sources(root, SUPPRESSION_EXTENSIONS)) {
+    if (source.text === undefined) {
+      const detail = `${source.bytes} B; Biome checks a file of at most ${SOURCE_MAX_BYTES} B`;
+      report.add('config-suppression', source.path, detail);
       continue;
     }
-    if (normalize(readFileSync(path, 'utf8')) !== normalize(expected))
-      report.add('config-shim', file, 'content differs');
+    for (const hit of hits(source.text, SUPPRESSION)) {
+      report.add('config-suppression', `${source.path}:${hit.line}`, hit.match[0]);
+    }
+  }
+  const walks = WALKED_FOLDERS.map((folder) => walk(root, folder));
+  for (const place of walks.flatMap((found) => found.unchecked)) {
+    const names = UNCHECKED_FOLDERS.join(', ');
+    report.add('config-suppression', place, `Biome skips every folder with one of these names: ${names}`);
+  }
+  for (const place of walks.flatMap((found) => found.outside)) {
+    report.add('config-suppression', place, 'the link leads out of the project, so no check reads its target');
   }
 }
 
-export function checkPackage(root: string, options: KitOptions, report: Report): void {
-  const file = join(root, 'package.json');
-  if (!existsSync(file)) return;
-  const pkg = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
-  if (pkg.overrides || pkg.resolutions) report.add('config-overrides', 'package.json', 'remove overrides');
-  const allowed = new Set<string>([...BASE_DEPENDENCIES, ...options.dependencies]);
-  for (const [feature, deps] of Object.entries(FEATURE_DEPENDENCIES)) {
-    if (options.features[feature as keyof typeof FEATURE_DEPENDENCIES]) for (const d of deps) allowed.add(d);
+/**
+ * `config-server`: the project has no server code of its own. It has no `src/middleware.*` file and no
+ * `src/middleware/` folder, no `src/actions/` folder and no `src/actions.*` file, and no `server:defer` in a `.astro`
+ * file under `src/`.
+ */
+export function checkServer(root: string, report: Report): void {
+  for (const name of openFolder(root, 'src')?.names ?? []) {
+    const stem = SERVER_NAMES.find((entry) => name === entry || name.startsWith(`${entry}.`));
+    if (stem === undefined) continue;
+    const kind = kindOf(join(root, 'src', name));
+    if (name === stem && kind === 'folder') report.add('config-server', `src/${name}/`);
+    if (name !== stem && kind === 'file') report.add('config-server', `src/${name}`);
   }
-  for (const field of ['dependencies', 'devDependencies', 'optionalDependencies']) {
-    const deps = (pkg[field] ?? {}) as Record<string, string>;
-    for (const [name, spec] of Object.entries(deps)) {
-      if (!allowed.has(name)) report.add('config-dep-allowlist', 'package.json', `${field}.${name}`);
-      // The kit itself may be a local tarball in fixtures; its identity is checked in the protected workflow.
-      if (name !== '@raess/astro-kit' && /^(git|https?:|file:|link:|github:|[^@\s]+\/[^@\s]+$)/.test(spec)) {
-        report.add('config-dep-spec', 'package.json', `${name}@${spec}`);
-      }
-    }
-  }
-}
-
-export function checkSources(root: string, options: KitOptions, report: Report): void {
-  const files = walk(join(root, 'src')).filter((f) => /\.(astro|ts|tsx|js|mjs|jsx|css|md|mdx)$/.test(f));
-  for (const file of files) {
-    const rel = relative(root, file);
-    const text = readFileSync(file, 'utf8');
-    if (SUPPRESSIONS.test(text)) report.add('config-suppression', rel, text.match(SUPPRESSIONS)?.[1]);
-    if (/\.(astro|ts|tsx|js|mjs|jsx)$/.test(file)) {
-      if (INTL.test(text)) report.add('content-intl', rel, text.match(INTL)?.[0]?.trim());
-      if (FORBIDDEN_IMPORT.test(text)) report.add('config-imports', rel, text.match(FORBIDDEN_IMPORT)?.[1]);
-    }
-    if (file.endsWith('.astro')) {
-      if (/\bis:global\b|:global\(/.test(text)) report.add('css-banned', rel, 'is:global or :global()');
-      if (/\sstyle=(["'{])/.test(text.replace(/<style[\s\S]*?<\/style>/g, '')))
-        report.add('css-banned', rel, 'style attribute');
-      if (/\bdefine:vars\b/.test(text)) report.add('csp-hash', rel, 'define:vars creates an unhashed inline style');
-      if (/\bis:inline\b/.test(text)) report.add('csp-hash', rel, 'is:inline scripts are not hashed');
-      if (/data-astro-prefetch/.test(text)) report.add('js-prefetch-attr', rel);
-      if (/client:(load|only)\b/.test(text)) report.add('js-directive', rel, text.match(/client:(load|only)/)?.[0]);
-      if (
-        !options.features.scripts &&
-        !options.features.islands &&
-        /<script(?![^>]*type=["']application\/ld\+json)[\s>]/.test(text)
-      ) {
-        report.add('js-script', rel, 'enable features.scripts to ship a <script>');
-      }
+  for (const source of sources(root, ['.astro'])) {
+    for (const hit of hits(source.text ?? '', SERVER_DEFER)) {
+      report.add('config-server', `${source.path}:${hit.line}`, hit.match[0]);
     }
   }
 }
 
-/** documents maps a PDF in public/ to the page id that has the same content (site.json); pages are the page ids. */
-export function checkPublic(
-  root: string,
-  report: Report,
-  documents: Readonly<Record<string, string>> = {},
-  pages?: ReadonlySet<string>,
-): void {
-  const pub = join(root, 'public');
-  for (const name of GENERATED_PUBLIC) {
-    if (existsSync(join(pub, name))) report.add('config-public-shadow', `public/${name}`);
+// public/
+
+/** The paths under `public/` that would replace a file that the kit writes into the output. */
+export const PUBLIC_SHADOWS: readonly string[] = [
+  'robots.txt',
+  '_headers',
+  '_redirects',
+  '.well-known/security.txt',
+  '_kit',
+];
+
+/** `sitemap*.xml`, as a name at the top of `public/`. */
+export const PUBLIC_SITEMAP = /^sitemap.*\.xml$/;
+
+/** The extensions of a raster image, in lower case. */
+export const RASTER_EXTENSIONS: readonly string[] = [
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.avif',
+  '.bmp',
+  '.tif',
+  '.tiff',
+];
+
+/** The files at the top of `public/` that `images-public` allows. */
+export const PUBLIC_RASTER_ALLOWED: readonly string[] = ['favicon.ico', 'apple-touch-icon.png', 'og.png', 'og.jpg'];
+
+/** Says whether the path names a raster image. The letter case of the extension does not count. */
+export const isRaster = (path: string): boolean => RASTER_EXTENSIONS.includes(extname(path).toLowerCase());
+
+/**
+ * `config-public-shadow`: `public/` holds none of `robots.txt`, `_headers`, `_redirects`,
+ * `.well-known/security.txt`, `_kit` and `sitemap*.xml`. Each of them names a path at the top of `public/`.
+ */
+export function checkPublicShadow(root: string, report: Report): void {
+  const folder = openFolder(root, 'public');
+  if (folder === undefined) return;
+  for (const path of PUBLIC_SHADOWS) {
+    if (existsSync(join(folder.real, path))) report.add('config-public-shadow', `public/${path}`);
   }
-  for (const file of walk(pub)) {
-    const rel = relative(pub, file);
-    if (/^sitemap.*\.xml$/.test(rel)) report.add('config-public-shadow', `public/${rel}`);
-    if (RASTER.has(extname(file).toLowerCase()) && !PUBLIC_RASTER_ALLOW.includes(rel))
-      report.add('images-public', `public/${rel}`);
-    if (extname(file).toLowerCase() === '.pdf') {
-      const page = documents[rel];
-      if (!page)
-        report.add('media-pdf', `public/${rel}`, `map it to the page id with the same content in site.json documents`);
-      else if (pages && !pages.has(page)) report.add('media-pdf', `public/${rel}`, `"${page}" is not a page id`);
-    }
+  for (const name of folder.names) {
+    if (PUBLIC_SITEMAP.test(name)) report.add('config-public-shadow', `public/${name}`);
   }
 }
 
-/** Reads width and height from PNG, JPEG, GIF and WebP headers without decoding. */
-export function imageSize(buf: Buffer): { width: number; height: number } | undefined {
-  if (buf.length > 24 && buf.readUInt32BE(0) === 0x89504e47)
-    return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
-  if (buf.length > 10 && buf.toString('ascii', 0, 3) === 'GIF')
-    return { width: buf.readUInt16LE(6), height: buf.readUInt16LE(8) };
-  if (buf.length > 30 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') {
-    const chunk = buf.toString('ascii', 12, 16);
-    if (chunk === 'VP8X') return { width: 1 + buf.readUIntLE(24, 3), height: 1 + buf.readUIntLE(27, 3) };
-    if (chunk === 'VP8 ') return { width: buf.readUInt16LE(26) & 0x3fff, height: buf.readUInt16LE(28) & 0x3fff };
-    if (chunk === 'VP8L') {
-      const b = buf.readUInt32LE(21);
-      return { width: (b & 0x3fff) + 1, height: ((b >> 14) & 0x3fff) + 1 };
-    }
+/** `images-public`: `public/` holds no raster file except the four allowed files at its top. */
+export function checkPublicImages(root: string, report: Report): void {
+  for (const file of listFiles(root, 'public')) {
+    if (!isRaster(file.path) || PUBLIC_RASTER_ALLOWED.includes(file.path.slice('public/'.length))) continue;
+    report.add('images-public', file.path);
   }
-  if (buf.length > 4 && buf[0] === 0xff && buf[1] === 0xd8) {
-    let i = 2;
-    while (i + 9 < buf.length) {
-      if (buf[i] !== 0xff) return undefined;
-      const marker = buf[i + 1] ?? 0;
-      const size = buf.readUInt16BE(i + 2);
-      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
-        return { height: buf.readUInt16BE(i + 5), width: buf.readUInt16BE(i + 7) };
-      }
-      i += 2 + size;
-    }
+}
+
+// Image originals
+
+export interface ImageSize {
+  width: number;
+  height: number;
+}
+
+/** The raster extensions whose files carry one of the four headers that the kit reads. */
+export const HEADER_EXTENSIONS: readonly string[] = ['.png', '.gif', '.webp', '.jpg', '.jpeg'];
+
+/** Returns up to `length` bytes from `position`. It returns fewer bytes at the end of the data. */
+type ReadAt = (position: number, length: number) => Uint8Array;
+
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+const viewOf = (bytes: Uint8Array): DataView => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+const textAt = (bytes: Uint8Array, start: number, length: number): string =>
+  String.fromCharCode(...bytes.subarray(start, start + length));
+
+/** PNG: the IHDR chunk is the first chunk. It holds the width and the height as 32-bit numbers. */
+function pngSize(head: Uint8Array): ImageSize | undefined {
+  if (head.length < 24 || !PNG_SIGNATURE.every((byte, index) => head[index] === byte)) return undefined;
+  if (textAt(head, 12, 4) !== 'IHDR') return undefined;
+  const view = viewOf(head);
+  return { width: view.getUint32(16), height: view.getUint32(20) };
+}
+
+/** GIF: the logical screen size follows the six signature bytes. */
+function gifSize(head: Uint8Array): ImageSize | undefined {
+  const signature = textAt(head, 0, 6);
+  if (head.length < 10 || (signature !== 'GIF87a' && signature !== 'GIF89a')) return undefined;
+  const view = viewOf(head);
+  return { width: view.getUint16(6, true), height: view.getUint16(8, true) };
+}
+
+/** WebP: the first chunk of the RIFF file is `VP8 ` (lossy), `VP8L` (lossless) or `VP8X` (extended). */
+function webpSize(head: Uint8Array): ImageSize | undefined {
+  if (head.length < 30 || textAt(head, 0, 4) !== 'RIFF' || textAt(head, 8, 4) !== 'WEBP') return undefined;
+  const view = viewOf(head);
+  const chunk = textAt(head, 12, 4);
+  if (chunk === 'VP8 ') {
+    // Three bytes of frame tag, the start code 9D 01 2A, then two 14-bit sizes with two scale bits each.
+    if (head[23] !== 0x9d || head[24] !== 0x01 || head[25] !== 0x2a) return undefined;
+    return { width: view.getUint16(26, true) & 0x3fff, height: view.getUint16(28, true) & 0x3fff };
+  }
+  if (chunk === 'VP8L') {
+    // The signature byte 2F, then 14 bits of width minus one and 14 bits of height minus one.
+    if (head[20] !== 0x2f) return undefined;
+    const bits = view.getUint32(21, true);
+    return { width: (bits & 0x3fff) + 1, height: ((bits >>> 14) & 0x3fff) + 1 };
+  }
+  if (chunk === 'VP8X') {
+    // Four bytes of flags, then the canvas width minus one and the canvas height minus one, 24 bits each.
+    const width = view.getUint16(24, true) + view.getUint8(26) * 0x10000;
+    const height = view.getUint16(27, true) + view.getUint8(29) * 0x10000;
+    return { width: width + 1, height: height + 1 };
   }
   return undefined;
 }
 
-export function checkAssets(root: string, report: Report, limits: { imageMaxPx: number; imageMaxBytes: number }): void {
-  for (const file of walk(join(root, 'src/assets'))) {
-    if (!RASTER.has(extname(file).toLowerCase())) continue;
-    const rel = relative(root, file);
-    const bytes = statSync(file).size;
-    if (bytes > limits.imageMaxBytes) report.add('images-original', rel, `${Math.round(bytes / 1024)} KB`);
-    const size = imageSize(readFileSync(file));
-    if (size && Math.max(size.width, size.height) > limits.imageMaxPx)
-      report.add('images-original', rel, `${size.width}×${size.height}`);
+/** A start-of-frame marker: C0 to CF without C4 (Huffman tables), C8 (reserved) and CC (arithmetic conditioning). */
+const isFrameMarker = (marker: number): boolean =>
+  marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+
+/** A marker that has no length field: TEM, a restart marker or a second start of image. */
+const isBareMarker = (marker: number): boolean => marker === 0x01 || (marker >= 0xd0 && marker <= 0xd8);
+
+/**
+ * The most markers and fill bytes that the reader passes before the frame header. A real file has far fewer, and
+ * the limit keeps the work small for a file that is made to be slow.
+ */
+export const JPEG_MAX_STEPS = 4_096;
+
+/**
+ * JPEG: the reader goes from segment to segment until the frame header. It never searches the bytes for a marker,
+ * because a segment such as Exif can hold a preview image with a frame header of its own.
+ */
+function jpegSize(read: ReadAt): ImageSize | undefined {
+  let position = 2;
+  for (let step = 0; step < JPEG_MAX_STEPS; step += 1) {
+    const header = read(position, 4);
+    const marker = header[1];
+    if (header[0] !== 0xff || marker === undefined) return undefined;
+    if (marker === 0xff) {
+      // A fill byte before the marker.
+      position += 1;
+      continue;
+    }
+    if (isBareMarker(marker)) {
+      position += 2;
+      continue;
+    }
+    // The end of the image, or the start of the scan: this file has no frame header before its data.
+    if (marker === 0xd9 || marker === 0xda || header.length < 4) return undefined;
+    const length = viewOf(header).getUint16(2);
+    if (length < 2) return undefined;
+    if (isFrameMarker(marker)) {
+      // One byte of precision, then the height and the width.
+      const frame = read(position + 4, 5);
+      if (frame.length < 5) return undefined;
+      const view = viewOf(frame);
+      return { width: view.getUint16(3), height: view.getUint16(1) };
+    }
+    position += 2 + length;
+  }
+  return undefined;
+}
+
+function sizeFrom(read: ReadAt): ImageSize | undefined {
+  const head = read(0, 32);
+  if (head[0] === 0xff && head[1] === 0xd8) return jpegSize(read);
+  return pngSize(head) ?? gifSize(head) ?? webpSize(head);
+}
+
+/**
+ * Reads the width and the height of an image from its PNG, GIF, WebP or JPEG header. It reads the bytes of the
+ * header only and never decodes the image. Returns `undefined` when the bytes hold none of the four headers.
+ */
+export function imageSize(bytes: Uint8Array): ImageSize | undefined {
+  return sizeFrom((position, length) => bytes.subarray(position, position + length));
+}
+
+/** The same for a file. It reads a few bytes at each place that the header names, never the whole file. */
+export function imageFileSize(file: string): ImageSize | undefined {
+  const descriptor = openSync(file, 'r');
+  try {
+    return sizeFrom((position, length) => {
+      const bytes = new Uint8Array(length);
+      return bytes.subarray(0, readSync(descriptor, bytes, 0, length, position));
+    });
+  } finally {
+    closeSync(descriptor);
   }
 }
 
-/** Minimal JSONC: strips comments outside strings and trailing commas. */
-export function parseJsonc(text: string): unknown {
-  let out = '';
-  let inString = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    const n = text[i + 1];
-    if (inString) {
-      out += c;
-      if (c === '\\') out += text[++i] ?? '';
-      else if (c === '"') inString = false;
-    } else if (c === '"') {
-      inString = true;
-      out += c;
-    } else if (c === '/' && n === '/') {
-      while (i < text.length && text[i] !== '\n') i++;
-      out += '\n';
-    } else if (c === '/' && n === '*') {
-      i += 2;
-      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
-      i++;
-    } else out += c;
-  }
-  return JSON.parse(out.replace(/,(\s*[}\]])/g, '$1'));
-}
-
-export function checkWrangler(root: string, options: KitOptions, report: Report): Record<string, unknown> | undefined {
-  for (const other of ['wrangler.json', 'wrangler.toml']) {
-    if (existsSync(join(root, other))) report.add('config-wrangler', other, 'use wrangler.jsonc only');
-  }
-  const file = join(root, 'wrangler.jsonc');
-  if (!existsSync(file)) {
-    report.add('config-wrangler', 'wrangler.jsonc', 'missing');
-    return undefined;
-  }
-  const text = readFileSync(file, 'utf8');
-  let config: Record<string, unknown>;
-  try {
-    config = parseJsonc(text) as Record<string, unknown>;
-  } catch (error) {
-    report.add('config-wrangler', 'wrangler.jsonc', (error as Error).message);
-    return undefined;
-  }
-  // The deploy job reads this file with no packages installed: it drops full-line // comments, then JSON.parse.
-  try {
-    JSON.parse(text.replace(/^\s*\/\/.*$/gm, ''));
-  } catch {
-    report.add('config-wrangler', 'wrangler.jsonc', 'use full-line // comments only, and no trailing commas');
-  }
-  const assets = (config.assets ?? {}) as Record<string, unknown>;
-  const expect = (cond: boolean, detail: string) => {
-    if (!cond) report.add('config-wrangler', 'wrangler.jsonc', detail);
-  };
-  expect(
-    assets.directory === './dist' || assets.directory === 'dist' || assets.directory === './dist/client',
-    'assets.directory must point at the build output',
-  );
-  expect(assets.not_found_handling === '404-page', 'assets.not_found_handling must be "404-page"');
-  expect(assets.html_handling === 'auto-trailing-slash', 'assets.html_handling must be "auto-trailing-slash"');
-  expect(config.workers_dev === false, 'workers_dev must be false');
-  expect(config.preview_urls === false, 'preview_urls must be false in production');
-  const routes = Array.isArray(config.routes) ? (config.routes as Record<string, unknown>[]) : [];
-  expect(routes.length > 0 && routes.every((r) => r.custom_domain === true), 'routes must be custom_domain entries');
-  const preview = ((config.env ?? {}) as Record<string, Record<string, unknown>>).preview;
-  expect(!!preview, 'env.preview is missing');
-  if (preview) {
-    expect(Array.isArray(preview.routes) && preview.routes.length === 0, 'env.preview.routes must be []');
-    expect(preview.preview_urls === true, 'env.preview.preview_urls must be true');
-  }
-  if (options.features.forms) {
-    const mail = (config.send_email ?? []) as Record<string, unknown>[];
-    const binding = mail.find((m) => m.name === 'EMAIL');
-    if (!binding || !Array.isArray(binding.allowed_destination_addresses)) {
-      report.add('forms-binding', 'wrangler.jsonc', 'send_email EMAIL with allowed_destination_addresses');
-    } else {
-      const allowed = binding.allowed_destination_addresses as string[];
-      if (options.contact && !allowed.includes(options.contact.to))
-        report.add('forms-binding', 'wrangler.jsonc', `${options.contact.to} is not an allowed destination`);
+/**
+ * `images-original`: every raster file under `src/` has at most `imageMaxPx` pixels on its long edge and at most
+ * `imageMaxBytes` bytes. A PNG, GIF, WebP or JPEG file whose header gives no size is a finding too, because then
+ * nothing says how large the image is. An AVIF, BMP or TIFF file has the byte limit only.
+ */
+export function checkImageOriginals(
+  root: string,
+  report: Report,
+  limits: Pick<Limits, 'imageMaxPx' | 'imageMaxBytes'> = LIMITS,
+): void {
+  for (const file of listFiles(root, 'src')) {
+    if (!file.inside || !isRaster(file.path)) continue;
+    const bytes = statSync(file.file).size;
+    if (bytes > limits.imageMaxBytes) {
+      report.add('images-original', file.path, `${bytes} B; the limit is ${limits.imageMaxBytes} B`);
     }
-    const rl = (config.ratelimits ?? []) as Record<string, unknown>[];
-    for (const [name, limit] of [
-      ['FORM_RATE_LIMIT', 3],
-      ['FORM_RATE_LIMIT_ALL', 20],
-    ] as const) {
-      const entry = rl.find((x) => x.name === name);
-      const simple = entry?.simple as { limit?: unknown; period?: unknown } | undefined;
-      if (simple?.limit !== limit || simple.period !== 60)
-        report.add('forms-binding', 'wrangler.jsonc', `ratelimits ${name} must allow ${limit} per 60 s`);
+    const size = imageFileSize(file.file);
+    if (size === undefined) {
+      if (HEADER_EXTENSIONS.includes(extname(file.path).toLowerCase())) {
+        report.add('images-original', file.path, 'the file has no PNG, GIF, WebP or JPEG header with a size');
+      }
+    } else if (Math.max(size.width, size.height) > limits.imageMaxPx) {
+      report.add(
+        'images-original',
+        file.path,
+        `${size.width} × ${size.height} px; the limit is ${limits.imageMaxPx} px on the long edge`,
+      );
     }
   }
-  return config;
 }

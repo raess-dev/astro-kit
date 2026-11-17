@@ -1,0 +1,118 @@
+---
+import FeatureCard from '../../components/FeatureCard.astro';
+import GuestQuote from '../../components/GuestQuote.astro';
+import Hero from '../../components/Hero.astro';
+import TextSection from '../../components/TextSection.astro';
+import { closures, formatPhone, mailHref, openingHours, price, site, telHref } from '../../data/facts.ts';
+import { UI } from '../../data/ui.ts';
+import Page from '../../layouts/Page.astro';
+import '../../styles/pages/en/index.css';
+
+const locale = 'en';
+const text = UI[locale];
+---
+
+<Page
+  locale={locale}
+  page="home"
+  title="Hotel Lärchenwald – a family hotel in Sils im Engadin"
+  description="A family-run hotel by the larch forest above Lake Sils: quiet rooms panelled in stone pine, Engadin cooking and walks from the door. Ask us for a room."
+>
+  <Hero eyebrow="Sils im Engadin · 1,809 m above sea level" title="Quiet days between the larches and the lake">
+    <p class="lede">
+      Hotel Lärchenwald stands at the entrance to the Fex valley, ten minutes on foot from Lake Sils. For three
+      generations the Clalüna family has welcomed guests here who come for the silence, good food and long walks.
+    </p>
+    <p><a class="button" href={mailHref(site.email)}>Ask for a room</a></p>
+    <p>Or call us on <a href={telHref(site.phone)}>{formatPhone(site.phone)}</a></p>
+  </Hero>
+
+  <TextSection>
+    <h2>A house with a history</h2>
+    <p>
+      The house was built in 1926 as a guesthouse for summer visitors, and it is a family business to this day. The 24
+      rooms are panelled in Swiss stone pine, the soapstone stove of those early years still stands in the parlour, and
+      in summer you sit on the terrace under old larches.
+    </p>
+    <p>
+      We keep things simple: a good bed, honest cooking and time for our guests. We will gladly bring a television to
+      your room if you wish, and there is Wi-Fi throughout the house.
+    </p>
+  </TextSection>
+
+  <TextSection>
+    <h2>What awaits you here</h2>
+    <div class="grid">
+      <FeatureCard title="Rooms looking into the Fex valley">
+        <p>
+          Single, double and family rooms in stone pine, each with a balcony and a view of the lake or of the Fex
+          valley. The breakfast buffet, with bread from the village and Engadin mountain cheese, is included in the
+          price.
+        </p>
+        <p><strong>Double room from {price('room-double', locale)} per night</strong></p>
+      </FeatureCard>
+      <FeatureCard title="Engadin cooking">
+        <p>
+          In the evening our chef, Reto Caduff, cooks a four-course menu: barley soup, capuns (dumplings wrapped in
+          chard leaves), game from the valley and the nut tart of the Engadin, baked to his grandmother’s recipe.
+        </p>
+        <p><strong>Evening menu {price('dinner-menu', locale)} per person</strong></p>
+      </FeatureCard>
+      <FeatureCard title="Walks from the front door">
+        <p>
+          The path into the Fex valley starts behind the house, and the Furtschellas cable car is five minutes away. In
+          winter the cross-country ski trail runs past the hotel.
+        </p>
+      </FeatureCard>
+      <FeatureCard title="Time to yourself">
+        <p>
+          A small sauna that looks into the forest, a library with an open fire and a garden with deckchairs. Your dog
+          is welcome here too.
+        </p>
+      </FeatureCard>
+    </div>
+  </TextSection>
+
+  <TextSection>
+    <h2>What our guests say</h2>
+    <GuestQuote source="Margaret and Alan H. from Edinburgh, guests in October">
+      <p>
+        “We came for three nights and stayed for eight. The silence, the larches turning gold, and the best barley soup
+        we have ever had: we will be back.”
+      </p>
+    </GuestQuote>
+  </TextSection>
+
+  <TextSection>
+    <h2>Getting here and contact</h2>
+    <p>
+      Take the Rhaetian Railway to St. Moritz. From there the bus takes you to Sils in twenty minutes. The stop
+      “Sils/Segl Maria, Posta” is five minutes on foot from the hotel. If you wish, we will meet you there and carry
+      your luggage.
+    </p>
+    <address>
+      {site.name}<br>
+      {site.address.street}<br>
+      {site.address.postalCode}
+      {site.address.locality}<br>
+      {text.phone}{text.colon} <a href={telHref(site.phone)}>{formatPhone(site.phone)}</a><br>
+      {text.email}{text.colon} <a href={mailHref(site.email)}>{site.email}</a>
+    </address>
+    <dl>
+      {openingHours(locale, text.everyDay).map((row) => (
+        <>
+          <dt>{text.reception}</dt>
+          <dd>
+            {row.days}, {row.hours} {text.hoursSuffix}
+          </dd>
+        </>
+      ))}
+      {closures(locale).map((range) => (
+        <>
+          <dt>{text.closed}</dt>
+          <dd>{range}</dd>
+        </>
+      ))}
+    </dl>
+  </TextSection>
+</Page>

@@ -1,0 +1,35 @@
+---
+/**
+ * The mode switch (kit specification, 9.3): one radio for each mode option of `astro-kit.json`, in a `fieldset`
+ * inside a native disclosure. The kit's mode script checks the radio of the current mode and stores a new choice.
+ * No radio has `checked`. Without JavaScript the kit hides the whole element.
+ *
+ * Radios, not a select: all options and the current one are seen at once, one click changes the mode, and the
+ * arrow keys step through the options with a live result.
+ */
+import '../styles/components/mode-switch.css';
+import { type Locale, MODES } from '../data/locales.ts';
+import { UI } from '../data/ui.ts';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const text = UI[locale];
+---
+
+{MODES.length > 1 && (
+  <details class="mode-switch" data-mode-switch>
+    <summary>{text.modeSwitch}</summary>
+    <fieldset class="mode-switch__panel">
+      <legend class="visually-hidden">{text.modeLegend}</legend>
+      {MODES.map((mode) => (
+        <label>
+          <input type="radio" name="mode" value={mode} />
+          {text.modes[mode]}
+        </label>
+      ))}
+    </fieldset>
+  </details>
+)}

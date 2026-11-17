@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@biomejs/biome/configuration_schema.json",
   "root": false,
   "files": {
-    "includes": ["**", "!**/dist", "!**/.astro", "!**/node_modules"]
+    "includes": ["**", "!**/dist", "!**/.astro", "!**/.wrangler", "!**/node_modules"]
   },
   "formatter": {
     "enabled": true,
@@ -22,6 +22,7 @@
   },
   "linter": {
     "enabled": true,
+    "domains": { "solid": "none" },
     "rules": {
       "preset": "recommended",
       "style": {
@@ -30,13 +31,12 @@
           "level": "error",
           "options": {
             "paths": {
-              "astro:i18n": "The kit builds every URL: use alternates() and pagePaths() from @raess/astro-kit/content.",
               "astro:transitions": "No ClientRouter: native CSS view transitions keep the CSP strict."
             },
             "patterns": [
               {
-                "group": ["astro:i18n/**", "astro:transitions/**"],
-                "message": "The kit builds every URL and uses native CSS view transitions: see node_modules/@raess/astro-kit/docs/INDEX.md."
+                "group": ["astro:transitions/**"],
+                "message": "No ClientRouter: native CSS view transitions keep the CSP strict."
               }
             ]
           }
@@ -51,6 +51,7 @@
       "linter": {
         "rules": {
           "suspicious": {
+            "noBitwiseOperators": "off",
             "useBaseline": {
               "level": "error",
               "options": {
@@ -60,10 +61,7 @@
                 "allowPropertyValues": { "text-wrap": ["pretty"] }
               }
             },
-            "noUnknownAttribute": "off",
-            "useExpect": "off",
-            "noMisplacedAssertion": "off",
-            "noConditionalExpect": "off"
+            "noUnknownAttribute": "off"
           }
         }
       }
@@ -71,6 +69,14 @@
     {
       "includes": ["**/astro-kit.json"],
       "json": { "formatter": { "expand": "always" } }
+    },
+    {
+      "includes": ["**/src/styles/tokens.css"],
+      "formatter": { "enabled": false }
+    },
+    {
+      "includes": ["**/src/styles/fonts.css"],
+      "linter": { "rules": { "suspicious": { "noEmptySource": "off" } } }
     }
   ]
 }

@@ -1,0 +1,75 @@
+---
+import TextSection from '../components/TextSection.astro';
+import { formatPhone, mailHref, site, telHref, vatId } from '../data/facts.ts';
+import { UI } from '../data/ui.ts';
+import Page from '../layouts/Page.astro';
+
+const locale = 'de';
+const text = UI[locale];
+---
+
+<Page
+  locale={locale}
+  page="legalNote"
+  title="Impressum – Hotel Lärchenwald in Sils im Engadin"
+  description="Wer hinter dieser Website steht: Anbieterin, Adresse, Kontakt, Handelsregister und Mehrwertsteuernummer der Hotel Lärchenwald AG in Sils im Engadin."
+  modified="2026-11-13"
+>
+  <TextSection>
+    <h1>Impressum</h1>
+    <p class="lede">
+      Diese Website ist ein Angebot der {site.legalName}. Hier steht, wer wir sind und wie Sie uns erreichen.
+    </p>
+
+    <h2>Anbieterin</h2>
+    <address>
+      {site.legalName}<br>
+      {site.address.street}<br>
+      {site.address.postalCode}
+      {site.address.locality}<br>
+      Schweiz
+    </address>
+
+    <h2>Kontakt</h2>
+    <address>
+      {text.phone}{text.colon} <a href={telHref(site.phone)}>{formatPhone(site.phone)}</a><br>
+      {text.email}{text.colon} <a href={mailHref(site.email)}>{site.email}</a>
+    </address>
+
+    <h2>Handelsregister und Mehrwertsteuer</h2>
+    <p>
+      Die {site.legalName} ist im Handelsregister des Kantons Graubünden eingetragen. Ihr Sitz ist Sils im Engadin/Segl.
+    </p>
+    <ul>
+      <li>Unternehmens-Identifikationsnummer (UID): {site.uid}</li>
+      <li>Mehrwertsteuernummer: {vatId(locale)}</li>
+    </ul>
+
+    <h2>Vertretungsberechtigte Personen</h2>
+    <ul>
+      <li>Gian Clalüna, Präsident des Verwaltungsrats</li>
+      <li>Seraina Clalüna, Geschäftsführerin</li>
+    </ul>
+
+    <h2>Preise und Angebote</h2>
+    <p>
+      Alle Preise auf dieser Website verstehen sich in Schweizer Franken und enthalten die Mehrwertsteuer. Die Kurtaxe
+      der Gemeinde kommt hinzu. Ein Vertrag kommt erst zustande, wenn wir Ihre Anfrage schriftlich bestätigen.
+    </p>
+
+    <h2>Haftung</h2>
+    <p>
+      Wir pflegen die Inhalte dieser Website mit Sorgfalt. Trotzdem können wir nicht dafür einstehen, dass jede Angabe
+      jederzeit richtig, vollständig und aktuell ist. Für Websites Dritter, auf die wir verweisen, sind allein deren
+      Betreiber verantwortlich.
+    </p>
+
+    <h2>Urheberrecht</h2>
+    <p>
+      Die Texte, Bilder und Grafiken dieser Website gehören der {site.legalName} oder den genannten Urheberinnen und
+      Urhebern. Wer sie weiterverwenden möchte, braucht vorher unser schriftliches Einverständnis.
+    </p>
+
+    <p><small>Stand: 13. November 2026</small></p>
+  </TextSection>
+</Page>

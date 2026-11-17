@@ -1,8 +1,7 @@
+# Installed packages and build folders, at any depth: the ones of the kit and the ones of the test site.
 node_modules/
 dist/
 .astro/
-test/fixtures/**/dist/
-test/fixtures/**/.astro/
-test/fixtures/**/node_modules/
+.wrangler/
+# A packed kit.
 *.tgz
-test/fixtures/.work/

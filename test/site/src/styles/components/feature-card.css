@@ -1,0 +1,30 @@
+@layer components {
+  .feature-card {
+    container-type: inline-size;
+    background-color: var(--color-surface);
+
+    /* With forced colors the browser removes the background and the shadow, and it paints this line. */
+    border: var(--line-thin) solid transparent;
+    border-radius: var(--radius-l);
+    box-shadow: var(--shadow-card);
+
+    --stack-gap: var(--space-3);
+
+    .feature-card__body {
+      display: grid;
+      gap: var(--space-3) var(--space-6);
+      padding: var(--space-5);
+    }
+
+    /*
+     * The card's own width decides, not the viewport. Only a card that takes a whole row is this wide, so the
+     * heading column always has room for its words.
+     */
+    @container (inline-size >= 40rem) {
+      .feature-card__body {
+        grid-template-columns: 1fr 2fr;
+        padding: var(--space-6);
+      }
+    }
+  }
+}

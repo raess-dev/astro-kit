@@ -1,254 +1,249 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+/**
+ * The facts of a site: the schemas and loaders of `site.json`, `schedule.json` and `glossary.json`
+ * (specification, 5.6). The `site.json` half of `config-options` and the rule `facts-schedule` live here.
+ */
 import { z } from 'astro/zod';
-import type { KitOptions } from './options.ts';
+import { EMAIL, isRealDate, readJson, reportHiddenKeys, reportIssues } from './options.ts';
 import type { Report } from './registry.ts';
+import { PAGE_PATH } from './routes.ts';
 
-export const SITE_FILE = 'src/content/site.json';
-export const SCHEDULE_FILE = 'src/content/schedule.json';
-export const MESSAGES_DIR = 'src/content/messages';
+export const SITE_FILE = 'site.json';
+export const SCHEDULE_FILE = 'schedule.json';
+export const GLOSSARY_FILE = 'glossary.json';
 
-const minor = z.number().int().nonnegative();
+// site.json
 
-/** The owner's facts. Protected by the push ruleset; agents never edit it. */
-export const siteSchema = z
-  .object({
-    /** schema.org type: Organization, or one LocalBusiness subtype such as ProfessionalService. */
-    type: z
-      .string()
-      .regex(/^[A-Z][A-Za-z]+$/)
-      .default('Organization'),
-    name: z.string().min(1),
-    legalName: z.string().min(1),
-    email: z.string().regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/),
-    phone: z
-      .string()
-      .regex(/^\+[1-9]\d{6,14}$/)
-      .optional(),
-    address: z
-      .object({
-        street: z.string(),
-        postalCode: z.string(),
-        locality: z.string(),
-        region: z.string().optional(),
-        country: z.string().regex(/^[A-Z]{2}$/),
-      })
-      .optional(),
-    uid: z
-      .string()
-      .regex(/^CHE-\d{3}\.\d{3}\.\d{3}$/)
-      .optional(),
-    vatId: z.string().optional(),
-    iban: z
-      .string()
-      .regex(/^[A-Z]{2}\d{2}[A-Z0-9 ]{10,30}$/)
-      .optional(),
-    /** Prices as integer minor units, rendered with formatMoney(). */
-    prices: z
-      .array(z.object({ id: z.string(), amount: minor, currency: z.string().length(3).default('CHF') }))
-      .default([]),
-    sameAs: z.array(z.string().url()).default([]),
-    /** PDFs in public/ and the page id with the same content, e.g. { "brochure.pdf": "services" } (media-pdf). */
-    documents: z.record(z.string(), z.string()).default({}),
-    /** Needed before an accessibility statement may claim conformance. */
-    accessibilityAudit: z.object({ date: z.string(), by: z.string(), scope: z.string() }).optional(),
+const email = z.string().regex(EMAIL);
+
+/** A phone number in E.164: `+`, then 7 to 15 digits. */
+const phone = z.string().regex(/^\+[1-9]\d{6,14}$/);
+
+/** Says whether the text is an absolute web address. */
+function isWebUrl(text: string): boolean {
+  return /^https?:\/\/\S+$/.test(text) && URL.canParse(text);
+}
+
+/** Says whether the text is the path of a PDF file in `dist/`, without a leading slash: `leitfaden.pdf`. */
+function isPdfPath(text: string): boolean {
+  if (!/\.pdf$/i.test(text) || text.includes('\\')) return false;
+  return text.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..');
+}
+
+const addressSchema = z.strictObject({
+  street: z.string(),
+  postalCode: z.string(),
+  locality: z.string(),
+  region: z.string().optional(),
+  country: z.string().regex(/^[A-Z]{2}$/),
+});
+
+const priceSchema = z.strictObject({
+  id: z.string(),
+  /** Integer minor units: 18000 is CHF 180.00. */
+  amount: z.number().int().min(0),
+  currency: z
+    .string()
+    .regex(/^[A-Z]{3}$/)
+    .default('CHF'),
+});
+
+const auditSchema = z.strictObject({
+  date: z.string(),
+  by: z.string(),
+  scope: z.string(),
+});
+
+const contactSchema = z
+  .strictObject({
+    name: z.string(),
+    email: email.optional(),
+    phone: phone.optional(),
   })
-  .strict();
+  .superRefine((contact, ctx) => {
+    if (contact.email !== undefined || contact.phone !== undefined) return;
+    ctx.addIssue({ code: 'custom', message: 'a contact needs an email or a phone', path: [] });
+  });
 
+/** The strict schema of `site.json`: the facts that the owner provides. */
+export const siteSchema = z.strictObject({
+  /** The schema.org type: `Organization`, or `LocalBusiness` or one of its subtypes. */
+  type: z
+    .string()
+    .regex(/^[A-Z][A-Za-z]+$/)
+    .default('Organization'),
+  name: z.string().min(1),
+  legalName: z.string().min(1),
+  email,
+  phone: phone.optional(),
+  address: addressSchema.optional(),
+  uid: z
+    .string()
+    .regex(/^CHE-\d{3}\.\d{3}\.\d{3}$/)
+    .optional(),
+  vatId: z.string().optional(),
+  iban: z
+    .string()
+    .regex(/^[A-Z]{2}\d{2}[A-Z0-9 ]{10,30}$/)
+    .optional(),
+  prices: z.array(priceSchema).default(() => []),
+  sameAs: z
+    .array(z.string().refine(isWebUrl, { error: 'a sameAs entry must be a URL that starts with https:// or http://' }))
+    .default(() => []),
+  /** Each PDF in `dist/` and the page with the same content (`media-pdf`). */
+  documents: z
+    .record(
+      z.string().refine(isPdfPath, { error: 'a key must be the path of a PDF in dist, for example leitfaden.pdf' }),
+      z.string().regex(PAGE_PATH),
+    )
+    .default(() => ({})),
+  /** Needed before an accessibility page may claim conformance (`legal-statement`). */
+  accessibilityAudit: auditSchema.optional(),
+  /** More addresses and numbers that pages may show (`facts-value`). */
+  contacts: z.array(contactSchema).default(() => []),
+});
+
+/** The facts of a site, with every default filled in. */
 export type SiteFacts = z.output<typeof siteSchema>;
+export type Address = NonNullable<SiteFacts['address']>;
+export type Price = SiteFacts['prices'][number];
+export type Contact = SiteFacts['contacts'][number];
+export type AccessibilityAudit = NonNullable<SiteFacts['accessibilityAudit']>;
 
-const day = z.enum(['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']);
-const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+// schedule.json
 
-/** Opening hours and closures only (agents may edit it). */
-export const scheduleSchema = z
-  .object({
-    openingHours: z.array(z.object({ days: z.array(day).min(1), opens: time, closes: time })).default([]),
-    closures: z
-      .array(
-        z.object({
-          from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-          to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-          note: z.string().max(80).optional(),
-        }),
-      )
-      .default([]),
-  })
-  .strict();
+/** The days of a week, as `schedule.json` names them. */
+export const DAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'] as const;
+
+export type Day = (typeof DAYS)[number];
+
+/** A time of day, `HH:MM`. */
+export const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+const time = z.string().regex(TIME);
+
+const date = z.string().refine(isRealDate, { error: 'a date must be a real date YYYY-MM-DD' });
+
+const openingHoursSchema = z.strictObject({
+  days: z.array(z.enum(DAYS)).min(1),
+  opens: time,
+  closes: time,
+});
+
+const closureSchema = z.strictObject({
+  from: date,
+  to: date,
+  note: z.string().max(80).optional(),
+});
+
+/** The strict schema of `schedule.json`: opening hours and closures. */
+export const scheduleSchema = z.strictObject({
+  openingHours: z.array(openingHoursSchema),
+  closures: z.array(closureSchema),
+});
 
 export type Schedule = z.output<typeof scheduleSchema>;
+export type OpeningHours = Schedule['openingHours'][number];
+export type Closure = Schedule['closures'][number];
 
-function readJson(file: string): unknown {
-  return JSON.parse(readFileSync(file, 'utf8'));
+// glossary.json
+
+const glossaryLocaleSchema = z.strictObject({
+  /** Each banned variant, with the canonical term that replaces it. */
+  banned: z.record(z.string().min(1, { error: 'a banned variant must not be empty' }), z.string()),
+});
+
+/** The strict schema of `glossary.json`: the banned variants of each locale, by locale code. */
+export const glossarySchema = z.record(
+  z.string().regex(/^[a-z]{2,3}$/, { error: 'a key must be a locale code' }),
+  glossaryLocaleSchema,
+);
+
+export type Glossary = z.output<typeof glossarySchema>;
+export type GlossaryLocale = Glossary[string];
+
+// Findings
+
+/** One file of the facts: its name, its rule, its schema and the records that it holds (see `hiddenKeys`). */
+interface FactsFile<Schema extends z.ZodType> {
+  file: string;
+  rule: string;
+  schema: Schema;
+  records: readonly (readonly string[])[];
 }
 
-export function loadSite(root: string, report: Report): SiteFacts | undefined {
-  const file = join(root, SITE_FILE);
-  if (!existsSync(file)) {
-    report.add('config-options', SITE_FILE, 'file not found; the owner provides the facts');
-    return undefined;
-  }
-  const parsed = siteSchema.safeParse(readJson(file));
-  if (!parsed.success) {
-    for (const issue of parsed.error.issues)
-      report.add('config-options', SITE_FILE, `${issue.path.join('.')}: ${issue.message}`);
-    return undefined;
-  }
-  return parsed.data;
-}
+const SITE = { file: SITE_FILE, rule: 'config-options', schema: siteSchema, records: [['documents']] } as const;
 
-export function loadSchedule(root: string, report: Report): Schedule {
-  const file = join(root, SCHEDULE_FILE);
-  if (!existsSync(file)) return { openingHours: [], closures: [] };
-  const parsed = scheduleSchema.safeParse(readJson(file));
-  if (!parsed.success) {
-    for (const issue of parsed.error.issues)
-      report.add('facts-schedule', SCHEDULE_FILE, `${issue.path.join('.')}: ${issue.message}`);
-    return { openingHours: [], closures: [] };
-  }
-  return parsed.data;
-}
+const SCHEDULE = { file: SCHEDULE_FILE, rule: 'facts-schedule', schema: scheduleSchema, records: [] } as const;
 
-/** Kit UI strings. Projects override or extend them in src/content/messages/<locale>.json. */
-export const KIT_MESSAGES: Record<string, Record<string, string>> = {
-  de: {
-    skip: 'Zum Inhalt springen',
-    menu: 'Menü',
-    nav: 'Hauptnavigation',
-    languages: 'Sprache',
-    required: 'Pflichtfeld',
-    optional: 'optional',
-    sentTitle: 'Nachricht gesendet',
-    sentBody: 'Danke. Wir antworten so bald wie möglich.',
-    notSentTitle: 'Nachricht nicht gesendet',
-    notSentBody: 'Bitte versuchen Sie es später erneut oder schreiben Sie uns direkt:',
-    contact: 'Kontakt',
-    imprint: 'Impressum',
-    privacy: 'Datenschutz',
-    sitemap: 'Sitemap',
-    name: 'Name',
-    email: 'E-Mail',
-    message: 'Nachricht',
-    send: 'Senden',
-    notFound: 'Seite nicht gefunden',
-    home: 'Zur Startseite',
-  },
-  fr: {
-    skip: 'Aller au contenu',
-    menu: 'Menu',
-    nav: 'Navigation principale',
-    languages: 'Langue',
-    required: 'obligatoire',
-    optional: 'facultatif',
-    sentTitle: 'Message envoyé',
-    sentBody: 'Merci. Nous vous répondons dès que possible.',
-    notSentTitle: 'Message non envoyé',
-    notSentBody: 'Veuillez réessayer plus tard ou nous écrire directement :',
-    contact: 'Contact',
-    imprint: 'Mentions légales',
-    privacy: 'Protection des données',
-    sitemap: 'Plan du site',
-    name: 'Nom',
-    email: 'E-mail',
-    message: 'Message',
-    send: 'Envoyer',
-    notFound: 'Page introuvable',
-    home: 'Vers l’accueil',
-  },
-  it: {
-    skip: 'Vai al contenuto',
-    menu: 'Menu',
-    nav: 'Navigazione principale',
-    languages: 'Lingua',
-    required: 'obbligatorio',
-    optional: 'facoltativo',
-    sentTitle: 'Messaggio inviato',
-    sentBody: 'Grazie. Risponderemo al più presto.',
-    notSentTitle: 'Messaggio non inviato',
-    notSentBody: 'Riprova più tardi o scrivici direttamente:',
-    contact: 'Contatto',
-    imprint: 'Note legali',
-    privacy: 'Protezione dei dati',
-    sitemap: 'Mappa del sito',
-    name: 'Nome',
-    email: 'E-mail',
-    message: 'Messaggio',
-    send: 'Invia',
-    notFound: 'Pagina non trovata',
-    home: 'Alla pagina iniziale',
-  },
-  en: {
-    skip: 'Skip to content',
-    menu: 'Menu',
-    nav: 'Main navigation',
-    languages: 'Language',
-    required: 'required',
-    optional: 'optional',
-    sentTitle: 'Message sent',
-    sentBody: 'Thank you. We will reply as soon as we can.',
-    notSentTitle: 'Message not sent',
-    notSentBody: 'Please try again later or write to us directly:',
-    contact: 'Contact',
-    imprint: 'Imprint',
-    privacy: 'Privacy',
-    sitemap: 'Sitemap',
-    name: 'Name',
-    email: 'Email',
-    message: 'Message',
-    send: 'Send',
-    notFound: 'Page not found',
-    home: 'Go to the home page',
-  },
-};
+/** The specification names no rule of its own for the glossary: the row `config-options` covers it. */
+const GLOSSARY = {
+  file: GLOSSARY_FILE,
+  rule: 'config-options',
+  schema: glossarySchema,
+  records: [[], ['*', 'banned']],
+} as const;
 
-export function loadMessages(
-  root: string,
-  options: KitOptions,
+/** Validates a parsed value. Each issue is one finding of the rule, at `<file>` or `<file>: <field path>`. */
+function parse<Schema extends z.ZodType>(
+  facts: FactsFile<Schema>,
+  value: unknown,
   report: Report,
-): Record<string, Record<string, string>> {
-  const out: Record<string, Record<string, string>> = {};
-  const projectKeys: Record<string, string[]> = {};
-  for (const { code } of options.locales) {
-    const base = KIT_MESSAGES[code] ?? KIT_MESSAGES.en ?? {};
-    const file = join(root, MESSAGES_DIR, `${code}.json`);
-    let project: Record<string, string> = {};
-    if (existsSync(file)) {
-      const raw = readJson(file);
-      if (raw && typeof raw === 'object') project = raw as Record<string, string>;
-      for (const [key, value] of Object.entries(project)) {
-        if (typeof value === 'string' && value !== value.normalize('NFC')) {
-          report.add('content-messages', `${MESSAGES_DIR}/${code}.json`, `${key} is not NFC-normalised`);
-        }
-      }
-    }
-    projectKeys[code] = Object.keys(project).sort();
-    out[code] = { ...base, ...project };
-    // The kit has UI text in de, fr, it and en only; another language brings every key itself.
-    if (!KIT_MESSAGES[code]) {
-      const absent = Object.keys(KIT_MESSAGES.en ?? {}).filter((k) => !(k in project));
-      if (absent.length)
-        report.add(
-          'content-messages',
-          `${MESSAGES_DIR}/${code}.json`,
-          `the kit has no ${code} UI text; add [${absent.join(', ')}]`,
-        );
-    }
+): z.output<Schema> | undefined {
+  const hidden = reportHiddenKeys(report, facts.rule, facts.file, value, facts.records);
+  const parsed = facts.schema.safeParse(value);
+  if (!parsed.success) reportIssues(report, facts.rule, facts.file, parsed.error.issues);
+  return parsed.success && !hidden ? parsed.data : undefined;
+}
+
+/**
+ * Reads and validates one JSON file of the project. A text that is not JSON is a finding. A missing file is a
+ * finding too, unless `whenMissing` gives the value that stands for it.
+ */
+function load<Schema extends z.ZodType>(
+  facts: FactsFile<Schema>,
+  root: string,
+  report: Report,
+  whenMissing?: () => z.output<Schema>,
+): z.output<Schema> | undefined {
+  const read = readJson(root, facts.file);
+  if (read.state === 'missing') {
+    if (whenMissing) return whenMissing();
+    report.add(facts.rule, facts.file, 'the file is missing');
+    return undefined;
   }
-  // Parity covers the project's own keys; a kit key may be reworded in one locale only.
-  const own = (keys: string[] = []) => keys.filter((k) => !(k in (KIT_MESSAGES.en ?? {})));
-  const codes = Object.keys(projectKeys);
-  const reference = own(projectKeys[options.defaultLocale]);
-  for (const code of codes) {
-    const keys = own(projectKeys[code]);
-    const missing = reference.filter((k) => !keys.includes(k));
-    const extra = keys.filter((k) => !reference.includes(k));
-    if (missing.length || extra.length) {
-      report.add(
-        'content-messages',
-        `${MESSAGES_DIR}/${code}.json`,
-        `missing [${missing.join(', ')}] extra [${extra.join(', ')}]`,
-      );
-    }
+  if (read.state === 'invalid') {
+    report.add(facts.rule, facts.file, `the file is not valid JSON: ${read.message}`);
+    return undefined;
   }
-  return out;
+  return parse(facts, read.value, report);
+}
+
+/** Validates a parsed `site.json` value (`config-options`). Returns the facts, or `undefined` when not valid. */
+export function parseSite(value: unknown, report: Report): SiteFacts | undefined {
+  return parse(SITE, value, report);
+}
+
+/** Validates a parsed `schedule.json` value (`facts-schedule`). */
+export function parseSchedule(value: unknown, report: Report): Schedule | undefined {
+  return parse(SCHEDULE, value, report);
+}
+
+/** Validates a parsed `glossary.json` value (`config-options`). */
+export function parseGlossary(value: unknown, report: Report): Glossary | undefined {
+  return parse(GLOSSARY, value, report);
+}
+
+/** Reads and validates `<root>/site.json` (`config-options`). A missing file is a finding. */
+export function loadSite(root: string, report: Report): SiteFacts | undefined {
+  return load(SITE, root, report);
+}
+
+/** `facts-schedule`: `<root>/schedule.json` exists and matches its strict schema. */
+export function loadSchedule(root: string, report: Report): Schedule | undefined {
+  return load(SCHEDULE, root, report);
+}
+
+/** Reads and validates `<root>/glossary.json` (`config-options`). A missing file is an empty glossary. */
+export function loadGlossary(root: string, report: Report): Glossary | undefined {
+  return load(GLOSSARY, root, report, () => ({}));
 }

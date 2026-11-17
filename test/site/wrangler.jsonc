@@ -1,0 +1,13 @@
+// Managed by @raess/astro-kit. A protected file: the kit renders it, and only the protected task changes it.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "laerchenwald-example",
+  "compatibility_date": "2026-11-01",
+  "assets": { "directory": "./dist", "not_found_handling": "404-page", "html_handling": "auto-trailing-slash" },
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "laerchenwald.example", "custom_domain": true }],
+  "env": {
+    "preview": { "name": "laerchenwald-example-preview", "routes": [], "workers_dev": true, "preview_urls": true }
+  }
+}

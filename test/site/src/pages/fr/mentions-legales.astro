@@ -1,0 +1,76 @@
+---
+import TextSection from '../../components/TextSection.astro';
+import { formatPhone, mailHref, site, telHref, vatId } from '../../data/facts.ts';
+import { UI } from '../../data/ui.ts';
+import Page from '../../layouts/Page.astro';
+
+const locale = 'fr';
+const text = UI[locale];
+---
+
+<Page
+  locale={locale}
+  page="legalNote"
+  title="Mentions légales – Hotel Lärchenwald à Sils, en Engadine"
+  description="L’éditrice de ce site en un coup d’œil, avec la raison sociale, l’adresse, le registre du commerce et le numéro de TVA de la société Hotel Lärchenwald AG."
+  modified="2026-11-17"
+>
+  <TextSection>
+    <h1>Mentions légales</h1>
+    <p class="lede">
+      Ce site est une offre de la société {site.legalName}. Vous trouverez ici qui nous sommes et comment nous joindre.
+    </p>
+
+    <h2>Éditrice du site</h2>
+    <address>
+      {site.legalName}<br>
+      {site.address.street}<br>
+      {site.address.postalCode}
+      {site.address.locality}<br>
+      Suisse
+    </address>
+
+    <h2>Contact</h2>
+    <address>
+      {text.phone}{text.colon} <a href={telHref(site.phone)}>{formatPhone(site.phone)}</a><br>
+      {text.email}{text.colon} <a href={mailHref(site.email)}>{site.email}</a>
+    </address>
+
+    <h2>Registre du commerce et TVA</h2>
+    <p>
+      La société {site.legalName} est inscrite au registre du commerce du canton des Grisons. Son siège est à Sils im
+      Engadin/Segl.
+    </p>
+    <ul>
+      <li>Numéro d’identification des entreprises (IDE){text.colon} {site.uid}</li>
+      <li>Numéro de TVA{text.colon} {vatId(locale)}</li>
+    </ul>
+
+    <h2>Personnes autorisées à représenter la société</h2>
+    <ul>
+      <li>Gian Clalüna, président du conseil d’administration</li>
+      <li>Seraina Clalüna, directrice</li>
+    </ul>
+
+    <h2>Prix et offres</h2>
+    <p>
+      Tous les prix indiqués sur ce site s’entendent en francs suisses, TVA comprise. La taxe de séjour de la commune
+      s’y ajoute. Un contrat n’est conclu qu’au moment où nous confirmons votre demande par écrit.
+    </p>
+
+    <h2>Responsabilité</h2>
+    <p>
+      Nous apportons un grand soin aux contenus de ce site. Nous ne pouvons toutefois pas garantir que chaque
+      information soit en tout temps exacte, complète et à jour. Les sites de tiers vers lesquels nous renvoyons
+      relèvent de la seule responsabilité de leurs exploitants.
+    </p>
+
+    <h2>Droit d’auteur</h2>
+    <p>
+      Les textes, les images et les graphiques de ce site appartiennent à la société {site.legalName} ou aux auteures et
+      auteurs mentionnés. Toute réutilisation requiert au préalable notre accord écrit.
+    </p>
+
+    <p><small>État au 17 novembre 2026</small></p>
+  </TextSection>
+</Page>

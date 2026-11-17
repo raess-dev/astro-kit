@@ -1,0 +1,63 @@
+{
+  "site": "https://laerchenwald.example",
+  "codeOwner": "@raess",
+  "locales": [
+    {
+      "code": "de",
+      "tag": "de-CH",
+      "name": "Deutsch",
+      "coverage": "full"
+    },
+    {
+      "code": "fr",
+      "tag": "fr-CH",
+      "name": "Français",
+      "coverage": "full"
+    },
+    {
+      "code": "en",
+      "tag": "en",
+      "name": "English",
+      "coverage": "partial"
+    }
+  ],
+  "defaultLocale": "de",
+  "features": {
+    "forms": false,
+    "islands": false,
+    "scripts": false,
+    "wasm": false,
+    "workers": false
+  },
+  "prefetch": {
+    "speculationRules": true,
+    "astroPrefetch": false
+  },
+  "modes": {
+    "auto": true,
+    "light": true,
+    "dark": true,
+    "contrast": true
+  },
+  "legal": {
+    "legalNote": {
+      "de": "/impressum/",
+      "fr": "/fr/mentions-legales/",
+      "en": "/en/legal-note/"
+    },
+    "privacy": {
+      "de": "/datenschutz/",
+      "fr": "/fr/protection-des-donnees/",
+      "en": "/en/privacy/"
+    }
+  },
+  "processing": [
+    "cdn",
+    "previews"
+  ],
+  "securityContact": "mailto:security@laerchenwald.example",
+  "dependencies": [],
+  "origins": [],
+  "waivers": [],
+  "limits": {}
+}

@@ -1,0 +1,17 @@
+{
+  "name": "laerchenwald-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "astro-kit check",
+    "build": "astro-kit build",
+    "test": "astro-kit test",
+    "ci": "astro-kit ci"
+  },
+  "dependencies": {
+    "astro": "7.4.11"
+  },
+  "devDependencies": {
+    "wrangler": "4.160.1"
+  }
+}

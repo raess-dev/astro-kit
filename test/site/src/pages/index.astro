@@ -1,0 +1,117 @@
+---
+import FeatureCard from '../components/FeatureCard.astro';
+import GuestQuote from '../components/GuestQuote.astro';
+import Hero from '../components/Hero.astro';
+import TextSection from '../components/TextSection.astro';
+import { closures, formatPhone, mailHref, openingHours, price, site, telHref } from '../data/facts.ts';
+import { UI } from '../data/ui.ts';
+import Page from '../layouts/Page.astro';
+import '../styles/pages/index.css';
+
+const locale = 'de';
+const text = UI[locale];
+---
+
+<Page
+  locale={locale}
+  page="home"
+  title="Hotel Lärchenwald – Ihr Berghotel in Sils im Engadin"
+  description="Familienhotel am Lärchenwald über dem Silsersee: ruhige Zimmer mit Arvenholz, Engadiner Küche und Wanderwege ab der Haustür. Fragen Sie Ihr Zimmer direkt an."
+>
+  <Hero eyebrow="Sils im Engadin · 1809 m ü. M." title="Ruhe finden zwischen Lärchen und See">
+    <p class="lede">
+      Das Hotel Lärchenwald liegt am Eingang zum Fextal, zehn Gehminuten vom Silsersee. Seit drei Generationen empfängt
+      Familie Clalüna hier Gäste, die Stille, gutes Essen und weite Wege suchen.
+    </p>
+    <p><a class="button" href={mailHref(site.email)}>Zimmer anfragen</a></p>
+    <p>Oder rufen Sie uns an: <a href={telHref(site.phone)}>{formatPhone(site.phone)}</a></p>
+  </Hero>
+
+  <TextSection>
+    <h2>Ein Haus mit Geschichte</h2>
+    <p>
+      Das Haus wurde 1926 als Pension für Sommergäste gebaut und ist bis heute ein Familienbetrieb. Die 24 Zimmer sind
+      mit Arvenholz ausgebaut, in der Stube steht noch der Specksteinofen von damals, und auf der Terrasse sitzen Sie im
+      Sommer unter alten Lärchen.
+    </p>
+    <p>
+      Wir halten es einfach: ein gutes Bett, eine ehrliche Küche und Zeit für unsere Gäste. Einen Fernseher bringen wir
+      Ihnen auf Wunsch ins Zimmer, WLAN gibt es im ganzen Haus.
+    </p>
+  </TextSection>
+
+  <TextSection>
+    <h2>Was Sie bei uns erwartet</h2>
+    <div class="grid">
+      <FeatureCard title="Zimmer mit Blick ins Fextal">
+        <p>
+          Einzel-, Doppel- und Familienzimmer mit Arvenholz und Balkon, mit Blick auf den See oder ins Fextal. Das
+          Frühstücksbuffet mit Brot aus dem Dorf und Engadiner Bergkäse ist im Preis inbegriffen.
+        </p>
+        <p><strong>Doppelzimmer ab {price('room-double', locale)} pro Nacht</strong></p>
+      </FeatureCard>
+      <FeatureCard title="Engadiner Küche">
+        <p>
+          Am Abend kocht Küchenchef Reto Caduff ein Menü in vier Gängen: Gerstensuppe, Capuns, Wild aus dem Tal und
+          Nusstorte nach dem Rezept der Grossmutter.
+        </p>
+        <p><strong>Abendmenü {price('dinner-menu', locale)} pro Person</strong></p>
+      </FeatureCard>
+      <FeatureCard title="Wandern ab der Haustür">
+        <p>
+          Der Weg ins Fextal beginnt hinter dem Haus, und die Luftseilbahn Furtschellas ist fünf Minuten entfernt. Im
+          Winter führt die Loipe am Hotel vorbei.
+        </p>
+      </FeatureCard>
+      <FeatureCard title="Zeit für sich">
+        <p>
+          Eine kleine Sauna mit Blick in den Wald, eine Bibliothek mit Cheminée und ein Garten mit Liegestühlen. Auch
+          Ihr Hund ist bei uns willkommen.
+        </p>
+      </FeatureCard>
+    </div>
+  </TextSection>
+
+  <TextSection>
+    <h2>Was Gäste sagen</h2>
+    <GuestQuote lang="en" source="Margaret und Alan H. aus Edinburgh, im Oktober zu Gast">
+      <p>
+        “We came for three nights and stayed for eight. The silence, the larches turning gold, and the best barley soup
+        we have ever had: we will be back.”
+      </p>
+    </GuestQuote>
+  </TextSection>
+
+  <TextSection>
+    <h2>Anreise und Kontakt</h2>
+    <p>
+      Sils erreichen Sie mit der Rhätischen Bahn bis St. Moritz und von dort mit dem Bus in zwanzig Minuten. Die
+      Haltestelle «Sils/Segl Maria, Posta» liegt fünf Gehminuten vom Hotel. Auf Wunsch holen wir Sie und Ihr Gepäck dort
+      ab.
+    </p>
+    <address>
+      {site.name}<br>
+      {site.address.street}<br>
+      {site.address.postalCode}
+      {site.address.locality}<br>
+      {text.phone}{text.colon} <a href={telHref(site.phone)}>{formatPhone(site.phone)}</a><br>
+      {text.email}{text.colon} <a href={mailHref(site.email)}>{site.email}</a>
+    </address>
+    <dl>
+      {openingHours(locale, text.everyDay).map((row) => (
+        <>
+          <dt>{text.reception}</dt>
+          <dd>
+            {row.days}, {row.hours} {text.hoursSuffix}
+          </dd>
+        </>
+      ))}
+      {closures(locale).map((range) => (
+        <>
+          <dt>{text.closed}</dt>
+          <dd>{range}</dd>
+        </>
+      ))}
+    </dl>
+  </TextSection>
+</Page>
