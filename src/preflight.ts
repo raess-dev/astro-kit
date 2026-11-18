@@ -4,7 +4,9 @@
  *
  * One run reports every finding. No check stops at the first one, and no check throws for a finding.
  */
+import { checkCss, loadSourceCss } from './css/rules.ts';
 import { loadDesign } from './design/parse.ts';
+import { checkDesign } from './design/rules.ts';
 import { checkTokens } from './design/tokens.ts';
 import { loadGlossary, loadSchedule, loadSite } from './facts.ts';
 import { checkWrangler } from './hosts/cloudflare.ts';
@@ -30,13 +32,15 @@ import { checkShims } from './shims.ts';
  * `astro-kit.json` is missing or not valid.
  *
  * **The settings rule.** A check that reads the settings runs only with valid settings: `config-waiver`,
- * `legal-processing`, `config-dep-allowlist`, the text comparison of `config-wrangler`, `modes-themes` and
- * `design-tokens` at this milestone. Every other check always runs, so a run without valid settings still reports
- * the facts files, the shims, the package, the sources, `public/`, the images, the wrangler files, the redirects
- * and the design document.
+ * `legal-processing`, `config-dep-allowlist`, the text comparison of `config-wrangler`, `modes-themes`,
+ * `design-tokens` and `modes-media` at this milestone. Every other check always runs, so a run without valid
+ * settings still reports the facts files, the shims, the package, the sources, `public/`, the images, the wrangler
+ * files, the redirects, the design document and the other CSS source halves.
  *
- * **The dependency rule.** `modes-themes` runs only when `design-format` passes. `design-tokens` runs only when
- * `modes-themes` passes too, because the rendering of `tokens.css` uses the mode options (7.7).
+ * **The dependency rule.** `modes-themes`, `design-specs` and `design-pairs` run only when `design-format` passes.
+ * `design-tokens` runs only when `modes-themes` passes too, because the rendering of `tokens.css` uses the mode
+ * options (7.7). The CSS rules that read the tokens (`css-token-family`, `css-var-undefined` and `css-media`) run
+ * only when `docs/design.md` and `tokens.css` both parse. `src/css/rules.ts` holds the need of each CSS rule.
  */
 export function preflight(root: string, report: Report): Options | undefined {
   // 1. Options and facts: `config-options`, `config-waiver`, `legal-processing`, `facts-schedule`.
@@ -81,14 +85,17 @@ export function preflight(root: string, report: Report): Options | undefined {
   // 8. `routes-redirects`, the source half.
   loadRedirects(root, report);
 
-  // 9. Design: `design-format`, then `modes-themes`, then `design-tokens` (the source half).
+  // 9. Design: `design-format`, then `modes-themes`, `design-tokens` (the source half), `design-specs` and
+  // `design-pairs`. The project files are read once, for sub-steps 9 and 10.
   const design = loadDesign(root, report);
   if (design !== undefined && options !== undefined && checkModeThemes(options, design.themes, report)) {
     checkTokens(root, design, options, report);
   }
-  // M5: `design-specs` and `design-pairs`, only when `design-format` passes.
+  const css = loadSourceCss(root, design, options);
+  checkDesign(css, report);
 
-  // 10. M5: the CSS source halves, from `css-sources` to `modes-media`.
+  // 10. The CSS source halves, from `css-sources` to `modes-media`.
+  checkCss(css, report);
 
   return options;
 }

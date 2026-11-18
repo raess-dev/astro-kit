@@ -244,7 +244,10 @@ const LIGHT: readonly ThemeName[] = ['light'];
 const LIGHT_DARK: readonly ThemeName[] = ['light', 'dark'];
 const FOUR_THEMES: readonly ThemeName[] = ['light', 'dark', 'light-contrast', 'dark-contrast'];
 
-/** The smallest design document that passes `design-format` with the given themes: one color, and one pair. */
+/**
+ * The smallest design document that passes `design-format` and `design-pairs` with the given themes: two colors, and
+ * the four mandatory pairs of 7.4.
+ */
 function designMd(themes: readonly ThemeName[]): string {
   return [
     '## Themes',
@@ -258,6 +261,7 @@ function designMd(themes: readonly ThemeName[]): string {
     `| Token | ${themes.join(' | ')} | Use |`,
     `|---|${themes.map(() => '---|').join('')}---|`,
     `| \`--color-text\` | ${themes.map((theme) => (theme.startsWith('light') ? '`#222222`' : '`#eeeeee`')).join(' | ')} | Text. |`,
+    `| \`--color-page\` | ${themes.map((theme) => (theme.startsWith('light') ? '`#ffffff`' : '`#111111`')).join(' | ')} | The page. |`,
     '',
     '## Typography',
     '',
@@ -281,10 +285,37 @@ function designMd(themes: readonly ThemeName[]): string {
     '',
     '| Foreground | Background | Role | For |',
     '|---|---|---|---|',
-    '| `--color-text` | `--color-text` | text | body |',
+    '| `--color-text` | `--color-page` | text | body |',
+    '| `--color-text` | `--color-page` | ui | link |',
+    '| `--color-text` | `--color-page` | non-text | focus |',
+    '| `--color-text` | `--color-page` | ui | error |',
     '',
   ].join('\n');
 }
+
+/**
+ * The smallest `elements.css` that uses the pairs of the design document as 7.4 says, with a rule for the two
+ * elements of the built pages below (`css-element-coverage`).
+ */
+const ELEMENTS_CSS = [
+  '@layer elements {',
+  '  body {',
+  '    color: var(--color-text);',
+  '    background-color: var(--color-page);',
+  '  }',
+  '  a {',
+  '    color: var(--color-text);',
+  '  }',
+  '  :focus-visible {',
+  '    outline-color: var(--color-text);',
+  '  }',
+  '  h1,',
+  '  p {',
+  '    margin-block-end: var(--space-2);',
+  '  }',
+  '}',
+  '',
+].join('\n');
 
 /** The text of `tokens.css` that the kit renders for a design document and the settings. */
 function tokensOf(design: string, options: Options): string {
@@ -296,7 +327,7 @@ function tokensOf(design: string, options: Options): string {
 
 /**
  * The smallest project that passes preflight for the settings: `astro-kit.json`, the two facts files that must
- * exist, the three shims, `wrangler.jsonc`, the design document and its `tokens.css`. At this milestone the kit
+ * exist, the three shims, `wrangler.jsonc`, the design document, its `tokens.css` and `elements.css`. The kit
  * compares `wrangler.jsonc` only for a static site, so a forms site gets the static text too.
  */
 function projectFiles(settings: unknown, themes: readonly ThemeName[] = LIGHT): Files {
@@ -310,6 +341,7 @@ function projectFiles(settings: unknown, themes: readonly ThemeName[] = LIGHT): 
     'wrangler.jsonc': renderWrangler({ ...options, features: { ...options.features, forms: false } }),
     'docs/design.md': design,
     'src/styles/tokens.css': tokensOf(design, options),
+    'src/styles/elements.css': ELEMENTS_CSS,
   };
 }
 
@@ -1487,11 +1519,18 @@ interface Page {
   after: string;
 }
 
+/**
+ * The `<style>` text of a built page of the light design: `css/base.css`, `tokens.css` and `ELEMENTS_CSS` as Lightning
+ * CSS minifies them with the targets of 6.1 (13.1 item 40). The css and design audits pass on it.
+ */
+const BUILT_STYLE =
+  '@layer astro;@layer reset{*,:before,:after{box-sizing:border-box}*{margin:0}img,picture,svg,video,canvas{block-size:auto;max-inline-size:100%;display:block}input,button,textarea,select{font:inherit;color:inherit}[hidden]:not([hidden=until-found]),:root:not([data-mode]) [data-mode-switch]{display:none!important}.visually-hidden:not(:focus-within){clip-path:inset(50%)!important;white-space:nowrap!important;block-size:1px!important;inline-size:1px!important;position:absolute!important;overflow:hidden!important}:focus-visible:not([tabindex="-1"]){outline-style:solid!important}@media (prefers-reduced-motion:reduce){*,:before,:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}}@layer tokens{:root{color-scheme:light;--color-text:#222;--color-page:#fff;--font-body:system-ui, sans-serif;--text-m:1rem;--space-2:.5rem}}@layer elements{body{color:var(--color-text);background-color:var(--color-page)}a{color:var(--color-text)}:focus-visible{outline-color:var(--color-text)}h1,p{margin-block-end:var(--space-2)}}@layer layout{.stack{gap:var(--stack-gap);flex-direction:column;display:flex}.cluster{align-items:center;gap:var(--cluster-gap);flex-wrap:wrap;display:flex}.grid{gap:var(--grid-gap);grid-template-columns:repeat(auto-fit, minmax(min(100%, var(--grid-min)), 1fr));display:grid}.center{box-sizing:content-box;max-inline-size:var(--center-max);padding-inline:var(--center-gutter);margin-inline:auto}}@layer components,page;@media (prefers-reduced-motion:no-preference){@view-transition{navigation:auto}}';
+
 /** A page as Astro builds it: the CSP meta follows the head tags of the project and stands before the `<style>`. */
 const page = (title: string, styleHash: string, head = ''): Page => ({
   before: `<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>${title}</title>${head}`,
   meta: `<meta http-equiv="content-security-policy" content="default-src 'self'; script-src 'self' 'sha256-c2NyaXB0'; style-src 'self' 'sha256-${styleHash}';">`,
-  after: `<style>@layer reset{h1{margin:0}}</style></head><body><h1>${title}</h1><p>Zimmer für Gäste, schön &amp; ruhig.</p></body></html>`,
+  after: `<style>${BUILT_STYLE}</style></head><body><h1>${title}</h1><p>Zimmer für Gäste, schön &amp; ruhig.</p></body></html>`,
 });
 
 const sourceOf = (built: Page): string => built.before + built.meta + built.after;
@@ -1811,7 +1850,8 @@ test('build:done keeps a rule of an existing _headers that passes the audit', as
 });
 
 test('build:done stops with a plain error for a page without a CSP meta, and only when there is an insert', async () => {
-  const bare = '<!DOCTYPE html><html lang="de"><head><title>Kontakt</title></head><body><h1>Kontakt</h1></body></html>';
+  // The page has the CSS of every page, so only its missing meta can fail the build.
+  const bare = `<!DOCTYPE html><html lang="de"><head><title>Kontakt</title><style>${BUILT_STYLE}</style></head><body><h1>Kontakt</h1></body></html>`;
   const files = { ...distFiles('dist'), 'dist/kontakt/index.html': bare, 'dist/a/b/index.html': bare };
   const run = (settings: unknown): Promise<{ message: string; page: string; headers: boolean }> =>
     inSite({ settings, files }, async (site) => {

@@ -1084,11 +1084,12 @@ function splitWhitespace(text: string): string[] {
 }
 
 /**
- * The classes that a compound selects by, for the shape checks: its classes, and the class names of an attribute
- * selector on `class` that selects whole names. `[class~=box]` is `.box`, and `[class="a b"]` holds `.a` and `.b`
- * (7.1). `[class]` alone names no class; the forms that match a part of a name are `classPartProblems`.
+ * The classes that a compound selects by, for the shape checks and the coverage rules: its classes, and the class
+ * names of an attribute selector on `class` that selects whole names. `[class~=box]` is `.box`, and `[class="a b"]`
+ * holds `.a` and `.b` (7.1); such a name has the place of its `[`. `[class]` alone names no class; the forms that
+ * match a part of a name are `classPartProblems`.
  */
-function classNames(compound: Compound): NameSelector[] {
+export function classNames(compound: Compound): NameSelector[] {
   const out = [...compound.classes];
   for (const attribute of compound.attributes) {
     if (attribute.name !== 'class' || attribute.value === undefined) continue;

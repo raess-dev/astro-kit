@@ -49,3 +49,17 @@
   font name without quotes that holds a word which starts with `revert-`, such as the CSS-wide keyword
   `revert-rule`. It refuses a function with a name that only JavaScript knows, such as `constructor()`: such a
   value passed as a color and as a gradient, and it stopped the command in the other families.
+- Milestone M5, part 5a: the 15 css rules, `design-specs`, `design-pairs` and `modes-media`, and the built half of
+  `design-tokens`. Preflight runs their source halves after `design-tokens`, and the build runs their built halves
+  in the css and design audits. A project now needs an `elements.css` that uses the `body`, `link` and `focus`
+  pairs, and the `link`, `focus` and `error` pairs in `docs/design.md`.
+- The rules of part 5a after review. `css-sources` reads an `import()` in a template expression of `.astro` and
+  `.mdx`, no longer the YAML frontmatter of `.md` and `.mdx`, and fails a second `<style>` of project CSS on a built
+  page. `css-banned` finds `html` and `body` through `:is()` and `:where()`, and reads the x axis of `overflow`.
+  `css-selector` finds a type in the `:not()` of a root compound that `:where()` holds, and reports a nested rule at
+  its own line. `css-token-family` checks each token that a root sets a local to, and a ratio in a `--size-` helper
+  parameter. `css-element-coverage` counts only a rule that matches the element: no pseudo-class or attribute that
+  narrows it, and a variant only for an element with its class; it checks variants on every element.
+  `css-classes` and `css-unused` read `[class~=x]`. `design-pairs` follows gradient aliases and pairs the focus
+  color of `:focus-visible`. Each fact reports once: `@scope` content, a literal viewport unit, `<style is:global>`,
+  `!important` in a page file, `[data-mode]` in a page file and a mode feature in `@container` give one id each.

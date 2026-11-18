@@ -1,12 +1,22 @@
 /**
- * The drift matrix and the freedom matrix of 14.1, run through the four CSS analyzers of M4 (specification, 3.2,
- * 7.1 to 7.11). M5 builds the rules on these analyzers. So each drift row here asserts the analyzer fact that its
- * rule will report, and each freedom row asserts that the analyzers find nothing, in the source form and in the
- * built form that Lightning CSS writes (13.1 item 40). Rows whose rule reads files or HTML (25 to 28, 30) assert the
- * fact that the analyzers give for the CSS of the row. Each case names the analyzer function and the fact.
+ * The drift matrix and the freedom matrix of 14.1, on two levels.
+ *
+ * - **The analyzers.** Each row runs through the four CSS analyzers (specification, 3.2, 7.1 to 7.11), which hold
+ *   the facts of the rules. Each drift row asserts the analyzer fact that its rule reports, and each freedom row
+ *   asserts that the analyzers find nothing, in the source form and in the built form that Lightning CSS writes
+ *   (13.1 item 40). Rows whose rule reads files or HTML (25 to 28, 30) assert the fact that the analyzers give for
+ *   the CSS of the row. Each case names the analyzer function and the fact.
+ * - **The rules.** Each row is a small project in a temp folder, run through preflight and, with a built page,
+ *   through the audits of the kit. Each drift row gives exactly the ids of its line in 14.1, and each freedom row
+ *   gives no id. The five agent mistakes of 14.2 give exactly their one id.
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { runAudits } from '../../src/audit/index.ts';
+import { memoryContext } from '../../src/build.ts';
+import { DESIGN_FILE } from '../../src/context.ts';
 import { lengthProblems, preludeOf, requiresForcedColors } from '../../src/css/media.ts';
 import {
   type AtRule,
@@ -54,6 +64,13 @@ import {
   viewportWidthUnits,
 } from '../../src/css/values.ts';
 import { familyOf } from '../../src/design/parse.ts';
+import { renderTokens, TOKENS_FILE } from '../../src/design/tokens.ts';
+import { headersText, renderWrangler } from '../../src/hosts/cloudflare.ts';
+import { preflight } from '../../src/preflight.ts';
+import { Report } from '../../src/registry.ts';
+import { SHIMS } from '../../src/shims.ts';
+import { AUTO, BUILT_AUTO, DESIGN_TEXT, designOf, ELEMENTS_CSS, pageHtml } from './css-rules-fixtures.ts';
+import { type Files, factsOf, inTemp, inTempAsync, json, SCHEDULE, SITE, SMALLEST } from './fixtures.ts';
 
 // Helpers. None asserts.
 
@@ -1028,3 +1045,611 @@ test('freedom row 24: in a page file, `.hero` is in shape, `grid-column` places,
   assert.deepEqual(literals(css, 'source'), []);
   assert.deepEqual(mediaMessages(css), []);
 });
+
+// The rules: each row through preflight (the source halves) and through the audits (the built halves).
+//
+// A row is a small project from strings in a temp folder: the smallest project that passes preflight, with the
+// design of the css rule tests (`DESIGN_TEXT`), plus the files of the row. Preflight runs on the folder. A row with
+// a built page runs the audits of the kit on a build context whose root is that folder, because the built halves
+// also read the project CSS (`css-unused`, `css-element-coverage`, `design-specs`). The built texts are what
+// Lightning CSS writes with the targets of 6.1 (13.1 item 40).
+
+/** The project that every rule-level row starts from. It passes preflight, and its built page passes the audits. */
+const PROJECT: Files = {
+  'astro-kit.json': json(SMALLEST),
+  'site.json': json(SITE),
+  'schedule.json': json(SCHEDULE),
+  ...SHIMS,
+  'wrangler.jsonc': renderWrangler(AUTO),
+  [DESIGN_FILE]: DESIGN_TEXT,
+  [TOKENS_FILE]: renderTokens(designOf(DESIGN_TEXT), AUTO),
+  'src/styles/elements.css': ELEMENTS_CSS,
+  'src/styles/fonts.css': '',
+};
+
+/** A component `<Name>.astro` that imports the given CSS files (by kebab name) and renders `body`. */
+function astroOf(name: string, imports: readonly string[], body: string): Files {
+  const lines = imports.map((kebab) => `import '../styles/components/${kebab}.css';`);
+  const text = lines.length === 0 ? `${body}\n` : `---\n${lines.join('\n')}\n---\n${body}\n`;
+  return { [`src/components/${name}.astro`]: text };
+}
+
+/** A component that imports its own CSS file, with that file. */
+const componentOf = (name: string, kebab: string, css: string): Files => ({
+  ...astroOf(name, [kebab], `<div class="${kebab}"><slot /></div>`),
+  [`src/styles/components/${kebab}.css`]: css,
+});
+
+/** The component `Card` with the given `card.css`. */
+const card = (css: string): Files => componentOf('Card', 'card', css);
+
+/** A `@layer components` block with one rule `.<kebab>` that holds the given text. */
+const rootRule = (kebab: string, inside: string): string =>
+  `@layer components {\n  .${kebab} {\n    ${inside}\n  }\n}\n`;
+
+/** The route `src/pages/index.astro`, which imports its page file and renders `body`. */
+const routeOf = (css: string, body = '<div class="card"></div>'): Files => ({
+  'src/pages/index.astro': `---\nimport '../styles/pages/index.css';\n---\n${body}\n`,
+  'src/styles/pages/index.css': css,
+});
+
+/** A built client directory with one page: one `<style>` that joins the CSS chunks with a line feed, and a body. */
+const distOf = (chunks: readonly string[], body: string, more: readonly string[] = []): Record<string, string> => ({
+  'index.html': pageHtml([chunks.join('\n'), ...more], body),
+});
+
+/** The built global chunk with one more rule at the end of the `elements` layer, as the minifier writes it. */
+const elementsWith = (rule: string): string =>
+  BUILT_AUTO.replace(
+    ':focus-visible{outline-color:var(--color-focus)}}',
+    `:focus-visible{outline-color:var(--color-focus)}${rule}}`,
+  );
+
+/** `elements.css` with one more rule at the end of its layer block. */
+const elementsCssWith = (rule: string): string => ELEMENTS_CSS.replace(/\}\n$/, `\n  ${rule}\n}\n`);
+
+/** The design without the helper parameter `--stack-gap` (drift row 10). */
+const DESIGN_NO_STACK = DESIGN_TEXT.replace('| `--stack-gap` | `var(--space-2)` | The gap of a stack. |\n', '');
+
+/** The design with an `## Elements` row (drift row 34). */
+const DESIGN_WITH_ROW = `${DESIGN_TEXT}\n## Elements\n\n| Selector | Property | Token |\n|---|---|---|\n| h1 | color | --color-text |\n`;
+
+/** The sorted ids of a preflight run on the project with the files of a row. */
+function sourceIds(files: Files): string[] {
+  return inTemp({ ...PROJECT, ...files }, (root) => {
+    const report = new Report();
+    preflight(root, report);
+    return [...report.ids()].sort();
+  });
+}
+
+/** The sorted ids of the audits of the kit on a built client directory of the project with the files of a row. */
+function builtIds(files: Files, dist: Readonly<Record<string, string>>): Promise<string[]> {
+  const all = { ...PROJECT, ...files };
+  const designText = all[DESIGN_FILE];
+  const design = designOf(typeof designText === 'string' ? designText : DESIGN_TEXT);
+  return inTempAsync(all, async (root) => {
+    const ctx = memoryContext({
+      root,
+      dist: `${root}/dist`,
+      options: AUTO,
+      kitVersion: '0.0.0',
+      facts: factsOf(),
+      redirects: [],
+      design,
+      report: new Report(),
+      files: { ...dist, _headers: headersText(AUTO), _redirects: '' },
+    });
+    await runAudits(ctx);
+    return [...ctx.report.ids()].sort();
+  });
+}
+
+/**
+ * One rule-level row of the drift matrix: the project files of the row and the sorted ids of preflight on them;
+ * for a row with a built half, the built client directory and the sorted ids of the audits on it. A row whose plant
+ * only a build shows has no source id; a row of a config rule has no built page.
+ */
+interface DriftCase {
+  row: number;
+  plant: string;
+  files: Files;
+  source: readonly string[];
+  dist?: Readonly<Record<string, string>>;
+  built?: readonly string[];
+}
+
+const CARD_BODY = '<div class="card"></div>';
+
+const DRIFT: readonly DriftCase[] = [
+  {
+    row: 1,
+    plant: '`color: #c00` in a component',
+    files: card(rootRule('card', 'color: #c00;')),
+    source: ['css-literal'],
+    dist: distOf([BUILT_AUTO, '@layer components{.card{color:#c00}}'], CARD_BODY),
+    built: ['css-literal'],
+  },
+  {
+    row: 2,
+    plant: '`padding: 13px`',
+    files: card(rootRule('card', 'padding: 13px;')),
+    source: ['css-literal'],
+    dist: distOf([BUILT_AUTO, '@layer components{.card{padding:13px}}'], CARD_BODY),
+    built: ['css-literal'],
+  },
+  {
+    row: 3,
+    plant: '`color: red`',
+    files: card(rootRule('card', 'color: red;')),
+    source: ['css-literal'],
+    dist: distOf([BUILT_AUTO, '@layer components{.card{color:red}}'], CARD_BODY),
+    built: ['css-literal'],
+  },
+  {
+    row: 4,
+    plant: '`margin: var(--space-2, 1rem)`',
+    files: card(rootRule('card', 'margin: var(--space-2, 1rem);')),
+    source: ['css-literal'],
+    dist: distOf([BUILT_AUTO, '@layer components{.card{margin:var(--space-2,1rem)}}'], CARD_BODY),
+    built: ['css-literal'],
+  },
+  {
+    row: 5,
+    plant: '`--brand: var(--color-a)` in elements.css',
+    files: { 'src/styles/elements.css': elementsCssWith(':root {\n    --brand: var(--color-a);\n  }') },
+    source: ['css-literal'],
+    dist: distOf([elementsWith(':root{--brand:var(--color-a)}')], ''),
+    built: ['css-literal'],
+  },
+  {
+    row: 6,
+    plant: '`padding: var(--color-accent)`',
+    files: card(rootRule('card', 'padding: var(--color-accent);')),
+    source: ['css-token-family'],
+    dist: distOf([BUILT_AUTO, '@layer components{.card{padding:var(--color-accent)}}'], CARD_BODY),
+    built: ['css-token-family'],
+  },
+  {
+    row: 7,
+    plant: '`.card .card__body { --card-pad: var(--space-2) }` (a local defined off the root)',
+    files: card('@layer components {\n  .card .card__body {\n    --card-pad: var(--space-2);\n  }\n}\n'),
+    source: ['css-local-var'],
+    dist: distOf(
+      [BUILT_AUTO, '@layer components{.card .card__body{--card-pad:var(--space-2)}}'],
+      '<div class="card"><div class="card__body"></div></div>',
+    ),
+    built: ['css-local-var'],
+  },
+  {
+    row: 8,
+    plant: '`--card-pad` read in another component',
+    files: {
+      ...card(rootRule('card', '--card-pad: var(--space-2);\n    padding: var(--card-pad);')),
+      ...componentOf('Hero', 'hero', rootRule('hero', 'padding: var(--card-pad);')),
+    },
+    source: ['css-local-var', 'css-var-undefined'],
+    dist: distOf(
+      [
+        BUILT_AUTO,
+        '@layer components{.card{--card-pad:var(--space-2);padding:var(--card-pad)}}',
+        '@layer components{.hero{padding:var(--card-pad)}}',
+      ],
+      '<div class="card"></div><div class="hero"></div>',
+    ),
+    built: ['css-local-var', 'css-var-undefined'],
+  },
+  {
+    row: 9,
+    plant: '`var(--space-99)`',
+    files: card(rootRule('card', 'padding: var(--space-99);')),
+    source: ['css-var-undefined'],
+    dist: distOf([BUILT_AUTO, '@layer components{.card{padding:var(--space-99)}}'], CARD_BODY),
+    built: ['css-var-undefined'],
+  },
+  {
+    row: 10,
+    plant: '`.stack` used without `--stack-gap`',
+    files: { [DESIGN_FILE]: DESIGN_NO_STACK, [TOKENS_FILE]: renderTokens(designOf(DESIGN_NO_STACK), AUTO) },
+    source: [],
+    dist: distOf([BUILT_AUTO.replace(';--stack-gap:var(--space-2)}', '}')], '<div class="stack"></div>'),
+    built: ['css-var-undefined'],
+  },
+  {
+    row: 11,
+    plant: '`#hero {}`',
+    files: card(
+      '@layer components {\n  .card {\n    padding: var(--space-2);\n  }\n\n  #hero {\n    padding: var(--space-2);\n  }\n}\n',
+    ),
+    source: ['css-selector'],
+    dist: distOf([BUILT_AUTO, '@layer components{.card,#hero{padding:var(--space-2)}}'], CARD_BODY),
+    built: ['css-selector'],
+  },
+  {
+    row: 12,
+    plant: '`.a .b .c .d .e` (five compounds, here in `card.css`)',
+    files: card(
+      '@layer components {\n  .card .card__a .card__b .card__c .card__d {\n    padding: var(--space-2);\n  }\n}\n',
+    ),
+    source: ['css-selector'],
+    dist: distOf(
+      [BUILT_AUTO, '@layer components{.card .card__a .card__b .card__c .card__d{padding:var(--space-2)}}'],
+      '<div class="card"><div class="card__a"><div class="card__b"><div class="card__c"><div class="card__d"></div></div></div></div></div>',
+    ),
+    built: ['css-selector'],
+  },
+  {
+    row: 13,
+    plant: '`.card .button` in card.css (a component `Button` exists)',
+    files: {
+      ...card('@layer components {\n  .card .button {\n    padding: var(--space-2);\n  }\n}\n'),
+      ...componentOf('Button', 'button', rootRule('button', 'padding: var(--space-2);')),
+    },
+    source: ['css-selector'],
+    dist: distOf(
+      [
+        BUILT_AUTO,
+        '@layer components{.card .button{padding:var(--space-2)}}',
+        '@layer components{.button{padding:var(--space-2)}}',
+      ],
+      '<div class="card"><div class="button"></div></div>',
+    ),
+    built: ['css-selector'],
+  },
+  {
+    row: 14,
+    plant: 'bare `h2 {}` in a component file',
+    files: card(
+      '@layer components {\n  .card {\n    padding: var(--space-2);\n  }\n\n  h2 {\n    padding: var(--space-2);\n  }\n}\n',
+    ),
+    source: ['css-selector'],
+    dist: distOf([BUILT_AUTO, '@layer components{.card,h2{padding:var(--space-2)}}'], CARD_BODY),
+    built: ['css-selector'],
+  },
+  {
+    row: 15,
+    plant: '`.card {}` in elements.css',
+    files: { 'src/styles/elements.css': elementsCssWith('.card {\n    padding: var(--space-2);\n  }') },
+    source: ['css-selector'],
+    dist: distOf([elementsWith('.card{padding:var(--space-2)}')], CARD_BODY),
+    built: ['css-selector'],
+  },
+  {
+    row: 16,
+    plant: '`color: var(--color-text)` in a page file',
+    files: {
+      ...card(rootRule('card', 'padding: var(--space-2);')),
+      ...routeOf('@layer page {\n  .card {\n    color: var(--color-text);\n  }\n}\n'),
+    },
+    source: ['css-page'],
+    dist: distOf(
+      [BUILT_AUTO, '@layer components{.card{padding:var(--space-2)}}', '@layer page{.card{color:var(--color-text)}}'],
+      CARD_BODY,
+    ),
+    built: ['css-page'],
+  },
+  {
+    row: 17,
+    plant: '`@media (width < 777px)`',
+    files: card(
+      rootRule('card', 'padding: var(--space-2);\n\n    @media (width < 777px) {\n      gap: var(--space-2);\n    }'),
+    ),
+    source: ['css-media'],
+    dist: distOf(
+      [BUILT_AUTO, '@layer components{.card{padding:var(--space-2);@media (width<777px){gap:var(--space-2)}}}'],
+      CARD_BODY,
+    ),
+    built: ['css-media'],
+  },
+  {
+    row: 18,
+    plant: '`@media (width < var(--bp))` (the minifier stops the build, so only the source half sees it)',
+    files: card(
+      rootRule(
+        'card',
+        'padding: var(--space-2);\n\n    @media (width < var(--bp)) {\n      gap: var(--space-2);\n    }',
+      ),
+    ),
+    source: ['css-media'],
+  },
+  {
+    row: 19,
+    plant: '`@media (min-resolution: 2dppx)`',
+    files: card(
+      rootRule(
+        'card',
+        'padding: var(--space-2);\n\n    @media (min-resolution: 2dppx) {\n      gap: var(--space-2);\n    }',
+      ),
+    ),
+    source: ['css-media'],
+    dist: distOf(
+      [BUILT_AUTO, '@layer components{.card{padding:var(--space-2);@media (resolution>=2x){gap:var(--space-2)}}}'],
+      CARD_BODY,
+    ),
+    built: ['css-media'],
+  },
+  {
+    row: 20,
+    plant: '`!important` in a component',
+    files: card(rootRule('card', 'padding: var(--space-2) !important;')),
+    source: ['css-banned'],
+    dist: distOf([BUILT_AUTO, '@layer components{.card{padding:var(--space-2)!important}}'], CARD_BODY),
+    built: ['css-banned'],
+  },
+  {
+    row: 21,
+    plant: '`@import` (a chunk with an `@import` gets a `<style>` of its own, 7.2)',
+    files: card(`@import "https://example.org/x.css";\n\n${rootRule('card', 'padding: var(--space-2);')}`),
+    source: ['css-banned'],
+    dist: distOf([BUILT_AUTO, '@layer components{.card{padding:var(--space-2)}}'], CARD_BODY, [
+      '@import "https://example.org/x.css";',
+    ]),
+    built: ['css-banned'],
+  },
+  {
+    row: 22,
+    plant: '`@scope`',
+    files: card(
+      '@layer components {\n  .card {\n    padding: var(--space-2);\n  }\n\n  @scope (.card) {\n    .card__body {\n      padding: var(--space-2);\n    }\n  }\n}\n',
+    ),
+    source: ['css-banned'],
+    dist: distOf(
+      [
+        BUILT_AUTO,
+        '@layer components{.card{padding:var(--space-2)}@scope(.card){.card__body{padding:var(--space-2)}}}',
+      ],
+      '<div class="card"><div class="card__body"></div></div>',
+    ),
+    built: ['css-banned'],
+  },
+  {
+    row: 23,
+    plant: 'a `style="…"` attribute',
+    files: {
+      ...card(rootRule('card', 'padding: var(--space-2);')),
+      ...astroOf('Card', ['card'], '<div class="card" style="color: red"><slot /></div>'),
+    },
+    source: ['css-banned'],
+    dist: distOf(
+      [BUILT_AUTO, '@layer components{.card{padding:var(--space-2)}}'],
+      '<div class="card" style="color:red"></div>',
+    ),
+    built: ['css-banned'],
+  },
+  {
+    row: 24,
+    plant: '`inline-size: var(--size-screen)` with `100vw`',
+    files: card(rootRule('card', 'inline-size: var(--size-screen);')),
+    source: ['css-banned'],
+    dist: distOf([BUILT_AUTO, '@layer components{.card{inline-size:var(--size-screen)}}'], CARD_BODY),
+    built: ['css-banned'],
+  },
+  {
+    row: 25,
+    plant: '`<style>` in `.astro`',
+    files: {
+      ...card(rootRule('card', 'padding: var(--space-2);')),
+      ...astroOf(
+        'Card',
+        ['card'],
+        '<div class="card"><slot /></div>\n<style>\n  .card { gap: var(--space-2); }\n</style>',
+      ),
+    },
+    source: ['css-sources'],
+  },
+  {
+    row: 26,
+    plant: "a component imports another component's CSS",
+    files: {
+      ...card(rootRule('card', 'padding: var(--space-2);')),
+      ...componentOf('Hero', 'hero', rootRule('hero', 'padding: var(--space-2);')),
+      ...astroOf('Card', ['card', 'hero'], '<div class="card"><slot /></div>'),
+    },
+    source: ['css-sources'],
+  },
+  { row: 27, plant: '`public/x.css`', files: { 'public/x.css': '' }, source: ['css-sources'] },
+  { row: 28, plant: '`src/styles/extra.css`', files: { 'src/styles/extra.css': '' }, source: ['css-sources'] },
+  {
+    row: 29,
+    plant: 'two top-level layers',
+    files: { 'src/styles/elements.css': `${ELEMENTS_CSS}\n@layer elements {\n}\n` },
+    source: ['css-layer-file'],
+  },
+  {
+    row: 29,
+    plant: 'a nested `@layer`',
+    files: card(
+      rootRule('card', 'padding: var(--space-2);').replace('  .card {', '  @layer inner {\n  }\n\n  .card {'),
+    ),
+    source: ['css-layer-file'],
+  },
+  {
+    row: 30,
+    plant: '`Card.astro` without `card.css`',
+    files: astroOf('Card', [], '<div class="card"><slot /></div>'),
+    source: ['css-component-file'],
+  },
+  {
+    row: 31,
+    plant: '`card.css` whose root is `.box`',
+    files: card(rootRule('box', 'padding: var(--space-2);')),
+    source: ['css-component-file', 'css-selector'],
+  },
+  {
+    row: 32,
+    plant: 'one value changed by hand in `tokens.css`',
+    files: { [TOKENS_FILE]: renderTokens(designOf(DESIGN_TEXT), AUTO).replace('0.5rem', '0.75rem') },
+    source: ['design-tokens'],
+  },
+  {
+    row: 33,
+    plant: 'a custom property in the built `tokens` layer that design.md does not hold',
+    files: {},
+    source: [],
+    dist: distOf([BUILT_AUTO.replace(';--stack-gap:var(--space-2)}', ';--stack-gap:var(--space-2);--extra:1rem}')], ''),
+    built: ['design-tokens'],
+  },
+  {
+    row: 34,
+    plant: 'an Elements row not implemented',
+    files: { [DESIGN_FILE]: DESIGN_WITH_ROW },
+    source: ['design-specs'],
+    dist: distOf([BUILT_AUTO], ''),
+    built: ['design-specs'],
+  },
+  {
+    row: 35,
+    plant: 'a background color not in a pair (`design-pairs` has no built half)',
+    files: card(rootRule('card', 'background-color: var(--color-accent);')),
+    source: ['design-pairs'],
+    dist: distOf([BUILT_AUTO, '@layer components{.card{background-color:var(--color-accent)}}'], CARD_BODY),
+    built: [],
+  },
+  {
+    row: 36,
+    plant: 'an undeclared class on a page',
+    files: {},
+    source: [],
+    dist: distOf([BUILT_AUTO], '<div class="promo"></div>'),
+    built: ['css-classes'],
+  },
+  {
+    row: 37,
+    plant: 'a defined class no page uses',
+    files: card(
+      '@layer components {\n  .card {\n    padding: var(--space-2);\n  }\n\n  .card.card--wide {\n    padding: var(--space-4);\n  }\n}\n',
+    ),
+    source: [],
+    dist: distOf(
+      [BUILT_AUTO, '@layer components{.card{padding:var(--space-2)}.card.card--wide{padding:var(--space-4)}}'],
+      CARD_BODY,
+    ),
+    built: ['css-unused'],
+  },
+  {
+    row: 38,
+    plant: 'a `<table>` with no table rule',
+    files: {},
+    source: [],
+    dist: distOf([BUILT_AUTO], '<table><tbody></tbody></table>'),
+    built: ['css-element-coverage'],
+  },
+];
+
+/** The ids of each row of the drift matrix of 14.1, as the specification gives them. */
+function specDriftIds(): Map<number, string[]> {
+  const spec = readFileSync(fileURLToPath(new URL('../../docs/spec.md', import.meta.url)), 'utf8');
+  const table = spec.slice(spec.indexOf('**The drift matrix.**'), spec.indexOf('**The freedom matrix.**'));
+  const rows = new Map<number, string[]>();
+  for (const line of table.split('\n')) {
+    const cells = line.split(' | ');
+    const row = Number(cells[0]?.replace('| ', ''));
+    const ids = cells.at(-1)?.replace(/ \|$/, '');
+    if (Number.isInteger(row) && row > 0 && ids !== undefined) rows.set(row, ids.split(', ').sort());
+  }
+  return rows;
+}
+
+test('the rule-level drift rows are the 38 rows of 14.1, and each row asks for exactly the ids of its line there', () => {
+  const spec = specDriftIds();
+  assert.equal(spec.size, 38);
+  assert.deepEqual([...new Set(DRIFT.map(({ row }) => row))], [...spec.keys()]);
+  for (const { row, plant, source, built } of DRIFT) {
+    assert.deepEqual([...new Set([...source, ...(built ?? [])])].sort(), spec.get(row), `drift row ${row}: ${plant}`);
+  }
+});
+
+test('the project of the rule-level rows passes preflight, and its built page passes the audits', async () => {
+  assert.deepEqual(sourceIds({}), []);
+  assert.deepEqual(await builtIds({}, distOf([BUILT_AUTO], '<a href="/">Start</a>')), []);
+  assert.deepEqual(sourceIds(card(rootRule('card', 'padding: var(--space-2);'))), []);
+  assert.deepEqual(
+    await builtIds(
+      card(rootRule('card', 'padding: var(--space-2);')),
+      distOf([BUILT_AUTO, '@layer components{.card{padding:var(--space-2)}}'], CARD_BODY),
+    ),
+    [],
+  );
+});
+
+for (const { row, plant, files, source } of DRIFT) {
+  test(`drift row ${row} (${plant}): preflight gives exactly the ids of the source half`, () => {
+    assert.deepEqual(sourceIds(files), source);
+  });
+}
+
+for (const { row, plant, files, dist, built } of DRIFT.filter((item) => item.dist !== undefined)) {
+  test(`drift row ${row} (${plant}): the audits give exactly the ids of the built half`, async () => {
+    assert.deepEqual(await builtIds(files, dist ?? {}), built);
+  });
+}
+
+/**
+ * The five agent mistakes of 14.2 and the drift row that plants each one. Each mistake gives exactly one id, in the
+ * half of the row that sees it.
+ */
+const AGENT_MISTAKES: readonly [mistake: string, row: number, id: string][] = [
+  ['a raw color', 1, 'css-literal'],
+  ['`padding: 13px`', 2, 'css-literal'],
+  ['an undeclared class', 36, 'css-classes'],
+  ['a `<style>` in an `.astro` file', 25, 'css-sources'],
+  ['a `777px` media query', 17, 'css-media'],
+];
+
+test('the five agent mistakes of 14.2 give exactly their one id through preflight and the audits', async () => {
+  const seen: { mistake: string; ids: string[] }[] = [];
+  for (const [mistake, row] of AGENT_MISTAKES) {
+    const plant = DRIFT.find((item) => item.row === row);
+    const files = plant?.files ?? {};
+    const ids = new Set(sourceIds(files));
+    if (plant?.dist !== undefined) for (const id of await builtIds(files, plant.dist)) ids.add(id);
+    seen.push({ mistake, ids: [...ids].sort() });
+  }
+  assert.deepEqual(
+    seen,
+    AGENT_MISTAKES.map(([mistake, , id]) => ({ mistake, ids: [id] })),
+  );
+});
+
+/** The component of a freedom row's file: `card` for a file that is no component file. */
+const componentName = (file: CssFile): string => (file.kind === 'component' ? file.component : 'card');
+
+/** The body of the built page of a freedom row: one element for each class that the row's CSS defines. */
+function freedomBody(file: CssFile, source: string): string {
+  if (file.kind === 'page') return '<div class="hero"></div>';
+  if (componentName(file) === 'nav') return '<nav class="nav"><a class="nav__link" href="/">Start</a></nav>';
+  if (componentName(file) === 'list') return '<div class="list"><div class="list__item"></div></div>';
+  if (source.includes('card__body')) return '<div class="card"><div class="card__body"></div></div>';
+  return '<div class="card"><img src="/a.png" alt=""></div>';
+}
+
+/** The project files of a freedom row: its component with the row's CSS, or for a page file the route and `Hero`. */
+function freedomFiles(file: CssFile, source: string): Files {
+  if (file.kind === 'page') {
+    return {
+      ...componentOf('Hero', 'hero', rootRule('hero', 'padding: var(--space-2);')),
+      ...routeOf(source, '<div class="hero"></div>'),
+    };
+  }
+  const kebab = componentName(file);
+  return componentOf(`${kebab.charAt(0).toUpperCase()}${kebab.slice(1)}`, kebab, source);
+}
+
+/** The built chunks of a freedom row: the global chunk, `Hero` for a page file, and the row's own chunk. */
+const freedomChunks = (file: CssFile, built: string): string[] =>
+  file.kind === 'page' ? [BUILT_AUTO, '@layer components{.hero{padding:var(--space-2)}}', built] : [BUILT_AUTO, built];
+
+test('the rule-level freedom rows are the 24 rows of 14.1', () => {
+  assert.deepEqual(
+    [...new Set(FREEDOM.map(({ row }) => row))],
+    Array.from({ length: 24 }, (_, index) => index + 1),
+  );
+});
+
+for (const { row, proves, file, source, built } of FREEDOM) {
+  test(`freedom row ${row} (${proves}): preflight and the audits give no id`, async () => {
+    const files = freedomFiles(file, source);
+    assert.deepEqual(sourceIds(files), []);
+    assert.deepEqual(await builtIds(files, distOf(freedomChunks(file, built), freedomBody(file, source))), []);
+  });
+}
