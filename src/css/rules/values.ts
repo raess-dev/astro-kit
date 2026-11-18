@@ -61,13 +61,12 @@ import {
 import {
   attributesOf,
   type ComplexSelector,
-  classRole,
   isRootSelector,
   keyframesOwner,
   localOwner,
-  ownerOf,
   PLACEMENT_PROPERTIES,
   parseSelector,
+  rootComponentOf,
 } from '../selectors.ts';
 import {
   bannedLiterals,
@@ -80,6 +79,7 @@ import {
   type VarUse,
   varsOf,
 } from '../values.ts';
+import { markupElements } from './structure.ts';
 
 // Small facts
 
@@ -231,19 +231,6 @@ function onRootOf(rule: Rule | undefined, component: string): boolean {
   );
 }
 
-/**
- * The component of a built selector: the one whose root or modifier class the first compound holds (7.8). Built CSS
- * has no file name, so the class tells the component.
- */
-function ownerOfSelector(selector: ComplexSelector, components: ReadonlySet<string>): string | undefined {
-  for (const item of selector.compounds[0]?.classes ?? []) {
-    const owner = ownerOf(item.name, components);
-    const role = owner === undefined ? undefined : classRole(item.name, owner);
-    if (role === 'root' || role === 'modifier') return owner;
-  }
-  return undefined;
-}
-
 /** The name of the `@keyframes` that encloses a node, or `undefined`. */
 function keyframesNameOf(atRules: readonly AtRule[]): string | undefined {
   const rule = [...atRules].reverse().find((each) => KEYFRAMES_AT_RULES.has(each.name));
@@ -262,7 +249,7 @@ function builtOwners(item: BuiltNode, components: ReadonlySet<string>): (string 
   const { rule } = item;
   if (rule?.kind === 'style') {
     return selectorsOf(rule).map((selector) =>
-      selector === undefined ? undefined : ownerOfSelector(selector, components),
+      selector === undefined ? undefined : rootComponentOf(selector, components),
     );
   }
   const name = keyframesNameOf(item.atRules);
@@ -278,7 +265,7 @@ function builtRootsOf(rule: Rule | undefined, components: ReadonlySet<string>): 
   if (rule === undefined || rule.kind !== 'style') return undefined;
   const roots: string[] = [];
   for (const selector of selectorsOf(rule)) {
-    const owner = selector === undefined ? undefined : ownerOfSelector(selector, components);
+    const owner = selector === undefined ? undefined : rootComponentOf(selector, components);
     if (owner === undefined || selector === undefined || !isRootSelector(selector, owner)) return undefined;
     roots.push(owner);
   }
@@ -954,15 +941,13 @@ export function checkModesMedia(input: SourceCss, report: Report): void {
     });
   }
   if (!on) return;
+  // The markup as the structure rules read it: `<noscript>` content counts, and in `.md` and `.mdx` an example in a
+  // fenced code block or a code span does not.
   for (const source of input.sources) {
-    for (const element of source.markup?.querySelectorAll('*') ?? []) {
+    for (const { element, offset } of markupElements(source, (each) => modeMedia(each) !== undefined)) {
       const value = modeMedia(element);
-      if (value === undefined) continue;
-      add(
-        'modes-media',
-        sourceWhere(source.path, { line: lineAt(source.text, element.range[0]) }),
-        mediaText(element, value),
-      );
+      const where = sourceWhere(source.path, { line: lineAt(source.text, offset) });
+      if (value !== undefined) add('modes-media', where, mediaText(element, value));
     }
   }
 }

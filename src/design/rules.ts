@@ -31,7 +31,7 @@ import {
   sourceWhere,
   tokenTableOf,
 } from '../css/rules.ts';
-import { classRole, normalizeSelector, ownerOf, parseSelector } from '../css/selectors.ts';
+import { normalizeSelector, parseSelector, rootComponentOf } from '../css/selectors.ts';
 import { colorPosition, exactVar, isCustomProperty, varsOf } from '../css/values.ts';
 import type { Report } from '../registry.ts';
 import { familyOf } from './parse.ts';
@@ -74,17 +74,9 @@ function specRows(design: Design, components: ReadonlySet<string>): SpecRow[] {
     const parsed = parseValue(row.selector);
     const result = parsed.problems.length === 0 && parsed.values.length > 0 ? parseSelector(parsed.values) : undefined;
     const selector = result?.selector;
-    let component: string | undefined;
-    if (selector !== undefined && kind === 'components') {
-      for (const item of selector.compounds[0]?.classes ?? []) {
-        const owner = ownerOf(item.name, components);
-        const role = owner === undefined ? undefined : classRole(item.name, owner);
-        if (owner !== undefined && (role === 'root' || role === 'modifier')) {
-          component = owner;
-          break;
-        }
-      }
-    }
+    // The root as the selector checks read it: `:is(.card)`, `:where(.card)` and `[class~=card]` start at `.card`.
+    const component =
+      selector !== undefined && kind === 'components' ? rootComponentOf(selector, components) : undefined;
     const problem =
       selector === undefined
         ? 'the selector does not parse'
@@ -200,11 +192,8 @@ function builtSpecsOf(sheet: BuiltSheet, components: ReadonlySet<string>): Built
       if (node.type !== 'rule' || node.kind !== 'style') continue;
       for (const values of node.resolved) {
         const { selector } = parseSelector(values);
-        for (const item of selector?.compounds[0]?.classes ?? []) {
-          const owner = ownerOf(item.name, components);
-          const role = owner === undefined ? undefined : classRole(item.name, owner);
-          if (owner !== undefined && (role === 'root' || role === 'modifier')) specs.roots.add(owner);
-        }
+        const owner = selector === undefined ? undefined : rootComponentOf(selector, components);
+        if (owner !== undefined) specs.roots.add(owner);
       }
     }
   }

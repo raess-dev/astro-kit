@@ -396,6 +396,23 @@ test('css-element-coverage: an input rule with :not() or :is() of a type covers 
   ]);
 });
 
+test('css-element-coverage: an element matches every :is() and :where() of a compound, so their keys intersect', () => {
+  const boxes = '<input type="checkbox" name="a"><input type="radio" name="b">';
+  const disabled =
+    'input:is([type="radio"], [type="checkbox"]):where(:disabled) {\n    accent-color: var(--color-accent);\n  }';
+  const disabledBuilt = 'input:is([type=radio],[type=checkbox]):where(:disabled){accent-color:var(--color-accent)}';
+  assert.deepEqual(findings(audited(coverageSite(disabled, disabledBuilt, boxes))), [
+    'css-element-coverage / input[type=checkbox]',
+    'css-element-coverage / input[type=radio]',
+  ]);
+  const both = ':is(h1, h2):is(h2, h3) {\n    color: var(--color-text);\n  }';
+  const bothBuilt = ':is(h1,h2):is(h2,h3){color:var(--color-text)}';
+  assert.deepEqual(findings(audited(coverageSite(both, bothBuilt, '<h1>A</h1><h2>B</h2><h3>C</h3>'))), [
+    'css-element-coverage / h1',
+    'css-element-coverage / h3',
+  ]);
+});
+
 test('css-element-coverage: a pseudo-class, a non-type attribute or a pseudo-element covers no element', () => {
   const checkbox = '<input type="checkbox" name="a">';
   for (const [css, minified] of [

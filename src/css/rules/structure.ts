@@ -74,11 +74,11 @@ import {
   type ComplexSelector,
   type Compound,
   type CssFile,
-  classRole,
   keyframesOwner,
-  ownerOf,
   PLACEMENT_PROPERTIES,
   parseSelector,
+  rootCandidates,
+  rootComponentOf,
   type ShapeOptions,
   selectorProblems,
   subject,
@@ -675,7 +675,7 @@ const cssImportsOf = (source: SourceText): CssImport[] => cssReferencesOf(source
 // Markup
 
 /** An element of a source text, with its offset in the text. */
-interface MarkupElement {
+export interface MarkupElement {
   element: HTMLElement;
   offset: number;
 }
@@ -720,7 +720,7 @@ function codeRanges(text: string): [number, number][] {
  * In `.md` and `.mdx`, an element inside a fenced code block or a code span does not count. `keep` runs first, so the
  * work for each element stays small.
  */
-function markupElements(source: SourceText, keep: (element: HTMLElement) => boolean): MarkupElement[] {
+export function markupElements(source: SourceText, keep: (element: HTMLElement) => boolean): MarkupElement[] {
   if (source.markup === undefined) return [];
   const out: MarkupElement[] = [];
   for (const element of source.markup.querySelectorAll('*')) {
@@ -770,23 +770,6 @@ const firstCompound = (selector: ComplexSelector): Compound | undefined => {
   const first = selector.compounds[0];
   return first === undefined ? undefined : subject(alone(first));
 };
-
-/**
- * The classes of a compound that can hold a component root: its own, and those of the first compound of each
- * argument of its `:is()` and `:where()` (CSS Nesting writes a parent list in this way).
- */
-function rootCandidates(compound: Compound, depth = 0): string[] {
-  const out = compound.classes.map((item) => item.name);
-  if (depth >= MAX_DEPTH) return out;
-  for (const pseudo of compound.pseudoClasses) {
-    if (pseudo.name !== 'is' && pseudo.name !== 'where') continue;
-    for (const selector of pseudo.selectors ?? []) {
-      const first = firstCompound(selector);
-      if (first !== undefined) out.push(...rootCandidates(first, depth + 1));
-    }
-  }
-  return out;
-}
 
 /** The type selectors that name the element of a compound inside a `:not()` (the lead decision of 7.1). */
 function subjectTypes(selector: ComplexSelector, sink: ParseProblem[], depth: number): void {
@@ -1273,13 +1256,8 @@ function builtFile(item: BuiltNode, selector: ComplexSelector | undefined, shape
       node.name === 'keyframes' && name?.type === 'ident' ? keyframesOwner(name.value, shape.components) : undefined;
     return { kind: 'component', component: owner ?? '' };
   }
-  const first = selector === undefined ? undefined : firstCompound(selector);
-  for (const name of first === undefined ? [] : rootCandidates(first)) {
-    const owner = ownerOf(name, shape.components);
-    const role = owner === undefined ? undefined : classRole(name, owner);
-    if (owner !== undefined && (role === 'root' || role === 'modifier')) return { kind: 'component', component: owner };
-  }
-  return undefined;
+  const owner = selector === undefined ? undefined : rootComponentOf(selector, shape.components);
+  return owner === undefined ? undefined : { kind: 'component', component: owner };
 }
 
 /** The facts of built `css-selector` in one sheet. */
@@ -1445,13 +1423,18 @@ function bannedValues(
   return out;
 }
 
-/** The custom properties that a CSS text defines, by name: the first definition of each. */
+/**
+ * The custom properties that a CSS text defines, by name: the values of every definition of each, one after the
+ * other. A modifier, a state or an `@media` block may set a local again (7.3), and css-banned asks only whether one
+ * of these values brings a viewport unit.
+ */
 function definitionsOf(nodes: readonly { node: CssNode }[]): Map<string, ComponentValue[]> {
   const out = new Map<string, ComponentValue[]>();
   for (const { node } of nodes) {
-    if (node.type === 'declaration' && node.property.startsWith('--') && !out.has(node.property)) {
-      out.set(node.property, node.value);
-    }
+    if (node.type !== 'declaration' || !node.property.startsWith('--')) continue;
+    const values = out.get(node.property) ?? [];
+    values.push(...node.value);
+    out.set(node.property, values);
   }
   return out;
 }

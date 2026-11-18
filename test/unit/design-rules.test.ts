@@ -182,6 +182,26 @@ test('design-specs: a Components row is implemented in the file of its component
   assert.deepEqual(ids(checked(project({ [CARD_FILE]: wide }, { design: modifier }))), []);
 });
 
+test('design-specs: a Components row starts at the root as the selector checks read it (:is, :where, [class~=x])', () => {
+  const rows = [
+    '`:is(.card)` | `padding` | `--space-2`',
+    '`:where(.card)` | `gap` | `--space-2`',
+    '`[class~=card]` | `color` | `--color-accent`',
+  ];
+  const { design } = designWith(withRows('Components', rows));
+  const css =
+    '@layer components {\n  .card {\n    padding: var(--space-2);\n  }\n\n  :where(.card) {\n    gap: var(--space-2);\n  }\n\n  [class~=card] {\n    color: var(--color-accent);\n  }\n}\n';
+  const source = project({ [CARD_FILE]: css }, { design });
+  assert.deepEqual(ids(checked(source)), []);
+  const chunk =
+    '@layer components{.card{padding:var(--space-2)}:where(.card){gap:var(--space-2)}[class~=card]{color:var(--color-accent)}}';
+  assert.deepEqual(ids(audited(built(source, { 'index.html': page('<div class="card"></div>', [chunk]) }))), []);
+  const lost = chunk.replace(':where(.card){gap:var(--space-2)}', '');
+  assert.deepEqual(findings(audited(built(source, { 'index.html': page('<div class="card"></div>', [lost]) }))), [
+    'design-specs / :where(.card) { gap: var(--space-2) }',
+  ]);
+});
+
 test('design-specs: a Components row of a component without its file fails at the row', () => {
   const { design, text } = designWith(withRows('Components', ['`.card` | `padding` | `--space-2`']));
   const report = checked(project({ 'src/components/Card.astro': '<div class="card"></div>\n' }, { design }));

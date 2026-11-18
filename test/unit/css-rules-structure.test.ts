@@ -793,6 +793,11 @@ const COMPONENT_FILE: Case[] = [
     ids: [],
   },
   {
+    name: '[class~=card] counts as the root class .card (7.1)',
+    input: () => withCard({ [CARD_CSS]: layer('components', rule('[class~=card]')) }),
+    ids: [],
+  },
+  {
     name: 'the root class only in a later compound',
     input: () => withCard({ [CARD_CSS]: layer('components', rule('div .card')) }),
     ids: ['css-component-file', 'css-selector'],
@@ -1082,6 +1087,11 @@ const BUILT_SELECTOR: { name: string; css: string; source?: () => SourceCss; ids
     ids: ['css-selector'],
   },
   {
+    name: '[class~=card] is the root .card (7.1), as in the source',
+    css: '@layer components{[class~=card]{color:var(--color-text)}}',
+    ids: [],
+  },
+  {
     name: 'freedom 2 and 17: :has(img) and :hover',
     css: '@layer components{.card:has(img){color:var(--color-text)}.card:hover{scale:1.05}}',
     ids: [],
@@ -1278,6 +1288,14 @@ const BANNED: Case[] = [
     ids: ['css-banned'],
   },
   {
+    name: 'a viewport unit through a local that a modifier sets again',
+    input: () =>
+      card(
+        '  .card {\n    --card-w: var(--size-content);\n    max-width: var(--card-w);\n  }\n\n  .card.card--wide {\n    --card-w: var(--size-screen);\n  }',
+      ),
+    ids: ['css-banned'],
+  },
+  {
     name: 'a viewport unit on margin-inline',
     input: () => card(rule('.card:hover', 'margin-inline: var(--size-screen);')),
     ids: ['css-banned'],
@@ -1414,6 +1432,11 @@ const BUILT_BANNED: { name: string; css: string; body?: string; ids: string[] }[
   {
     name: 'a viewport unit through a local',
     css: '@layer components{.card{--card-w:var(--size-screen);inline-size:var(--card-w)}}',
+    ids: ['css-banned'],
+  },
+  {
+    name: 'a viewport unit through a local that a modifier sets again',
+    css: '@layer components{.card{--card-w:var(--size-content);max-width:var(--card-w)}.card.card--wide{--card-w:var(--size-screen)}}',
     ids: ['css-banned'],
   },
   { name: 'url() in components', css: '@layer components{.card{background-image:url(/a.png)}}', ids: ['css-banned'] },

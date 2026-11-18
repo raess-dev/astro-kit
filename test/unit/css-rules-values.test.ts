@@ -722,6 +722,14 @@ const LOCAL_BUILT: readonly BuiltCase[] = [
     expected: ['css-local-var'],
   },
   {
+    name: 'a local read in :where(.card) and [class~=card], which start at the root as in the source',
+    files: CARD,
+    dist: site(
+      '@layer components{.card{--card-pad:var(--space-2)}:where(.card){padding:var(--card-pad)}[class~=card]{gap:var(--card-pad)}}',
+    ),
+    expected: [],
+  },
+  {
     name: 'a local read in a keyframe of its component',
     files: CARD,
     dist: site(
@@ -1041,6 +1049,21 @@ const MODES_SOURCE: readonly SourceCase[] = [
     name: 'the same with AUTO',
     files: { 'src/components/Hero.astro': `---\nconst x = 1;\n---\n${PICTURE}\n` },
     expected: [],
+  },
+  {
+    name: 'a media attribute in a fenced code block or a code span of Markdown is an example',
+    files: {
+      'src/pages/a.md': `# A\n\n\`\`\`html\n${PICTURE}\n\`\`\`\n`,
+      'src/pages/b.mdx': '# B\n\nWrite `<source media="(prefers-color-scheme: dark)">` here.\n',
+    },
+    settings: { options: SWITCH },
+    expected: [],
+  },
+  {
+    name: 'a media attribute in the markup of Markdown',
+    files: { 'src/pages/a.md': `# A\n\n${PICTURE}\n` },
+    settings: { options: SWITCH },
+    expected: ['modes-media'],
   },
   {
     name: 'a media attribute without a mode feature',
