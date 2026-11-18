@@ -727,11 +727,14 @@ test('every rule of preflight has a failing case, and every one is in the regist
   );
 });
 
+/** The rules of the registry whose source half lands in a later milestone: `csp-hash` has its built half in M5 and its source half in M8. */
+const SOURCE_HALF_LATER: ReadonlySet<string> = new Set(['csp-hash']);
+
 test('the order of the rules is that of 6.1, step 2', () => {
   const inSpec = specOrder();
   assert.ok(inSpec.includes('css-sources'), 'the test finds the sub-steps in docs/spec.md');
   assert.deepEqual(
-    inSpec.filter((id) => RULE_BY_ID.has(id)),
+    inSpec.filter((id) => RULE_BY_ID.has(id) && !SOURCE_HALF_LATER.has(id)),
     ORDER,
   );
   assert.deepEqual(inSpec.slice(-14), ORDER.slice(-14), 'sub-steps 9 and 10 end the list, in this order');

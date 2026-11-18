@@ -159,7 +159,7 @@ function outcomes(cases: readonly Case[]): Outcome[] {
 
 const text = (length: number): string => 'x'.repeat(length);
 
-test('the registry holds the rules of milestones M2, M3 and part 5a of M5 in the order of section 8', () => {
+test('the registry holds the rules of milestones M2, M3 and parts 5a and 5b of M5 in the order of section 8', () => {
   assert.deepEqual(
     RULES.map((rule) => [rule.id, rule.group, rule.stage]),
     [
@@ -181,8 +181,24 @@ test('the registry holds the rules of milestones M2, M3 and part 5a of M5 in the
       ['routes-on-demand', 'routes', 'config'],
       ['routes-slug', 'routes', 'config + build'],
       ['routes-redirects', 'routes', 'config + build'],
+      ['speculation-block', 'speculation', 'build'],
+      ['images-src', 'images', 'build'],
+      ['images-attrs', 'images', 'build'],
+      ['images-format', 'images', 'build'],
+      ['images-priority', 'images', 'build'],
       ['images-public', 'images', 'config'],
       ['images-original', 'images', 'config'],
+      ['fonts-limit', 'fonts', 'build'],
+      ['head-canonical', 'head', 'build'],
+      ['head-lang', 'head', 'build'],
+      ['head-title', 'head', 'build'],
+      ['head-description', 'head', 'build'],
+      ['head-og', 'head', 'build'],
+      ['head-icons', 'head', 'build'],
+      ['head-jsonld', 'head', 'build'],
+      ['headings-h1', 'headings', 'build'],
+      ['headings-order', 'headings', 'build'],
+      ['indexing-noindex', 'indexing', 'build'],
       ['facts-schedule', 'facts', 'config'],
       ['css-sources', 'css', 'config + build'],
       ['css-layer-file', 'css', 'config'],
@@ -204,14 +220,43 @@ test('the registry holds the rules of milestones M2, M3 and part 5a of M5 in the
       ['design-specs', 'design', 'config + build'],
       ['design-pairs', 'design', 'config'],
       ['modes-themes', 'modes', 'config'],
+      ['modes-script', 'modes', 'build'],
+      ['modes-switch', 'modes', 'build'],
       ['modes-media', 'modes', 'config + build'],
+      ['csp-meta', 'csp', 'build'],
+      ['csp-hash', 'csp', 'config + build'],
+      ['csp-base', 'csp', 'build'],
       ['edge-headers', 'edge', 'build'],
       ['edge-redirects', 'edge', 'build'],
+      ['html-validate', 'html', 'build'],
+      ['html-shell', 'html', 'build'],
       ['legal-processing', 'legal', 'config'],
+      ['media-animated', 'media', 'build'],
+      ['media-captions', 'media', 'build'],
+      ['media-pdf', 'media', 'build'],
+      ['svg-name', 'svg', 'build'],
     ],
   );
-  // Section 8, Waivers: of these rules, only `css-element-coverage` and `css-unused` are waivable.
-  const waivable = ['css-element-coverage', 'css-unused'];
+  // Section 8, Waivers: of these rules, only these are waivable.
+  const waivable = [
+    'images-attrs',
+    'images-format',
+    'images-priority',
+    'fonts-limit',
+    'head-title',
+    'head-description',
+    'head-og',
+    'head-jsonld',
+    'headings-h1',
+    'headings-order',
+    'css-element-coverage',
+    'css-unused',
+    'html-validate',
+    'media-animated',
+    'media-captions',
+    'media-pdf',
+    'svg-name',
+  ];
   for (const rule of RULES) {
     assert.equal(rule.level, 'error', rule.id);
     assert.equal(rule.waivable, waivable.includes(rule.id), rule.id);

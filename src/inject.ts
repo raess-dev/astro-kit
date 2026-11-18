@@ -46,22 +46,31 @@ interface StartTag {
   end: number;
 }
 
+/**
+ * The attributes that stand in a text from `from` on, as a start tag holds them: names in lower case, values as
+ * written (no character reference is decoded). As in HTML, the first attribute of a name counts. Returns the
+ * attributes and the index after the last one. The build audits read attributes with it too (`src/audit/dom.ts`).
+ */
+export function readAttributes(text: string, from: number): { attributes: Map<string, string>; index: number } {
+  const attributes = new Map<string, string>();
+  let index = from;
+  for (;;) {
+    ATTRIBUTE.lastIndex = index;
+    const attribute = ATTRIBUTE.exec(text);
+    if (attribute === null) break;
+    const key = (attribute[1] ?? '').toLowerCase();
+    if (!attributes.has(key)) attributes.set(key, attribute[2] ?? attribute[3] ?? attribute[4] ?? '');
+    index = ATTRIBUTE.lastIndex;
+  }
+  return { attributes, index };
+}
+
 /** The start tag at `<`, or `undefined` when the text there is no start tag or the tag never ends. */
 function startTagAt(html: string, at: number): StartTag | undefined {
   TAG_NAME.lastIndex = at + 1;
   const name = TAG_NAME.exec(html)?.[0];
   if (name === undefined) return undefined;
-  const attributes = new Map<string, string>();
-  let index = at + 1 + name.length;
-  for (;;) {
-    ATTRIBUTE.lastIndex = index;
-    const attribute = ATTRIBUTE.exec(html);
-    if (attribute === null) break;
-    const key = (attribute[1] ?? '').toLowerCase();
-    // As in HTML, the first attribute of a name counts.
-    if (!attributes.has(key)) attributes.set(key, attribute[2] ?? attribute[3] ?? attribute[4] ?? '');
-    index = ATTRIBUTE.lastIndex;
-  }
+  const { attributes, index } = readAttributes(html, at + 1 + name.length);
   const end = html.indexOf('>', index);
   // Between the last attribute and `>` there is only white space and `/`.
   if (end < 0 || /[^\t\n\f\r /]/.test(html.slice(index, end))) return undefined;
@@ -82,12 +91,15 @@ function afterTextElement(html: string, name: string, from: number): number {
  *
  * The page is read as elements, not as text. So a text that only looks like the meta does not count: in a
  * comment, in a script or a style, in the title, or in the value of an attribute. The meta is the first `<meta>`
- * whose `http-equiv` is exactly `content-security-policy`, in any letter case.
+ * whose `http-equiv` is exactly `content-security-policy`, in any letter case, that a browser applies: not inside a
+ * `<template>`, and not after the end of the head (a `</head>` end tag or a `<body>` start tag). A browser ignores a
+ * CSP meta outside `head`, and `csp-meta` reports one (8).
  *
  * The text has one character for each byte (latin1), so the index is an index in the bytes. Every character that
  * the search looks for is ASCII.
  */
 export function cspMetaEnd(html: string): number | undefined {
+  let templates = 0;
   let at = html.indexOf('<');
   while (at >= 0) {
     let next = at + 1;
@@ -100,18 +112,29 @@ export function cspMetaEnd(html: string): number | undefined {
       // A doctype, a processing instruction or an end tag: none has attributes that count.
       const end = html.indexOf('>', at);
       if (end < 0) return undefined;
+      const name = html.startsWith('</', at) ? endTagName(html, at) : '';
+      if (name === 'head') return undefined;
+      if (name === 'template') templates = Math.max(0, templates - 1);
       next = end + 1;
     } else {
       const tag = startTagAt(html, at);
       if (tag !== undefined) {
+        if (tag.name === 'body') return undefined;
+        if (tag.name === 'template') templates += 1;
         const isCsp = tag.name === 'meta' && tag.attributes.get('http-equiv')?.toLowerCase() === CSP_EQUIV;
-        if (isCsp) return tag.end;
+        if (isCsp && templates === 0) return tag.end;
         next = TEXT_ELEMENTS.includes(tag.name) ? afterTextElement(html, tag.name, tag.end) : tag.end;
       }
     }
     at = html.indexOf('<', next);
   }
   return undefined;
+}
+
+/** The name of the end tag at `</`, in lower case, or `''` when no tag name follows. */
+function endTagName(html: string, at: number): string {
+  TAG_NAME.lastIndex = at + 2;
+  return TAG_NAME.exec(html)?.[0].toLowerCase() ?? '';
 }
 
 /** The settings that decide the inserts. `Options` fits. */

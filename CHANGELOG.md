@@ -68,3 +68,10 @@
   `src/styles/elements.css` or `src/styles/fonts.css` at its path: the kit imports both into every page, and Vite
   stopped the build with an import that it could not resolve. A missing `elements.css` no longer gives
   `design-pairs` and `design-specs` findings for its rules.
+- Milestone M5, part 5b: the page audits. 27 rules read each built page on its own: `head-*`, `headings-*`,
+  `indexing-noindex`, `speculation-block`, `modes-script`, `modes-switch`, `csp-meta`, the built half of `csp-hash`,
+  `csp-base`, `html-shell`, `images-src`, `images-attrs`, `images-format`, `images-priority`, `fonts-limit`,
+  `svg-name`, `media-animated`, `media-captions` and `media-pdf`, and `html-validate` runs last with only the kit
+  config. They read each page once, without recursion, so a page of 2 MB or one that nests 5,000 deep stops none of
+  them. A page reads as a browser parses it: `pre` holds markup, `textarea` and `title` hold text, and template
+  content is no part of the page. A CSP meta, a canonical, a description or an Open Graph tag counts only in `head`.
