@@ -75,3 +75,9 @@
   config. They read each page once, without recursion, so a page of 2 MB or one that nests 5,000 deep stops none of
   them. A page reads as a browser parses it: `pre` holds markup, `textarea` and `title` hold text, and template
   content is no part of the page. A CSP meta, a canonical, a description or an Open Graph tag counts only in `head`.
+- Milestone M5, part 5c: the site and budget audits. 21 rules read the pages together: `routes-404`,
+  `routes-translation`, `hreflang-*`, `links-*`, `facts-value`, `content-*`, `legal-pages`, `legal-statement` and
+  `budget-*`. A site now needs `/404.html`, the declared legal pages, one locale home for each locale with pages, and
+  pages whose facts equal `site.json`. Two facts patterns and the font regex backtrack on long runs, so they run as
+  linear matchers that give the same matches. A link to the file of a page (`/x/index.html`) counts as a link to the
+  page in every rule.

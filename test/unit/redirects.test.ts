@@ -17,6 +17,7 @@ import {
   REDIRECTS_FILE,
   type RedirectRow,
   redirectLines,
+  redirectMatcher,
   redirectRowSchema,
   redirectsSchema,
   sourceMatches,
@@ -576,4 +577,19 @@ test('findRedirect treats /a, /a/ and /a/index.html as one path, and matches the
   }
   assert.equal(findRedirect([{ from: '/' }], '/index.html')?.from, '/');
   assert.equal(matchesRedirect([], '/alt/'), false);
+  const matcher = redirectMatcher(rows);
+  for (const [path, from] of cases) assert.equal(matcher(path), from !== undefined, path);
+  assert.equal(redirectMatcher([{ from: '/' }])('/index.html'), true);
+  assert.equal(redirectMatcher([])('/alt/'), false);
+});
+
+test('redirectMatcher reads 2,000 static rows once: 50,000 paths stay fast', () => {
+  const rows = Array.from({ length: 2_000 }, (_, index) => ({ from: `/alt/seite-${index}` }));
+  const matcher = redirectMatcher([...rows, { from: '/blog/*' }]);
+  const started = performance.now();
+  let found = 0;
+  for (let index = 0; index < 50_000; index += 1) if (matcher(`/alt/seite-${index}/`)) found += 1;
+  assert.equal(found, 2_000);
+  assert.equal(matcher('/blog/x/'), true);
+  assert.ok(performance.now() - started < 1_000);
 });

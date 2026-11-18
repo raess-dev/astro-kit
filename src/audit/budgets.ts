@@ -1,0 +1,258 @@
+/**
+ * The budgets audit (specification, 6.1, `astro:build:done`, step 4, third; section 8): `budget-head`,
+ * `budget-document`, `budget-dom` and `budget-fonts`. `js-budget` joins it in M8.
+ *
+ * **Compressed size** is the larger of zstd level 3 (`ZSTD_c_compressionLevel`) and brotli quality 5
+ * (`BROTLI_PARAM_QUALITY`) of the bytes (section 8): `compressedSize`.
+ *
+ * **Scopes** (Measurement details): `budget-head`, `budget-document` and `budget-dom` hold for each page, and report
+ * at the page path. `budget-fonts` holds for the site as a whole, and reports once, at `/` (the place of a waiver for
+ * it).
+ *
+ * **Who reports what.** `budget-head` measures the HTML up to and including `</head>`, and the CSP meta tag alone;
+ * `budget-document` the whole file. A page over both limits gives both ids: two limits, two facts. `budget-dom`
+ * counts elements and depth: one finding for each of the two limits that a page breaks. Font files over the limit are
+ * `budget-fonts`'s; the number of families is `fonts-limit`'s.
+ */
+import { brotliCompressSync, constants, zstdCompressSync } from 'node:zlib';
+import type { HTMLElement } from 'node-html-parser';
+import type { BuildContext, BuiltPage } from '../context.ts';
+import {
+  type AuditRule,
+  cspMetasOf,
+  decodePath,
+  domOf,
+  type PageDom,
+  rawContentOf,
+  runRules,
+  scriptKind,
+} from './dom.ts';
+
+const ENCODER = new TextEncoder();
+
+/** The compressed size of a text (as UTF-8) or of bytes: the larger of zstd level 3 and brotli quality 5. */
+export function compressedSize(data: string | Uint8Array): number {
+  const bytes = typeof data === 'string' ? ENCODER.encode(data) : data;
+  const zstd = zstdCompressSync(bytes, { params: { [constants.ZSTD_c_compressionLevel]: 3 } }).length;
+  const brotli = brotliCompressSync(bytes, { params: { [constants.BROTLI_PARAM_QUALITY]: 5 } }).length;
+  return Math.max(zstd, brotli);
+}
+
+/** A size for a detail: `14,512 B`. */
+const bytes = (size: number): string => `${size.toLocaleString('en-US')} B`;
+
+// budget-head
+
+/** The end of the head in `page.html`: after the `</head>` of the first `head` element, or the end of the file. */
+function headEnd(dom: PageDom): number {
+  return dom.head?.range[1] ?? dom.page.html.length;
+}
+
+/** The parts of a head, each compressed alone (section 8: "a failure prints the separately compressed ..."). */
+function headParts(dom: PageDom, end: number): string {
+  const { html } = dom.page;
+  const inHead = (element: HTMLElement): boolean => element.range[1] <= end;
+  const styles = dom.byTag('style').filter(inHead);
+  const metas = cspMetasOf(dom).filter(inHead);
+  const jsonld = dom.byTag('script').filter((element) => inHead(element) && scriptKind(element) === 'json-ld');
+  // The markup is the head without these elements: the gaps between their ranges, in order.
+  const cut = [...styles, ...metas, ...jsonld].map((element) => element.range).sort((a, b) => a[0] - b[0]);
+  const gaps: string[] = [];
+  let from = 0;
+  for (const [start, stop] of cut) {
+    if (start < from) continue;
+    gaps.push(html.slice(from, start));
+    from = stop;
+  }
+  gaps.push(html.slice(from, end));
+  const size = (texts: readonly string[]): string => bytes(texts.length === 0 ? 0 : compressedSize(texts.join('')));
+  return [
+    `markup ${size(gaps)}`,
+    `CSS ${size(styles.map(rawContentOf))}`,
+    `CSP meta ${size(metas.map((meta) => html.slice(meta.range[0], meta.range[1])))}`,
+    `JSON-LD ${size(jsonld.map(rawContentOf))}`,
+  ].join(', ');
+}
+
+/**
+ * `budget-head`: the HTML up to and including the first `</head>` (the end of the first `head` element; the whole
+ * file when there is no `head`) compressed ≤ `headBytes`, and the CSP meta tag of the page alone compressed ≤
+ * `cspBytes`. The meta is the first CSP meta of the page; a page without one has nothing to measure (`csp-meta`
+ * reports it). Each failure prints the separately compressed markup, CSS, CSP meta and JSON-LD of the head.
+ */
+export function auditBudgetHead(ctx: BuildContext): void {
+  const { headBytes, cspBytes } = ctx.limits;
+  for (const page of ctx.pages) {
+    const dom = domOf(page);
+    const end = headEnd(dom);
+    const head = compressedSize(page.html.slice(0, end));
+    const meta = cspMetasOf(dom)[0];
+    const policy = meta === undefined ? 0 : compressedSize(page.html.slice(meta.range[0], meta.range[1]));
+    if (head <= headBytes && policy <= cspBytes) continue;
+    const parts = headParts(dom, end);
+    if (head > headBytes) {
+      ctx.report.add(
+        'budget-head',
+        page.path,
+        `the head has ${bytes(head)} compressed; at most ${bytes(headBytes)} (${parts})`,
+      );
+    }
+    if (policy > cspBytes) {
+      ctx.report.add(
+        'budget-head',
+        page.path,
+        `the CSP meta has ${bytes(policy)} compressed; at most ${bytes(cspBytes)} (${parts})`,
+      );
+    }
+  }
+}
+
+// budget-document
+
+/** The bytes of a page as built: the file, or its text when the file cannot be read. */
+const pageBytes = (ctx: BuildContext, page: BuiltPage): Uint8Array => ctx.read(page.file) ?? ENCODER.encode(page.html);
+
+/** `budget-document`: the whole page, the bytes of its file as built, compressed ≤ `documentBytes`. */
+export function auditBudgetDocument(ctx: BuildContext): void {
+  const limit = ctx.limits.documentBytes;
+  for (const page of ctx.pages) {
+    const size = compressedSize(pageBytes(ctx, page));
+    if (size > limit) {
+      ctx.report.add('budget-document', page.path, `the page has ${bytes(size)} compressed; at most ${bytes(limit)}`);
+    }
+  }
+}
+
+// budget-dom
+
+/**
+ * `budget-dom`: ≤ `domElements` elements and a depth ≤ `domDepth` (`html` is depth 1). Every element of the
+ * document counts, `html` included. One finding for each limit that a page breaks.
+ */
+export function auditBudgetDom(ctx: BuildContext): void {
+  const { domElements, domDepth } = ctx.limits;
+  for (const page of ctx.pages) {
+    const dom = domOf(page);
+    const count = dom.elements.length;
+    let depth = 0;
+    for (const element of dom.elements) depth = Math.max(depth, dom.depth(element));
+    if (count > domElements) {
+      ctx.report.add('budget-dom', page.path, `${count.toLocaleString('en-US')} elements; at most ${domElements}`);
+    }
+    if (depth > domDepth) ctx.report.add('budget-dom', page.path, `depth ${depth}; at most ${domDepth}`);
+  }
+}
+
+// budget-fonts
+
+/** The exact regex of `budget-fonts` (section 8). `fontPaths` finds the same matches without backtracking. */
+export const FONT_PATH = /\/[^"'()\s,]+\.(?:woff2?|ttf|otf)(?=[?#"'()\s,]|$)/gi;
+
+/** A run of the characters that `FONT_PATH` never takes into a match: they split the text into runs. */
+const STOPS = /["'()\s,]+/;
+
+/** The font extensions of `FONT_PATH`, in lower case. */
+const FONT_EXTENSIONS: ReadonlySet<string> = new Set(['woff', 'woff2', 'ttf', 'otf']);
+
+/**
+ * The end of a font path whose dot is at `dot` in `run`, or -1: `.woff`, `.woff2`, `.ttf` or `.otf`, in any letter
+ * case, followed by the end of the run, `?` or `#` (the lookahead of `FONT_PATH`).
+ */
+function extensionEnd(run: string, dot: number): number {
+  for (const length of [5, 4, 3]) {
+    const end = dot + 1 + length;
+    if (end > run.length) continue;
+    if (!FONT_EXTENSIONS.has(run.slice(dot + 1, end).toLowerCase())) continue;
+    const next = run[end];
+    if (next === undefined || next === '?' || next === '#') return end;
+  }
+  return -1;
+}
+
+/**
+ * The matches of `FONT_PATH` in a text, in order, in linear time. A match lies inside one run of characters that the
+ * class `[^"'()\s,]` takes, and the lookahead holds at the end of each run. In a run, the regex starts at the first
+ * `/` and takes the longest match: up to the last font extension that ends the run or stands before `?` or `#`,
+ * with at least one character between the `/` and the dot. No later start in the run can match then, so a run gives
+ * at most one match. The exact regex would retry from each `/` of a long run: quadratic on hostile text.
+ */
+export function fontPaths(text: string): string[] {
+  const out: string[] = [];
+  for (const run of text.split(STOPS)) {
+    const found = fontPathIn(run);
+    if (found !== undefined) out.push(found);
+  }
+  return out;
+}
+
+/** The one match of `FONT_PATH` in a run without stop characters, or `undefined`. */
+function fontPathIn(run: string): string | undefined {
+  const slash = run.indexOf('/');
+  if (slash < 0) return undefined;
+  for (let dot = run.lastIndexOf('.'); dot >= slash + 2; dot = run.lastIndexOf('.', dot - 1)) {
+    const end = extensionEnd(run, dot);
+    if (end >= 0) return run.slice(slash, end);
+  }
+  return undefined;
+}
+
+/**
+ * The dist file of a font path, or `undefined` when the client directory has none: the path without its leading `/`
+ * and without a `?` or `#` part, as written or percent-decoded.
+ */
+function fontFile(files: ReadonlySet<string>, path: string): string | undefined {
+  const cut = path.search(/[?#]/);
+  const file = (cut < 0 ? path : path.slice(0, cut)).slice(1);
+  if (files.has(file)) return file;
+  const decoded = decodePath(file);
+  return decoded !== undefined && files.has(decoded) ? decoded : undefined;
+}
+
+/**
+ * `budget-fonts`: the raw bytes of the distinct existing font files that any page or same-origin sheet references
+ * ≤ `fontBytes`: one sum for the site. The references are the matches of `FONT_PATH` in the HTML of every page and
+ * in every sheet of `ctx.css` (the inline `<style>` texts and the `.css` files of the client directory). A path that
+ * names no dist file adds nothing. Over the limit, one finding at `/`, listing the files.
+ */
+export function auditBudgetFonts(ctx: BuildContext): void {
+  const files = new Set(ctx.files);
+  const found = new Map<string, number>();
+  const add = (text: string): void => {
+    for (const path of fontPaths(text)) {
+      const file = fontFile(files, path);
+      if (file !== undefined && !found.has(file)) found.set(file, ctx.read(file)?.length ?? 0);
+    }
+  };
+  for (const page of ctx.pages) add(page.html);
+  for (const sheet of ctx.css) if (sheet.kind === 'file') add(sheet.text);
+  let total = 0;
+  for (const size of found.values()) total += size;
+  const limit = ctx.limits.fontBytes;
+  if (total <= limit) return;
+  const list = [...found]
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+    .slice(0, 5)
+    .map(([file, size]) => `/${file} ${bytes(size)}`)
+    .join(', ');
+  const more = found.size > 5 ? `, and ${found.size - 5} more` : '';
+  ctx.report.add(
+    'budget-fonts',
+    '/',
+    `${bytes(total)} in ${found.size} font files; at most ${bytes(limit)}: ${list}${more}`,
+  );
+}
+
+// The audit
+
+/** The rules of the budgets audit, in the order of section 8. */
+export const BUDGET_RULES: readonly AuditRule[] = [
+  { id: 'budget-head', run: auditBudgetHead },
+  { id: 'budget-document', run: auditBudgetDocument },
+  { id: 'budget-dom', run: auditBudgetDom },
+  { id: 'budget-fonts', run: auditBudgetFonts },
+];
+
+/** The budgets audit: every rule of `BUDGET_RULES`, in order. */
+export function auditBudgets(ctx: BuildContext): void {
+  runRules(ctx, BUDGET_RULES);
+}

@@ -1,6 +1,6 @@
 /**
  * The shared helpers of the build audits (`src/audit/dom.ts`): attributes, the page read once, text, accessible
- * names, labels, the CSP meta, scripts, robots, the site index and links. The fixture pages of
+ * names, labels, the CSP meta, scripts, robots, the site index, links and hreflang alternates. The fixture pages of
  * `audit-fixtures.ts` are tested here too, so that every group starts from pages that hold what they claim.
  */
 import assert from 'node:assert/strict';
@@ -8,6 +8,8 @@ import { test } from 'node:test';
 import type { HTMLElement } from 'node-html-parser';
 import {
   accessibleName,
+  alternateIn,
+  alternatesOf,
   ancestorsOf,
   attr,
   attributesOf,
@@ -21,14 +23,23 @@ import {
   hasNoindex,
   isCspMeta,
   isExecutableScript,
+  isIndexable,
   labelsOf,
+  legalText,
+  linkedPages,
   linksOf,
   localeOf,
+  localeOfLang,
   MAX_NAME,
+  nameKey,
+  normalizeSpaces,
+  pageText,
   parseCsp,
   rawContentOf,
   resolveHref,
   robotsOf,
+  sameLang,
+  sameLangText,
   scriptKind,
   siteOf,
   sourceOf,
@@ -36,6 +47,7 @@ import {
   tagOf,
   textOf,
   tokensOf,
+  wordsOf,
 } from '../../src/audit/dom.ts';
 import type { BuiltPage } from '../../src/context.ts';
 import { SPECULATION_HASH } from '../../src/csp.ts';
@@ -131,6 +143,8 @@ test('the page helpers do not recurse: a page that nests 5,000 elements deep rea
   const target = bodyPage(`<main>${'<div>'.repeat(depth)}<a href="/x/">tief</a>${'</div>'.repeat(depth)}</main>`);
   const dom = domOf(target);
   assert.equal(dom.depth(first(target, 'a')), depth + 4);
+  assert.equal(pageText(target), 'tief');
+  assert.equal(legalText(target), 'tief');
   assert.equal(accessibleName(dom, first(target, 'a')), 'tief');
   assert.equal(ancestorsOf(first(target, 'a')).length, depth + 3);
   assert.equal(descendantsOf(first(target, 'main')).length, depth + 1);
@@ -139,14 +153,31 @@ test('the page helpers do not recurse: a page that nests 5,000 elements deep rea
 
 // Text
 
-test('collapse follows the Measurement details', () => {
+test('collapse, normalizeSpaces and wordsOf follow the Measurement details', () => {
   assert.equal(collapse('  a \n\t b  '), 'a b');
+  assert.equal(normalizeSpaces('CHF 180  .–'), 'CHF 180 .–');
+  assert.deepEqual(wordsOf("L’hôtel d'Engadin: it's 3 x-y"), ['L’hôtel', "d'Engadin", "it's", 'x', 'y']);
+  assert.deepEqual(wordsOf("' a'"), ['a']);
+  assert.equal(sameLang('de-ch', 'de-CH'), true);
+  assert.equal(sameLang('de', 'de-CH'), false);
 });
 
 test('textOf gives the textContent: decoded text, raw script and style text, a br as a line feed', () => {
   const target = bodyPage('<p>a&amp;b<br>c<script>x &amp; y</script><style>p{}</style></p>');
   assert.equal(textOf(first(target, 'p')), 'a&b\ncx &amp; yp{}');
   assert.equal(textOf(first(target, 'p'), { skip: (element) => tagOf(element) === 'script' }), 'a&b\ncp{}');
+});
+
+test('pageText is the body text in NFC with white space collapsed, legalText the text of main', () => {
+  const target = bodyPage('<header>Kopf</header> <main> Café \n Text </main>');
+  assert.equal(pageText(target), 'Kopf Café Text');
+  assert.equal(legalText(target), 'Café Text');
+  assert.equal(pageText(onePage('<html><head><title>T</title></head></html>')), '');
+});
+
+test('sameLangText leaves out the subtrees with another lang, and keeps those with the same lang', () => {
+  const target = bodyPage('<p>Ein Satz <q lang="en">a quote</q> <span lang="DE-ch">und mehr</span></p>');
+  assert.equal(collapse(sameLangText(domOf(target), first(target, 'p'))), 'Ein Satz und mehr');
 });
 
 // Names and labels
@@ -167,6 +198,13 @@ test('accessibleName follows the order of the Measurement details', () => {
   assert.equal(name('<a href="/"><span aria-hidden="true">→</span> Weiter</a>'), 'Weiter');
   assert.equal(name('<a href="/" title="Zimmer"><img alt="" src="/a.webp"></a>'), 'Zimmer');
   assert.equal(name('<a href="/"><img src="/a.webp"></a>'), '');
+});
+
+test('nameKey is in lower case and drops the characters that are not letters at both ends', () => {
+  assert.equal(nameKey('Mehr …'), 'mehr');
+  assert.equal(nameKey('« Lire la suite »'), 'lire la suite');
+  assert.equal(nameKey('→ 3 Zimmer: 2'), 'zimmer');
+  assert.equal(nameKey('…'), '');
 });
 
 test('labelsOf finds the labels with for and the wrapping label without for', () => {
@@ -231,13 +269,15 @@ test('sourceOf gives the markup of an element as the page writes it', () => {
   assert.equal(sourceOf(target, first(target, 'meta')), '<meta http-equiv="content-security-policy" content="x">');
 });
 
-test('robots: noindex and none mean noindex, and /404.html is the 404 page', () => {
+test('robots: noindex and none mean noindex, and /404.html is never indexable', () => {
   const noindex = bodyPage('', '<meta name="ROBOTS" content="NoIndex, follow">');
   assert.deepEqual([...robotsOf(noindex)], ['noindex', 'follow']);
   assert.equal(hasNoindex(noindex), true);
   assert.equal(hasNoindex(bodyPage('', '<meta name="robots" content="none">')), true);
+  assert.equal(isIndexable(bodyPage('')), true);
   const ctx = contextOf({ '404.html': notFoundPage(OPTIONS) });
   assert.equal(ctx.pages[0]?.is404, true);
+  assert.equal(ctx.pages[0] !== undefined && isIndexable(ctx.pages[0]), false);
 });
 
 // The site
@@ -254,6 +294,9 @@ test('siteOf indexes pages and files, and the locale helpers read the settings',
   assert.ok(index.files.has('favicon.ico'));
   assert.equal(localeOf(OPTIONS, 'fr')?.tag, 'fr-CH');
   assert.equal(localeOf(OPTIONS, 'it'), undefined);
+  assert.equal(localeOfLang(OPTIONS, 'FR-ch')?.code, 'fr');
+  assert.equal(localeOfLang(OPTIONS, 'fr')?.code, 'fr');
+  assert.equal(localeOfLang(OPTIONS, 'en'), undefined);
 });
 
 // Links
@@ -320,7 +363,7 @@ test('resolveHref: fragments, same-origin paths, other origins and other schemes
   assert.equal(decodePath('/%E0%A4%A/'), undefined);
 });
 
-test('linksOf resolves each a[href] and area[href] once', () => {
+test('linksOf resolves each a[href] and area[href] once, and linkedPages keeps the built pages', () => {
   const ctx = contextOf(site());
   const home = siteOf(ctx).pages.get('/');
   assert.ok(home !== undefined);
@@ -329,6 +372,35 @@ test('linksOf resolves each a[href] and area[href] once', () => {
   assert.deepEqual(
     links.map((link) => link.href),
     ['#content', '/', '/', '/fr/', '/impressum/', '/datenschutz/'],
+  );
+  assert.deepEqual([...linkedPages(ctx, home)], ['/', '/fr/', '/impressum/', '/datenschutz/']);
+});
+
+test('alternatesOf reads the hreflang links, and alternateIn finds the built alternate of a locale', () => {
+  const ctx = contextOf(site());
+  const pages = siteOf(ctx).pages;
+  const home = pages.get('/');
+  const notFound = pages.get('/404.html');
+  assert.ok(home !== undefined && notFound !== undefined);
+  assert.deepEqual(
+    alternatesOf(ctx, home).map((alternate) => [alternate.hreflang, alternate.path]),
+    [
+      ['de-CH', '/'],
+      ['fr-CH', '/fr/'],
+      ['x-default', '/'],
+    ],
+  );
+  assert.equal(alternateIn(ctx, home, 'fr'), pages.get('/fr/'));
+  assert.equal(alternateIn(ctx, home, 'it'), undefined);
+  assert.deepEqual(alternatesOf(ctx, notFound), []);
+  const relative = onePage(page(OPTIONS, '/', { head: '<link rel="alternate" hreflang="fr-CH" href="/fr/">' }));
+  assert.deepEqual(
+    alternatesOf(contextOf({}), relative).map((alternate) => [alternate.hreflang, alternate.path]),
+    [
+      ['de-CH', '/'],
+      ['x-default', '/'],
+      ['fr-CH', undefined],
+    ],
   );
 });
 

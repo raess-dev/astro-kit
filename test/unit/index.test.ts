@@ -2146,13 +2146,18 @@ test('build:done loads the facts, the redirects and the design again: a file tha
   );
 });
 
-test('build:done on an empty client directory writes the seven edge files and passes', async () => {
+test('build:done on an empty client directory writes the seven edge files, and fails for the missing 404 and legal pages', async () => {
   const seen = await inSite({ settings: SMALLEST }, async (site) => {
     mkdirSync(join(site.root, 'dist'), { recursive: true });
     const error = await buildDone(site);
     return { error, edge: edgeTexts(join(site.root, 'dist')), folder: dirname(join(site.root, 'dist/_headers')) };
   });
-  assert.equal(seen.error, undefined);
+  // A site needs `/404.html` and its declared legal pages; no other rule reads an empty client directory.
+  assert.deepEqual(idsOf(seen.error), ['legal-pages', 'routes-404']);
+  assert.deepEqual(
+    findingsOf(seen.error).map((line) => line.split(': ')[0]),
+    ['routes-404 /404.html', 'legal-pages astro-kit.json', 'legal-pages astro-kit.json'],
+  );
   assert.deepEqual(
     {
       ...seen.edge,
