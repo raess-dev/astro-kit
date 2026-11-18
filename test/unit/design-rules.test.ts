@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import type { Design } from '../../src/context.ts';
 import {
   type BuiltCssInput,
+  CSS_CHECKS,
   ELEMENTS_FILE,
   runBuiltChecks,
   runSourceChecks,
@@ -360,11 +361,28 @@ test('design-pairs (d): elements.css sets the body pair on body, the link color 
   assert.deepEqual(findings(checked(project({ [ELEMENTS_FILE]: focus }), 'design-pairs')), [
     'design-pairs src/styles/elements.css :focus-visible',
   ]);
-  assert.deepEqual(findings(checked(project({ [ELEMENTS_FILE]: null }), 'design-pairs')), [
-    'design-pairs src/styles/elements.css :focus-visible',
-    'design-pairs src/styles/elements.css a',
-    'design-pairs src/styles/elements.css body',
+});
+
+test("a missing elements.css is css-sources's alone: design-pairs (d) and design-specs skip it", () => {
+  const { design } = designWith(withRows('Elements', ['`body` | `color` | `--color-text`']));
+  const input = project({ [ELEMENTS_FILE]: null }, { design });
+  assert.deepEqual(findings(checked(input)), []);
+  const report = new Report();
+  runSourceChecks(input, [...DESIGN_CHECKS, ...CSS_CHECKS], report);
+  assert.deepEqual(findings(report), [
+    'css-sources src/styles/elements.css the file is missing: the kit imports it into every page',
   ]);
+  // With the file, its rules are checked again.
+  const empty = project({ [ELEMENTS_FILE]: '@layer elements {\n}\n' }, { design });
+  assert.deepEqual(
+    findings(checked(empty)),
+    [
+      `design-specs docs/design.md:${lineOf(withRows('Elements', ['`body` | `color` | `--color-text`']), '| `body` | `color`')} body { color: var(--color-text) }`,
+      'design-pairs src/styles/elements.css :focus-visible',
+      'design-pairs src/styles/elements.css a',
+      'design-pairs src/styles/elements.css body',
+    ].sort(),
+  );
 });
 
 test('design-pairs (e), drift 35: a background color not in a pair, at the var()', () => {

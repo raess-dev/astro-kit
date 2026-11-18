@@ -14,14 +14,15 @@
  * - A non-placement declaration of a page file is `css-page`'s alone, with its `!important`.
  * - `@import`, `@scope` (and what it holds), `:global()`, `is:global`, `url()` and `style=` are `css-banned`'s. A
  *   viewport unit is `css-banned`'s only when a `var()` brings it: a literal one is `css-literal`'s.
- * - A `<style>` (with its `is:global`), a `<link rel="stylesheet">`, a CSS import, a stray style file and a second
- *   `<style>` on a built page are `css-sources`'s. A missing file or a missing import of a component's own file is
+ * - A `<style>` (with its `is:global`), a `<link rel="stylesheet">`, a CSS import, an `import.meta.glob` that can
+ *   match a style file, a stray style file, a missing `elements.css` or `fonts.css` and a second `<style>` on a built
+ *   page are `css-sources`'s. The elements.css parts of `design-pairs` and `design-specs` skip a missing file. A missing file or a missing import of a component's own file is
  *   `css-component-file`'s.
  *
  * **The import scanner.** One scanner reads the CSS imports of a source text for `css-sources` and
  * `css-component-file`. It lexes the text once, from left to right: comments, strings, template literals (with their
- * `${…}` parts) and regular expression literals. Then it matches `import 'x'`, `… from 'x'`, `import('x')` and
- * `require('x')` on the tokens. So a commented import does not count, and no regular expression runs on the text.
+ * `${…}` parts) and regular expression literals. Then it matches `import 'x'`, `… from 'x'`, `import('x')`,
+ * `require('x')` and the patterns of `import.meta.glob('x')` and `import.meta.glob(['x', 'y'])` on the tokens. So a commented import does not count, and no regular expression runs on the text.
  */
 import type { HTMLElement } from 'node-html-parser';
 import { parseHtml } from '../../build.ts';
@@ -57,6 +58,8 @@ import {
   COMPONENT_CSS_FOLDER,
   cssPlaceOf,
   declarationText,
+  ELEMENTS_FILE,
+  FONTS_FILE,
   LAYER_ORDER,
   PROJECT_LAYERS,
   pageCssOf,
@@ -220,27 +223,153 @@ function scriptTokens(text: string): ScriptToken[] {
   return tokens;
 }
 
-/** The specifiers that a script imports, with their offsets: static, re-export, dynamic and `require`. */
-function specifiersOf(text: string): { value: string; offset: number }[] {
+/** A string found by the scanner, with the offset of its first character in the script. */
+interface Found {
+  value: string;
+  offset: number;
+}
+
+/** What one pass of the scanner finds in a script. */
+interface ScriptScan {
+  /** The specifiers that the script imports: static, re-export, dynamic and `require`. */
+  specifiers: Found[];
+  /** The patterns of each `import.meta.glob(…)`: a string, or each string of an array. */
+  globs: Found[];
+}
+
+/** The most tokens that the type arguments of `import.meta.glob<…>(…)` may take; more reads as no glob. */
+const MAX_TYPE_TOKENS = 64;
+
+/**
+ * The patterns of the `import.meta.glob` call whose `glob` word stands at `at`: a string, or an array of strings.
+ * Type arguments (`glob<Module>(…)`) are skipped. Any other first argument gives none: Vite refuses it.
+ */
+function globPatterns(tokens: readonly ScriptToken[], at: number): Found[] {
+  let index = at + 1;
+  if (tokens[index]?.kind === 'punct' && tokens[index]?.value === '<') {
+    let depth = 0;
+    const end = Math.min(tokens.length, index + MAX_TYPE_TOKENS);
+    for (; index < end; index += 1) {
+      const token = tokens[index];
+      if (token?.kind !== 'punct') continue;
+      if (token.value === '<') depth += 1;
+      else if (token.value === '>') depth -= 1;
+      if (depth === 0) break;
+    }
+    if (depth !== 0) return [];
+    index += 1;
+  }
+  const open = tokens[index];
+  if (open?.kind !== 'punct' || open.value !== '(') return [];
+  const first = tokens[index + 1];
+  if (first?.kind === 'string') return [{ value: first.value, offset: first.offset }];
+  if (first?.kind !== 'punct' || first.value !== '[') return [];
+  const out: Found[] = [];
+  for (let item = index + 2; item < tokens.length; item += 1) {
+    const token = tokens[item];
+    if (token === undefined || (token.kind === 'punct' && token.value === ']')) break;
+    if (token.kind === 'string') out.push({ value: token.value, offset: token.offset });
+    else if (token.kind !== 'punct' || token.value !== ',') break;
+  }
+  return out;
+}
+
+/** Says whether the tokens before `at` are `import . meta .`: the `glob` word at `at` is `import.meta.glob`. */
+const isMetaGlob = (tokens: readonly ScriptToken[], at: number): boolean =>
+  tokens[at]?.value === 'glob' &&
+  tokens[at - 1]?.kind === 'punct' &&
+  tokens[at - 1]?.value === '.' &&
+  tokens[at - 2]?.kind === 'word' &&
+  tokens[at - 2]?.value === 'meta' &&
+  tokens[at - 3]?.kind === 'punct' &&
+  tokens[at - 3]?.value === '.' &&
+  tokens[at - 4]?.kind === 'word' &&
+  tokens[at - 4]?.value === 'import';
+
+/** The specifiers and the glob patterns of a script, from one pass of the lexer. */
+function scanScript(text: string): ScriptScan {
   const tokens = scriptTokens(text);
-  const out: { value: string; offset: number }[] = [];
+  const specifiers: Found[] = [];
+  const globs: Found[] = [];
   tokens.forEach((token, index) => {
     if (token.kind !== 'word') return;
+    if (isMetaGlob(tokens, index)) {
+      globs.push(...globPatterns(tokens, index));
+      return;
+    }
     if (tokens[index - 1]?.value === '.' && tokens[index - 1]?.kind === 'punct') return;
     const next = tokens[index + 1];
     const after = tokens[index + 2];
     if ((token.value === 'import' || token.value === 'from') && next?.kind === 'string') {
-      out.push({ value: next.value, offset: next.offset });
+      specifiers.push({ value: next.value, offset: next.offset });
     } else if (
       (token.value === 'import' || token.value === 'require') &&
       next?.kind === 'punct' &&
       next.value === '(' &&
       after?.kind === 'string'
     ) {
-      out.push({ value: after.value, offset: after.offset });
+      specifiers.push({ value: after.value, offset: after.offset });
     }
   });
-  return out;
+  return { specifiers, globs };
+}
+
+/** The characters that make a glob pattern match more than one name (picomatch, which Vite uses). */
+const GLOB_CHARACTERS = '*?[]{}()!+@';
+
+/** The most brace groups that `globMatchesStyle` expands in one pattern; a deeper pattern counts as a match. */
+const MAX_BRACE_DEPTH = 8;
+
+/** The alternatives of the brace group that ends a pattern, and the text before it; `undefined` when it has none. */
+function lastBraceGroup(pattern: string): { before: string; alternatives: string[] } | undefined {
+  if (!pattern.endsWith('}')) return undefined;
+  let open = -1;
+  let depth = 0;
+  for (let index = pattern.length - 1; index >= 0 && open < 0; index -= 1) {
+    const char = pattern.charAt(index);
+    if (char === '}') depth += 1;
+    else if (char === '{') {
+      depth -= 1;
+      if (depth === 0) open = index;
+    }
+  }
+  if (open < 0) return undefined;
+  const alternatives: string[] = [];
+  let from = open + 1;
+  depth = 0;
+  for (let index = open + 1; index < pattern.length - 1; index += 1) {
+    const char = pattern.charAt(index);
+    if (char === '{') depth += 1;
+    else if (char === '}') depth -= 1;
+    else if (char === ',' && depth === 0) {
+      alternatives.push(pattern.slice(from, index));
+      from = index + 1;
+    }
+  }
+  alternatives.push(pattern.slice(from, -1));
+  return { before: pattern.slice(0, open), alternatives };
+}
+
+/**
+ * Says whether a glob pattern of `import.meta.glob` can match a style file (`STYLE_EXTENSIONS`). It can, unless its
+ * last segment ends in a literal extension that is not a style extension (`./*.ts`), or it is a literal name without
+ * an extension. A brace group at the end counts as each of its alternatives (`./*.{js,css}` can). Any other glob
+ * character in the extension can match a style extension (`./x.*`, `./x.cs?`), and so can a last segment of glob
+ * characters alone (`./*`, `./**`). A negative pattern (`!…`) adds no file.
+ */
+function globMatchesStyle(pattern: string, depth = 0): boolean {
+  if (pattern.startsWith('!')) return false;
+  const group = lastBraceGroup(pattern);
+  if (group !== undefined) {
+    if (depth >= MAX_BRACE_DEPTH) return true;
+    return group.alternatives.some((alternative) => globMatchesStyle(`${group.before}${alternative}`, depth + 1));
+  }
+  const segment = pattern.slice(pattern.lastIndexOf('/') + 1);
+  const dot = segment.lastIndexOf('.');
+  const hasGlob = (text: string): boolean => [...text].some((char) => GLOB_CHARACTERS.includes(char));
+  if (dot < 0) return hasGlob(segment);
+  const extension = segment.slice(dot);
+  return hasGlob(extension) || STYLE_EXTENSIONS.has(asciiLower(extension));
 }
 
 /** One CSS import of a source text. */
@@ -498,22 +627,50 @@ function lineOf(source: SourceText, offset: number): number {
   return low + 1;
 }
 
-/** Every CSS import of a source text (7.2). */
-function cssImportsOf(source: SourceText): CssImport[] {
-  const out: CssImport[] = [];
+/** One `import.meta.glob` pattern of a source text that can match a style file. */
+interface CssGlob {
+  pattern: string;
+  line: number;
+}
+
+/** What the scanner finds in a source text: its CSS imports and its globs of CSS. */
+interface CssReferences {
+  imports: CssImport[];
+  globs: CssGlob[];
+}
+
+/** The references of each source text, found once: `css-sources` and `css-component-file` both read them. */
+const REFERENCES = new WeakMap<SourceText, CssReferences>();
+
+/** Every CSS import and every glob of CSS of a source text (7.2), from one pass over each of its script parts. */
+function cssReferencesOf(source: SourceText): CssReferences {
+  const known = REFERENCES.get(source);
+  if (known !== undefined) return known;
+  const imports: CssImport[] = [];
+  const globs: CssGlob[] = [];
   for (const part of scriptParts(source)) {
-    for (const found of specifiersOf(part.text)) {
+    const scan = scanScript(part.text);
+    for (const found of scan.specifiers) {
       const target = cssTarget(found.value, source.path);
       if (target === undefined) continue;
-      out.push({
+      imports.push({
         specifier: found.value,
         resolved: target.resolved,
         line: lineOf(source, part.base + found.offset),
       });
     }
+    for (const found of scan.globs) {
+      if (globMatchesStyle(found.value))
+        globs.push({ pattern: found.value, line: lineOf(source, part.base + found.offset) });
+    }
   }
-  return out;
+  const references = { imports, globs };
+  REFERENCES.set(source, references);
+  return references;
 }
+
+/** Every CSS import of a source text (7.2). */
+const cssImportsOf = (source: SourceText): CssImport[] => cssReferencesOf(source).imports;
 
 // Markup
 
@@ -766,7 +923,10 @@ const atRuleText = (rule: AtRule): string =>
 
 // css-sources
 
-/** `css-sources`, source half: style files, `<style>`, `<link rel="stylesheet">` and CSS imports under `src/`, `.css` in `public/`. */
+/**
+ * `css-sources`, source half: style files, `<style>`, `<link rel="stylesheet">`, CSS imports and globs of CSS under
+ * `src/`, `.css` in `public/`, and a missing `elements.css` or `fonts.css`.
+ */
 export function checkCssSources(input: SourceCss, report: Report): void {
   const { add, flush } = sourceFindings(report);
   const id = 'css-sources';
@@ -789,9 +949,21 @@ export function checkCssSources(input: SourceCss, report: Report): void {
     // A component imports only its own file, a route only its page file, anything else none (7.2).
     const own =
       components.get(source.path)?.css ?? (source.path.startsWith(ROUTES_FOLDER) ? pageCssOf(source.path) : undefined);
-    for (const found of cssImportsOf(source)) {
+    const references = cssReferencesOf(source);
+    for (const found of references.imports) {
       if (found.resolved !== undefined && found.resolved === own) continue;
       add(id, sourceWhere(source.path, { line: found.line }), `import '${found.specifier}'`);
+    }
+    // A glob of CSS is no static import: the kit cannot see what it loads (7.2).
+    for (const found of references.globs) {
+      add(id, sourceWhere(source.path, { line: found.line }), `import.meta.glob('${found.pattern}')`);
+    }
+  }
+  // The kit imports `elements.css` and `fonts.css` into every page (6.1, step 9), so both exist (7.2). A file that
+  // exists but is not read (`unread`) is `config-suppression`'s, and a missing `tokens.css` is `design-tokens`'s.
+  for (const path of [ELEMENTS_FILE, FONTS_FILE]) {
+    if (!input.files.some((file) => file.path === path) && !input.unread.includes(path)) {
+      add(id, path, 'the file is missing: the kit imports it into every page');
     }
   }
   flush();

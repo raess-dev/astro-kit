@@ -398,6 +398,75 @@ const SOURCES: Case[] = [
     input: () => withCard({ 'src/content/a.mdx': "# A\n\nWrite import 'x.css' never.\n" }),
     ids: [],
   },
+  // A glob of CSS is no static import (7.2).
+  {
+    name: 'an import.meta.glob of .css files',
+    input: () => cardImports("const sheets = import.meta.glob('../styles/extra/*.css');"),
+    ids: ['css-sources'],
+  },
+  {
+    name: 'an import.meta.glob of scripts passes',
+    input: () => cardImports("const modules = import.meta.glob('../lib/*.ts');"),
+    ids: [],
+  },
+  {
+    name: 'an import.meta.glob that ends in * can match .css',
+    input: () => cardImports("const all = import.meta.glob('../styles/*');"),
+    ids: ['css-sources'],
+  },
+  {
+    name: 'an import.meta.glob that ends in ** can match .css',
+    input: () => withCard({ 'src/scripts/a.ts': "export const all = import.meta.glob('/src/**');\n" }),
+    ids: ['css-sources'],
+  },
+  {
+    name: 'an import.meta.glob with a brace group that holds css',
+    input: () => cardImports("const x = import.meta.glob('../lib/*.{ts,css}');"),
+    ids: ['css-sources'],
+  },
+  {
+    name: 'an import.meta.glob with a brace group of scripts passes',
+    input: () => cardImports("const x = import.meta.glob('../lib/*.{ts,js}');"),
+    ids: [],
+  },
+  {
+    name: 'an import.meta.glob with a wildcard extension can match .css',
+    input: () => cardImports("const x = import.meta.glob('../lib/a.*');"),
+    ids: ['css-sources'],
+  },
+  {
+    name: 'an import.meta.glob of an array that holds a .scss pattern',
+    input: () => cardImports("const x = import.meta.glob(['../lib/*.ts', '!../lib/*.d.ts', '../x/*.SCSS']);"),
+    ids: ['css-sources'],
+  },
+  {
+    name: 'an import.meta.glob of an array of script patterns and a negative CSS pattern passes',
+    input: () => cardImports("const x = import.meta.glob(['../lib/*.ts', '!../lib/*.css']);"),
+    ids: [],
+  },
+  {
+    name: 'an import.meta.glob with type arguments and options',
+    input: () =>
+      withCard({
+        'src/scripts/a.ts':
+          "export const x = import.meta.glob<string>(`./themes/*.css`, { query: '?inline', import: 'default' });\n",
+      }),
+    ids: ['css-sources'],
+  },
+  {
+    name: 'an import.meta.glob in a comment or a string passes',
+    input: () => cardImports("// import.meta.glob('../x/*.css');\nconst t = \"import.meta.glob('../x/*.css')\";"),
+    ids: [],
+  },
+  {
+    name: 'a glob method of another object passes',
+    input: () => cardImports("const x = files.glob('../x/*.css');"),
+    ids: [],
+  },
+  // The kit imports elements.css and fonts.css into every page (6.1, step 9), so both exist (7.2).
+  { name: 'a missing elements.css', input: () => withCard({ 'src/styles/elements.css': null }), ids: ['css-sources'] },
+  { name: 'a missing fonts.css', input: () => withCard({ 'src/styles/fonts.css': null }), ids: ['css-sources'] },
+  { name: 'an empty fonts.css passes', input: () => withCard({ 'src/styles/fonts.css': '' }), ids: [] },
   // The agent mistake of 14.2.
   {
     name: 'mistake: a <style> in an .astro',
@@ -419,6 +488,30 @@ test('css-sources: one finding for each place, with its file and line', () => {
     'css-sources src/components/Card.astro:3',
     'css-sources src/components/Card.astro:4',
   ]);
+});
+
+test('css-sources: a glob of CSS stands at the line of its pattern, with the pattern', () => {
+  const report = new Report();
+  checkCssSources(cardImports("const a = 1;\nconst sheets = import.meta.glob(\n  '../styles/x/*.css',\n);"), report);
+  assert.deepEqual(
+    report.findings.map((finding) => `${finding.rule} ${finding.where} ${finding.detail ?? ''}`),
+    ["css-sources src/components/Card.astro:5 import.meta.glob('../styles/x/*.css')"],
+  );
+});
+
+test('css-sources: a missing elements.css or fonts.css stands at the file, and a file that is not read is no miss', () => {
+  const report = new Report();
+  checkCssSources(withCard({ 'src/styles/elements.css': null, 'src/styles/fonts.css': null }), report);
+  assert.deepEqual(
+    report.findings.map((finding) => `${finding.rule} ${finding.where} ${finding.detail ?? ''}`).sort(),
+    [
+      'css-sources src/styles/elements.css the file is missing: the kit imports it into every page',
+      'css-sources src/styles/fonts.css the file is missing: the kit imports it into every page',
+    ],
+  );
+  const unread = new Report();
+  checkCssSources(withUnread({ 'src/styles/elements.css': null }, ['src/styles/elements.css']), unread);
+  assert.deepEqual(ids(unread), []);
 });
 
 test('css-sources: a <style> finding has the line of the element', () => {

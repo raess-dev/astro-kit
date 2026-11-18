@@ -63,3 +63,8 @@
   `css-classes` and `css-unused` read `[class~=x]`. `design-pairs` follows gradient aliases and pairs the focus
   color of `:focus-visible`. Each fact reports once: `@scope` content, a literal viewport unit, `<style is:global>`,
   `!important` in a page file, `[data-mode]` in a page file and a mode feature in `@container` give one id each.
+- `css-sources` fails an `import.meta.glob()` whose pattern can match a style file (`'./*.css'`, `'./**'`,
+  `'./*.{js,css}'`), because the kit cannot see what a glob loads. It also names a missing
+  `src/styles/elements.css` or `src/styles/fonts.css` at its path: the kit imports both into every page, and Vite
+  stopped the build with an import that it could not resolve. A missing `elements.css` no longer gives
+  `design-pairs` and `design-specs` findings for its rules.

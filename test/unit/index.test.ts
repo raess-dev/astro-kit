@@ -327,7 +327,8 @@ function tokensOf(design: string, options: Options): string {
 
 /**
  * The smallest project that passes preflight for the settings: `astro-kit.json`, the two facts files that must
- * exist, the three shims, `wrangler.jsonc`, the design document, its `tokens.css` and `elements.css`. The kit
+ * exist, the three shims, `wrangler.jsonc`, the design document, its `tokens.css`, `elements.css` and an empty
+ * `fonts.css`. The kit
  * compares `wrangler.jsonc` only for a static site, so a forms site gets the static text too.
  */
 function projectFiles(settings: unknown, themes: readonly ThemeName[] = LIGHT): Files {
@@ -342,6 +343,7 @@ function projectFiles(settings: unknown, themes: readonly ThemeName[] = LIGHT): 
     'docs/design.md': design,
     'src/styles/tokens.css': tokensOf(design, options),
     'src/styles/elements.css': ELEMENTS_CSS,
+    'src/styles/fonts.css': '',
   };
 }
 

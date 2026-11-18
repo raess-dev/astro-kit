@@ -141,6 +141,9 @@ function sourceIndex(file: CssSourceFile): Set<string> {
   return index;
 }
 
+/** Says whether the source input holds the text of `elements.css`. */
+const hasElementsFile = (input: SourceCss): boolean => input.files.some((file) => file.kind === 'elements');
+
 /**
  * `design-specs`, source half: each Elements row has a rule in `elements.css`, and each Components row a rule in the
  * file of its component, whose resolved selector equals the row's selector (normalized) and which declares
@@ -165,6 +168,8 @@ export function checkDesignSpecs(input: SourceCss, report: Report): void {
       add('design-specs', where, `${rowText(spec.row)}: ${spec.problem ?? ''}`);
       continue;
     }
+    // A missing `elements.css` is `css-sources`'s, and one that is not read `config-suppression`'s.
+    if (spec.kind === 'elements' && !hasElementsFile(input)) continue;
     const path = spec.kind === 'elements' ? ELEMENTS_FILE : `${COMPONENT_CSS_FOLDER}${spec.component ?? ''}.css`;
     if (!indexOf(path).has(declarationKey(spec.selector, spec.property, spec.row.token))) {
       add('design-specs', where, rowText(spec.row));
@@ -457,7 +462,9 @@ export function checkDesignPairs(input: SourceCss, report: Report): void {
     for (const background of used)
       if (!focused.has(background)) add('design-pairs', DESIGN_FILE, `focus on ${background}`);
   }
-  // (d) elements.css uses the body, link and focus pairs.
+  // (d) elements.css uses the body, link and focus pairs. A missing `elements.css` is `css-sources`'s, and one that is
+  // not read `config-suppression`'s: (d) needs the text of the file.
+  if (!hasElementsFile(input)) return;
   if (body.length > 0) {
     const color = elementsValues(input, 'body', 'color');
     const fill = elementsValues(input, 'body', 'background-color');

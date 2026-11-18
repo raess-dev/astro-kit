@@ -106,6 +106,9 @@ const DESIGN_MD = [
 
 const ELEMENTS = 'src/styles/elements.css';
 
+/** The file of the `@font-face` rules. A site with system fonts keeps it empty, but it exists (7.2). */
+const FONTS = 'src/styles/fonts.css';
+
 /** The smallest `elements.css`: it uses the body, link and focus pairs, as 7.4 says (`design-pairs`). */
 const ELEMENTS_CSS = [
   '@layer elements {',
@@ -131,8 +134,8 @@ const WRANGLER_JSONC = renderWrangler(optionsOf(SETTINGS));
 
 /**
  * The smallest project that passes preflight with no finding: the settings, the two facts files that must exist,
- * the three source shims, `wrangler.jsonc`, the design document, the `tokens.css` that the kit renders from it, and
- * `elements.css`. A later milestone adds the files that its rules need.
+ * the three source shims, `wrangler.jsonc`, the design document, the `tokens.css` that the kit renders from it,
+ * `elements.css` and an empty `fonts.css`. A later milestone adds the files that its rules need.
  */
 const SMALLEST: Files = {
   'astro-kit.json': json(SETTINGS),
@@ -143,6 +146,7 @@ const SMALLEST: Files = {
   [DESIGN]: DESIGN_MD,
   [TOKENS]: TOKENS_CSS,
   [ELEMENTS]: ELEMENTS_CSS,
+  [FONTS]: '',
 };
 
 /** The smallest project with some files added or replaced. */
@@ -673,6 +677,7 @@ test('the smallest project passes preflight, and preflight returns its settings'
     'schedule.json',
     'site.json',
     'src/styles/elements.css',
+    'src/styles/fonts.css',
     'src/styles/tokens.css',
     'tsconfig.json',
     'wrangler.jsonc',
@@ -700,7 +705,8 @@ test('each file of the smallest project is needed: without it, preflight has a f
     { file: 'wrangler.jsonc', ids: ['config-wrangler'] },
     { file: 'docs/design.md', ids: ['design-format'] },
     { file: 'src/styles/tokens.css', ids: ['design-tokens'] },
-    { file: 'src/styles/elements.css', ids: ['design-pairs'] },
+    { file: 'src/styles/elements.css', ids: ['css-sources'] },
+    { file: 'src/styles/fonts.css', ids: ['css-sources'] },
   ]);
 });
 
@@ -882,6 +888,8 @@ test('each new finding names its place', () => {
   assert.deepEqual(places(withFiles({ [DESIGN]: DESIGN_WITH_COLOR_MIX })), ['docs/design.md:11']);
   assert.deepEqual(places(withSettings({ modes: WITH_DARK })), ['astro-kit.json: modes.dark']);
   assert.deepEqual(places(withoutFile(TOKENS)), ['src/styles/tokens.css']);
+  assert.deepEqual(places(withoutFile(ELEMENTS)), [ELEMENTS]);
+  assert.deepEqual(places(withoutFile(FONTS)), [FONTS]);
   const line = TOKENS_CSS.split('\n').findIndex((text) => text.includes('0.5rem')) + 1;
   assert.ok(line > 1, 'the rendering holds the value');
   assert.deepEqual(places(withFiles({ [TOKENS]: TOKENS_CHANGED_BY_HAND })), [`src/styles/tokens.css:${line}`]);
@@ -905,6 +913,15 @@ test('an empty folder gives the findings of the files that must exist, and no er
     'tsconfig.json',
     'wrangler.jsonc',
     'docs/design.md',
+    'src/styles/elements.css',
+    'src/styles/fonts.css',
   ]);
-  assert.deepEqual(seen.ids, ['config-options', 'config-shim', 'config-wrangler', 'design-format', 'facts-schedule']);
+  assert.deepEqual(seen.ids, [
+    'config-options',
+    'config-shim',
+    'config-wrangler',
+    'css-sources',
+    'design-format',
+    'facts-schedule',
+  ]);
 });
