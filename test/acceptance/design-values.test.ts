@@ -983,7 +983,8 @@ const FLOW_CORNERS = ['start-start', 'start-end', 'end-start', 'end-end'];
 const COLOR_USES: readonly Use[] = [
   ...alone('color', 'background-color', 'background', ...box('border', '-color'), 'outline-color'),
   ...alone('text-decoration-color', 'text-emphasis-color', 'caret-color', 'accent-color', 'column-rule-color'),
-  ...alone('fill', 'stroke'),
+  ...alone('fill', 'stroke', 'stop-color', 'flood-color', 'lighting-color'),
+  ...within('{} transparent', 'scrollbar-color'),
   ...within('1px solid {}', ...box('border'), 'outline'),
   ...within('underline {}', 'text-decoration'),
   // `filter` and `backdrop-filter` take a color token for `drop-shadow()`.

@@ -88,6 +88,34 @@ One spike alone: `node --test test/acceptance/spikes/s05.ts`.
   file. A kit that accepts a value which is no CSS fails here with the value and the uses: then fix the grammar in
   `src/design/parse.ts`, add the value to the refused list of the unit test, and correct 7.4. The file takes about
   a minute.
+- `css-site.test.ts`: the suite case of M4. It builds the site, and feeds the `<style>` of every built page and
+  every source CSS file under `src/styles/` to the four CSS analyzers of the packed kit (`css/parse`,
+  `css/selectors`, `css/media`, `css/values`). Every rule and declaration parses, every selector and prelude parses,
+  no project layer holds a literal or a token of the wrong family, and each page has the layer order of 7.1. The
+  declarations of each tree must be those of a plain reading of the text, in order, so a lost declaration fails.
+- `css-oracle.test.ts`: the differential test of the CSS analyzers (specification, 14.2). It builds the site once
+  for its CSS, and holds six promises of the packed kit to Chromium, each with thousands of candidates from a
+  generator with a fixed seed. The seeds are the strings of the unit test files and the CSS of the site; the words
+  of the mutations come from the built modules `css/selectors` and `css/media`.
+  - Selectors: a list that `parseSelectorList` accepts is valid in Chromium (`CSS.supports('selector(…)')`,
+    `querySelectorAll`, `selectorText`), and one that it refuses as `invalid` is refused by all three. A refusal
+    as `unread` (a name the kit does not know, a namespace, a problem inside `:is()`) gets no claim.
+  - Specificity: two rules whose selectors match one element of a fixed document set one custom property in one
+    layer. The computed value shows the winner, and the kit's order must agree.
+  - Preludes: a query of `@media` that the kit accepts is no `not all` in the `MediaList`, and one with an
+    `invalid` problem is. An `@container` prelude that the kit accepts stays with the same `conditionText`, and
+    one with an `invalid` problem is dropped. A problem of 7.10 alone gets no claim.
+  - Style sheets: the test writes the kit's tree out again as CSS, and Chromium must read the same `cssText` from
+    it as from the original text: for the site's CSS, the CSS of the parse unit test and mutants of both.
+  - Nesting: a nested rule sets a custom property that does not inherit, and the elements where Chromium sets it
+    must be those that the kit's resolved selectors match. A resolved selector that the kit calls `invalid` must
+    set nothing.
+  - Component shapes: a selector that `shapeProblems` passes for `card.css` matches only inside a root of `card`,
+    and matches the same elements when the roots have other tags or when another component has another class name.
+
+  Controls show that each comparison can fail. A gap is a defect of the kit or of the test: fix the module at the
+  cause, add the value to its unit test, and correct the specification. The file takes a few seconds after the
+  build.
 - `spikes.test.ts` and `spikes/`: the spikes S1 to S19. `spikes/sNN.ts` holds the tests of one spike. Every other
   file in that folder is a helper of a spike.
 - `kit/`: a small stand-in integration for the spikes. It is not the kit. `kit.test.ts` checks that it holds the
