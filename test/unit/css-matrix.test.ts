@@ -14,7 +14,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { runAudits } from '../../src/audit/index.ts';
+import { auditEdge } from '../../src/audit/edge.ts';
+import { type AuditSet, runAudits } from '../../src/audit/index.ts';
 import { memoryContext } from '../../src/build.ts';
 import { DESIGN_FILE } from '../../src/context.ts';
 import { lengthProblems, preludeOf, requiresForcedColors } from '../../src/css/media.ts';
@@ -29,6 +30,7 @@ import {
   serialize,
   walk,
 } from '../../src/css/parse.ts';
+import { auditCss } from '../../src/css/rules.ts';
 import {
   atRuleProblem,
   type ComplexSelector,
@@ -64,6 +66,7 @@ import {
   viewportWidthUnits,
 } from '../../src/css/values.ts';
 import { familyOf } from '../../src/design/parse.ts';
+import { auditDesign } from '../../src/design/rules.ts';
 import { renderTokens, TOKENS_FILE } from '../../src/design/tokens.ts';
 import { headersText, renderWrangler } from '../../src/hosts/cloudflare.ts';
 import { preflight } from '../../src/preflight.ts';
@@ -1123,7 +1126,14 @@ function sourceIds(files: Files): string[] {
   });
 }
 
-/** The sorted ids of the audits of the kit on a built client directory of the project with the files of a row. */
+/**
+ * The audits that read the CSS of a build: css, design and edge. The page, site, budgets and html audits read the
+ * head, the links and the text of a page, which the one-page client directory of a row does not hold; their unit
+ * tests (`audit-*.test.ts`) and the real build of the test site check that a CSS plant gives them no id.
+ */
+const CSS_FAMILY: AuditSet = { css: auditCss, design: auditDesign, edge: auditEdge };
+
+/** The sorted ids of the CSS audits of the kit on a built client directory of the project with the files of a row. */
 function builtIds(files: Files, dist: Readonly<Record<string, string>>): Promise<string[]> {
   const all = { ...PROJECT, ...files };
   const designText = all[DESIGN_FILE];
@@ -1140,7 +1150,7 @@ function builtIds(files: Files, dist: Readonly<Record<string, string>>): Promise
       report: new Report(),
       files: { ...dist, _headers: headersText(AUTO), _redirects: '' },
     });
-    await runAudits(ctx);
+    await runAudits(ctx, CSS_FAMILY);
     return [...ctx.report.ids()].sort();
   });
 }

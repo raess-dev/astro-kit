@@ -23,6 +23,7 @@ import {
   classRole,
   classNames as compoundClasses,
   ownerOf,
+  type PseudoClass,
   parseSelector,
   subject,
 } from '../selectors.ts';
@@ -246,6 +247,8 @@ interface Outer {
   attributes: AttributeSelector[];
   /** True when the compound narrows its element by a pseudo-class or a pseudo-element: it covers no key. */
   narrowed: boolean;
+  /** The `:is()` and `:where()` of the compounds around it that are still to match: the element matches each. */
+  pending: readonly PseudoClass[];
 }
 
 /**
@@ -258,7 +261,9 @@ interface Outer {
  *   plain `<a>`.
  * - an argument of `:is()` and `:where()` is the same element (7.1), so each argument covers its keys with the type,
  *   the classes and the attributes of the compound around it: `:is(h1, h2)` covers `h1` and `h2`, and
- *   `input:is([type=radio], [type=checkbox])` covers those two types only.
+ *   `input:is([type=radio], [type=checkbox])` covers those two types only. With two of them on one compound the
+ *   element matches each: an argument of the first is read with the others still pending, so
+ *   `:is(h1, h2):is(h2, h3)` covers `h2`, and `input:is([type=radio], [type=checkbox]):where(:disabled)` covers none.
  *
  * A `*` covers nothing. The depth is that of the parsed selector, which the parser bounds.
  */
@@ -272,13 +277,13 @@ function cover(compound: Compound, outer: Outer, coverage: Coverage): void {
   const narrowed = outer.narrowed || compound.pseudoElements.length > 0 || compound.pseudoClasses.length > same.length;
   // A class next to a type is a variant, also inside `:is()` (`a:is(.button, .link)`), whatever narrows it.
   if (type !== undefined) for (const name of classes) coverage.variants.add(name);
-  if (same.length > 0) {
-    // Each argument is the element: the keys come from the arguments, never from the compound alone.
-    for (const pseudo of same) {
-      for (const argument of pseudo.selectors ?? []) {
-        const last = subject(argument);
-        if (last !== undefined) cover(last, { type, classes, attributes, narrowed }, coverage);
-      }
+  const [first, ...pending] = [...outer.pending, ...same];
+  if (first !== undefined) {
+    // Each argument is the element: the keys come from the arguments, never from the compound alone. The element
+    // matches every `:is()` and `:where()`, so the others stay pending for each argument of the first.
+    for (const argument of first.selectors ?? []) {
+      const last = subject(argument);
+      if (last !== undefined) cover(last, { type, classes, attributes, narrowed, pending }, coverage);
     }
     return;
   }
@@ -304,7 +309,8 @@ function cover(compound: Compound, outer: Outer, coverage: Coverage): void {
 function coverSelector(selector: ComplexSelector, coverage: Coverage): void {
   for (const compound of selector.compounds) addVariants(compound, coverage);
   const last = subject(selector);
-  if (last !== undefined) cover(last, { type: undefined, classes: [], attributes: [], narrowed: false }, coverage);
+  if (last !== undefined)
+    cover(last, { type: undefined, classes: [], attributes: [], narrowed: false, pending: [] }, coverage);
 }
 
 /** What every style rule of `elements.css` (the source) covers. */

@@ -63,3 +63,15 @@
   `css-classes` and `css-unused` read `[class~=x]`. `design-pairs` follows gradient aliases and pairs the focus
   color of `:focus-visible`. Each fact reports once: `@scope` content, a literal viewport unit, `<style is:global>`,
   `!important` in a page file, `[data-mode]` in a page file and a mode feature in `@container` give one id each.
+- `css-sources` fails an `import.meta.glob()` whose pattern can match a style file (`'./*.css'`, `'./**'`,
+  `'./*.{js,css}'`), because the kit cannot see what a glob loads. It also names a missing
+  `src/styles/elements.css` or `src/styles/fonts.css` at its path: the kit imports both into every page, and Vite
+  stopped the build with an import that it could not resolve. A missing `elements.css` no longer gives
+  `design-pairs` and `design-specs` findings for its rules.
+- Milestone M5, part 5b: the page audits. 27 rules read each built page on its own: `head-*`, `headings-*`,
+  `indexing-noindex`, `speculation-block`, `modes-script`, `modes-switch`, `csp-meta`, the built half of `csp-hash`,
+  `csp-base`, `html-shell`, `images-src`, `images-attrs`, `images-format`, `images-priority`, `fonts-limit`,
+  `svg-name`, `media-animated`, `media-captions` and `media-pdf`, and `html-validate` runs last with only the kit
+  config. They read each page once, without recursion, so a page of 2 MB or one that nests 5,000 deep stops none of
+  them. A page reads as a browser parses it: `pre` holds markup, `textarea` and `title` hold text, and template
+  content is no part of the page. A CSP meta, a canonical, a description or an Open Graph tag counts only in `head`.

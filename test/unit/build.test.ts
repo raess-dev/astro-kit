@@ -23,10 +23,11 @@ const RAW_TEXTS: readonly [tag: string, text: string][] = [
   ['script', 'if (a < b && c > d) document.title = "<b>&amp;</b>";'],
   ['style', '.a > .b::after { content: "<i>&lt;</i>"; }'],
   ['noscript', '<img src="/a.png" alt=""> &amp; <b>text</b>'],
-  ['pre', 'a <b>bold</b> &amp; text'],
+  ['textarea', 'a <b>bold</b> &amp; <meta http-equiv="content-security-policy" content="x">'],
+  ['title', 'a <b>bold</b> &amp; text'],
 ];
 
-test('the text of script, style, noscript and pre stays raw, and nothing inside becomes an element', () => {
+test('the text of script, style, noscript, textarea and title stays raw, and nothing inside becomes an element', () => {
   const read = (tag: string, text: string): [string | undefined, number] => {
     const root = parseHtml(`<div><${tag}>${text}</${tag}><b>after</b></div>`);
     return [root.querySelector(tag)?.rawText, root.querySelectorAll('b, i, img').length];
@@ -34,6 +35,14 @@ test('the text of script, style, noscript and pre stays raw, and nothing inside 
   assert.deepEqual(
     RAW_TEXTS.map(([tag, text]) => [tag, ...read(tag, text)]),
     RAW_TEXTS.map(([tag, text]) => [tag, text, 1]),
+  );
+});
+
+test('the content of pre is markup, as a browser parses it: its elements are elements of the page', () => {
+  const root = parseHtml('<div><pre>a <b>bold</b> <script>x()</script><img src="/a.png"></pre></div>');
+  assert.deepEqual(
+    root.querySelectorAll('pre *').map((element) => element.rawTagName),
+    ['b', 'script', 'img'],
   );
 });
 

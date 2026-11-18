@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import type { Design } from '../../src/context.ts';
 import {
   type BuiltCssInput,
+  CSS_CHECKS,
   ELEMENTS_FILE,
   runBuiltChecks,
   runSourceChecks,
@@ -179,6 +180,26 @@ test('design-specs: a Components row is implemented in the file of its component
   const modifier = designOf(withRows('Components', ['`.card--wide` | `padding` | `--space-2`']));
   const wide = '@layer components {\n  .card--wide {\n    padding: var(--space-2);\n  }\n}\n';
   assert.deepEqual(ids(checked(project({ [CARD_FILE]: wide }, { design: modifier }))), []);
+});
+
+test('design-specs: a Components row starts at the root as the selector checks read it (:is, :where, [class~=x])', () => {
+  const rows = [
+    '`:is(.card)` | `padding` | `--space-2`',
+    '`:where(.card)` | `gap` | `--space-2`',
+    '`[class~=card]` | `color` | `--color-accent`',
+  ];
+  const { design } = designWith(withRows('Components', rows));
+  const css =
+    '@layer components {\n  .card {\n    padding: var(--space-2);\n  }\n\n  :where(.card) {\n    gap: var(--space-2);\n  }\n\n  [class~=card] {\n    color: var(--color-accent);\n  }\n}\n';
+  const source = project({ [CARD_FILE]: css }, { design });
+  assert.deepEqual(ids(checked(source)), []);
+  const chunk =
+    '@layer components{.card{padding:var(--space-2)}:where(.card){gap:var(--space-2)}[class~=card]{color:var(--color-accent)}}';
+  assert.deepEqual(ids(audited(built(source, { 'index.html': page('<div class="card"></div>', [chunk]) }))), []);
+  const lost = chunk.replace(':where(.card){gap:var(--space-2)}', '');
+  assert.deepEqual(findings(audited(built(source, { 'index.html': page('<div class="card"></div>', [lost]) }))), [
+    'design-specs / :where(.card) { gap: var(--space-2) }',
+  ]);
 });
 
 test('design-specs: a Components row of a component without its file fails at the row', () => {
@@ -360,11 +381,28 @@ test('design-pairs (d): elements.css sets the body pair on body, the link color 
   assert.deepEqual(findings(checked(project({ [ELEMENTS_FILE]: focus }), 'design-pairs')), [
     'design-pairs src/styles/elements.css :focus-visible',
   ]);
-  assert.deepEqual(findings(checked(project({ [ELEMENTS_FILE]: null }), 'design-pairs')), [
-    'design-pairs src/styles/elements.css :focus-visible',
-    'design-pairs src/styles/elements.css a',
-    'design-pairs src/styles/elements.css body',
+});
+
+test("a missing elements.css is css-sources's alone: design-pairs (d) and design-specs skip it", () => {
+  const { design } = designWith(withRows('Elements', ['`body` | `color` | `--color-text`']));
+  const input = project({ [ELEMENTS_FILE]: null }, { design });
+  assert.deepEqual(findings(checked(input)), []);
+  const report = new Report();
+  runSourceChecks(input, [...DESIGN_CHECKS, ...CSS_CHECKS], report);
+  assert.deepEqual(findings(report), [
+    'css-sources src/styles/elements.css the file is missing: the kit imports it into every page',
   ]);
+  // With the file, its rules are checked again.
+  const empty = project({ [ELEMENTS_FILE]: '@layer elements {\n}\n' }, { design });
+  assert.deepEqual(
+    findings(checked(empty)),
+    [
+      `design-specs docs/design.md:${lineOf(withRows('Elements', ['`body` | `color` | `--color-text`']), '| `body` | `color`')} body { color: var(--color-text) }`,
+      'design-pairs src/styles/elements.css :focus-visible',
+      'design-pairs src/styles/elements.css a',
+      'design-pairs src/styles/elements.css body',
+    ].sort(),
+  );
 });
 
 test('design-pairs (e), drift 35: a background color not in a pair, at the var()', () => {

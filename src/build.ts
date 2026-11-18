@@ -31,12 +31,16 @@ import { localeOfPath } from './routes.ts';
 // HTML
 
 /**
- * Parses one HTML text. Comments are dropped. The text of `script`, `noscript`, `style` and `pre` stays raw: it is
- * one text node, and nothing inside it becomes an element. Every audit parses with this function, so that all of
- * them see the same document.
+ * Parses one HTML text. Comments are dropped. The content of `script`, `style`, `noscript`, `textarea` and `title`
+ * is text, as a browser parses it: one text node, and nothing inside it becomes an element (`noscript` as with
+ * scripting on). The content of `pre` is markup, as in a browser. Every audit parses with this function, so that all
+ * of them see the same document.
  */
 export function parseHtml(html: string): HTMLElement {
-  return parse(html, { comment: false, blockTextElements: { script: true, noscript: true, style: true, pre: true } });
+  return parse(html, {
+    comment: false,
+    blockTextElements: { script: true, noscript: true, style: true, textarea: true, title: true },
+  });
 }
 
 // Files
