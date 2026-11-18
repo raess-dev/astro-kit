@@ -3,6 +3,8 @@
  * context and adds its findings to `ctx.report`. No audit throws for a finding, so one build reports every finding.
  */
 import type { Audit, BuildContext } from '../context.ts';
+import { auditCss } from '../css/rules.ts';
+import { auditDesign } from '../design/rules.ts';
 import { auditEdge } from './edge.ts';
 
 /** The audit groups in the order of step 4: page, site, budgets, CSS, design (built halves), edge, html-validate. */
@@ -23,8 +25,10 @@ export const AUDITS: AuditSet = {
   // images, fonts, origins, shell, SVG, media and forms, for each page.
   // site (M5, `src/audit/site.ts`): routes, hreflang, links, depth, facts, content and legal, across the pages.
   // budgets (M5, `src/audit/budgets.ts`): compressed sizes, DOM counts, fonts and JS import closures.
-  // css (M5, `src/css/rules.ts`): the built halves of the `css-*` rules and of `modes-media`.
-  // design (M5, `src/design/rules.ts`): the built halves of `design-tokens`, `design-specs` and `design-pairs`.
+  // css: the built halves of the `css-*` rules and of `modes-media`.
+  css: auditCss,
+  // design: the built halves of `design-tokens` and `design-specs` (`design-pairs` has no built half).
+  design: auditDesign,
   // edge: `_headers` and `_redirects`, after `writeEdgeFiles` wrote them.
   edge: auditEdge,
   // html (M5, `src/audit/html.ts`): html-validate with the kit config.

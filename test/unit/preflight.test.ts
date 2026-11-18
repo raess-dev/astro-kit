@@ -57,8 +57,9 @@ const DESIGN = 'docs/design.md';
 const TOKENS = 'src/styles/tokens.css';
 
 /**
- * The smallest design document that passes `design-format`: the theme `light`, one color, one `--font-`, one
- * `--text-` and one `--space-` row, no breakpoint, and one pair. The one mode option `auto` needs no other theme.
+ * The smallest design document that passes `design-format` and `design-pairs`: the theme `light`, two colors, one
+ * `--font-`, one `--text-` and one `--space-` row, no breakpoint, and the four mandatory pairs of 7.4. The one mode
+ * option `auto` needs no other theme.
  */
 const DESIGN_MD = [
   '## Themes',
@@ -72,6 +73,7 @@ const DESIGN_MD = [
   '| Token | light | Use |',
   '|---|---|---|',
   '| `--color-text` | `#222222` | Text. |',
+  '| `--color-page` | `#ffffff` | The page. |',
   '',
   '## Typography',
   '',
@@ -95,7 +97,29 @@ const DESIGN_MD = [
   '',
   '| Foreground | Background | Role | For |',
   '|---|---|---|---|',
-  '| `--color-text` | `--color-text` | text | body |',
+  '| `--color-text` | `--color-page` | text | body |',
+  '| `--color-text` | `--color-page` | ui | link |',
+  '| `--color-text` | `--color-page` | non-text | focus |',
+  '| `--color-text` | `--color-page` | ui | error |',
+  '',
+].join('\n');
+
+const ELEMENTS = 'src/styles/elements.css';
+
+/** The smallest `elements.css`: it uses the body, link and focus pairs, as 7.4 says (`design-pairs`). */
+const ELEMENTS_CSS = [
+  '@layer elements {',
+  '  body {',
+  '    color: var(--color-text);',
+  '    background-color: var(--color-page);',
+  '  }',
+  '  a {',
+  '    color: var(--color-text);',
+  '  }',
+  '  :focus-visible {',
+  '    outline-color: var(--color-text);',
+  '  }',
+  '}',
   '',
 ].join('\n');
 
@@ -107,8 +131,8 @@ const WRANGLER_JSONC = renderWrangler(optionsOf(SETTINGS));
 
 /**
  * The smallest project that passes preflight with no finding: the settings, the two facts files that must exist,
- * the three source shims, `wrangler.jsonc`, the design document and the `tokens.css` that the kit renders from it.
- * A later milestone adds the files that its rules need.
+ * the three source shims, `wrangler.jsonc`, the design document, the `tokens.css` that the kit renders from it, and
+ * `elements.css`. A later milestone adds the files that its rules need.
  */
 const SMALLEST: Files = {
   'astro-kit.json': json(SETTINGS),
@@ -118,6 +142,7 @@ const SMALLEST: Files = {
   [WRANGLER]: WRANGLER_JSONC,
   [DESIGN]: DESIGN_MD,
   [TOKENS]: TOKENS_CSS,
+  [ELEMENTS]: ELEMENTS_CSS,
 };
 
 /** The smallest project with some files added or replaced. */
@@ -189,7 +214,7 @@ const fileOf = (place: string): string => place.split(':')[0] ?? place;
 
 // The order of the specification
 
-/** The rules that preflight runs at milestone M3, in the order of 6.1, step 2. */
+/** The rules that preflight runs, in the order of 6.1, step 2. */
 const ORDER: readonly string[] = [
   // 1. options and facts
   'config-options',
@@ -219,6 +244,21 @@ const ORDER: readonly string[] = [
   'design-format',
   'modes-themes',
   'design-tokens',
+  'design-specs',
+  'design-pairs',
+  // 10. CSS source halves
+  'css-sources',
+  'css-layer-file',
+  'css-component-file',
+  'css-literal',
+  'css-token-family',
+  'css-local-var',
+  'css-var-undefined',
+  'css-selector',
+  'css-banned',
+  'css-media',
+  'css-page',
+  'modes-media',
 ];
 
 /** The rule ids that the sub-steps of 6.1, step 2 name, in the order of the document. */
@@ -256,6 +296,39 @@ const OLD_WAIVER = {
   until: '2000-01-01',
 };
 
+/** A component that imports its own CSS file (7.2, 7.8). */
+const BOX = 'src/components/Box.astro';
+const BOX_ASTRO = '---\nimport \'../styles/components/box.css\';\n---\n<div class="box"></div>\n';
+const BOX_CSS = 'src/styles/components/box.css';
+
+/** The component `Box` with a CSS file whose root rule holds the given declarations and rules. */
+const withBox = (inside: string, files: Files = {}): Files =>
+  withFiles({ [BOX]: BOX_ASTRO, [BOX_CSS]: `@layer components {\n  .box {\n    ${inside}\n  }\n}\n`, ...files });
+
+/** The route of `PAGE` with its page file (7.2, 7.9). */
+const ROUTE_ASTRO = "---\nimport '../styles/pages/index.css';\n---\n<h1>Example</h1>\n";
+const PAGE_CSS = 'src/styles/pages/index.css';
+
+/** The smallest design document with an `## Elements` row that `elements.css` does not implement (drift 34). */
+const DESIGN_WITH_ROW = `${DESIGN_MD}\n## Elements\n\n| Selector | Property | Token |\n|---|---|---|\n| h1 | color | --color-text |\n`;
+
+/** The smallest settings with the mode options `auto`, `light` and `dark`, and the design with the theme `dark`. */
+const SWITCH_MODES = { auto: true, light: true, dark: true, contrast: false };
+const DESIGN_DARK = DESIGN_MD.replace(
+  '| light | The one theme. |',
+  '| light | The one theme. |\n| dark | The dark theme. |',
+)
+  .replace('| Token | light | Use |\n|---|---|---|', '| Token | light | dark | Use |\n|---|---|---|---|')
+  .replace('| `#222222` |', '| `#222222` | `#eeeeee` |')
+  .replace('| `#ffffff` |', '| `#ffffff` | `#111111` |');
+const withSwitch = (files: Files): Files =>
+  withFiles({
+    'astro-kit.json': json({ ...SETTINGS, modes: SWITCH_MODES }),
+    [DESIGN]: DESIGN_DARK,
+    [TOKENS]: renderTokens(designOf(DESIGN_DARK), optionsOf({ ...SETTINGS, modes: SWITCH_MODES })),
+    ...files,
+  });
+
 /** One case: a name, the files of the project, and the exact sorted ids. */
 type Case = readonly [name: string, files: Files, ids: readonly string[]];
 
@@ -275,6 +348,28 @@ const PASSING: readonly Case[] = [
       'src/assets/photo.png': png(LIMITS.imageMaxPx, 1),
       'public/favicon.ico': 'icon',
       'public/og.png': 'image',
+    }),
+    [],
+  ],
+  [
+    'the smallest project with a component, a route with its page file, fonts.css and an Elements row',
+    withBox('padding: var(--space-2);\n    @media (prefers-color-scheme: dark) {\n      gap: var(--space-2);\n    }', {
+      [PAGE]: ROUTE_ASTRO,
+      [PAGE_CSS]: '@layer page {\n  .box {\n    grid-column: span 2;\n  }\n}\n',
+      'src/styles/fonts.css': '',
+      [DESIGN]: DESIGN_WITH_ROW,
+      [ELEMENTS]: ELEMENTS_CSS.replace(
+        '  :focus-visible {',
+        '  h1 {\n    color: var(--color-text);\n  }\n  :focus-visible {',
+      ),
+    }),
+    [],
+  ],
+  [
+    'the options `light` and `dark` with a component that reads no mode feature',
+    withSwitch({
+      [BOX]: BOX_ASTRO,
+      [BOX_CSS]: '@layer components {\n  .box {\n    padding: var(--space-2);\n  }\n}\n',
     }),
     [],
   ],
@@ -390,6 +485,67 @@ const FAILING: readonly Case[] = [
     withFiles({ [TOKENS]: TOKENS_CHANGED_BY_HAND }),
     ['design-tokens'],
   ],
+  [
+    'design-specs: an Elements row that elements.css does not implement',
+    withFiles({ [DESIGN]: DESIGN_WITH_ROW }),
+    ['design-specs'],
+  ],
+  [
+    'design-pairs: a background color that no pair holds',
+    withBox('background-color: var(--color-text);'),
+    ['design-pairs'],
+  ],
+  // 10. CSS source halves
+  ['css-sources: a CSS file outside the places of 7.1', withFiles({ 'src/styles/extra.css': '' }), ['css-sources']],
+  ['css-sources: `public/x.css`', withFiles({ 'public/x.css': '' }), ['css-sources']],
+  [
+    'css-sources: a `<style>` in an `.astro` file',
+    withFiles({ [PAGE]: '<style>h1 { color: red; }</style>\n' }),
+    ['css-sources'],
+  ],
+  [
+    'css-layer-file: two top-level layers',
+    withFiles({ [ELEMENTS]: `${ELEMENTS_CSS}@layer elements {\n}\n` }),
+    ['css-layer-file'],
+  ],
+  ['css-component-file: a component without its CSS file', withFiles({ [BOX]: BOX_ASTRO }), ['css-component-file']],
+  ['css-literal: `padding: 13px` in a component', withBox('padding: 13px;'), ['css-literal']],
+  ['css-token-family: `padding: var(--color-text)`', withBox('padding: var(--color-text);'), ['css-token-family']],
+  [
+    'css-local-var: a local defined off the root',
+    withBox('padding: var(--space-2);\n    .box__part {\n      --box-pad: var(--space-2);\n    }'),
+    ['css-local-var'],
+  ],
+  ['css-var-undefined: `var(--space-99)`', withBox('padding: var(--space-99);'), ['css-var-undefined']],
+  [
+    'css-selector: a bare type in a component file',
+    withBox('padding: var(--space-2);\n  }\n  h2 {\n    padding: var(--space-2);'),
+    ['css-selector'],
+  ],
+  ['css-banned: `!important` in a component', withBox('padding: var(--space-2) !important;'), ['css-banned']],
+  [
+    'css-media: a length that is no breakpoint',
+    withBox('padding: var(--space-2);\n    @media (width < 777px) {\n      gap: var(--space-2);\n    }'),
+    ['css-media'],
+  ],
+  [
+    'css-page: a color in a page file',
+    withBox('padding: var(--space-2);', {
+      [PAGE]: ROUTE_ASTRO,
+      [PAGE_CSS]: '@layer page {\n  .box {\n    color: var(--color-text);\n  }\n}\n',
+    }),
+    ['css-page'],
+  ],
+  ['modes-media: `color-scheme` in a component', withBox('color-scheme: light;'), ['modes-media']],
+  [
+    'modes-media: `prefers-color-scheme` with the options `light` and `dark`',
+    withSwitch({
+      [BOX]: BOX_ASTRO,
+      [BOX_CSS]:
+        '@layer components {\n  .box {\n    @media (prefers-color-scheme: dark) {\n      padding: var(--space-2);\n    }\n  }\n}\n',
+    }),
+    ['modes-media'],
+  ],
 ];
 
 /**
@@ -405,14 +561,54 @@ const EVERY_RULE_SETTINGS = { ...SETTINGS, waivers: [OLD_WAIVER], processing: ['
 
 /** What one design rule needs to fail, on top of the project that fails every other rule. */
 const DESIGN_PLANTS: Readonly<Record<DesignRule, Files>> = {
-  'design-format': { [DESIGN]: DESIGN_WITH_COLOR_MIX },
+  'design-format': { [DESIGN]: DESIGN_WITH_ROW.replace('`#222222`', '`color-mix(in oklch, #222222, #ffffff)`') },
   'modes-themes': { 'astro-kit.json': json({ ...EVERY_RULE_SETTINGS, modes: WITH_DARK }) },
   'design-tokens': { [TOKENS]: TOKENS_CHANGED_BY_HAND },
 };
 
 /**
- * A project that fails every rule of `ORDER` outside sub-step 9, and one rule of sub-step 9. Its settings are
- * valid. It fails both parts of `config-wrangler`: a second wrangler file, and a text that the kit did not render.
+ * The rules that run only when `design-format` passes (6.1, the dependency rule): the other design rules,
+ * `modes-themes`, and the CSS rules that read the tokens.
+ */
+const AFTER_DESIGN_FORMAT: readonly string[] = [
+  'modes-themes',
+  'design-tokens',
+  'design-specs',
+  'design-pairs',
+  'css-token-family',
+  'css-var-undefined',
+  'css-media',
+];
+
+/** A component file that fails each CSS rule of a component once, in its own declaration or rule. */
+const EVERY_RULE_BOX_CSS = [
+  '@layer components {',
+  '  .box {',
+  '    padding: 13px;',
+  '    margin: var(--color-text);',
+  '    padding-inline: var(--space-99);',
+  '    gap: var(--space-2) !important;',
+  '    background-color: var(--color-text);',
+  '    color-scheme: light;',
+  '    .box__part {',
+  '      --box-pad: var(--space-2);',
+  '    }',
+  '    @media (width < 777px) {',
+  '      gap: var(--space-2);',
+  '    }',
+  '  }',
+  '  h2 {',
+  '    padding: var(--space-2);',
+  '  }',
+  '}',
+  '',
+].join('\n');
+
+/**
+ * A project that fails every rule of `ORDER` outside the first three rules of sub-step 9, and one of these three.
+ * Its settings are valid. It fails both parts of `config-wrangler`: a second wrangler file, and a text that the kit
+ * did not render. The CSS rules fail in `src/styles/extra.css`, `elements.css`, the components `Card` and `Box`,
+ * and the page file of `PAGE`.
  */
 const everyRule = (design: DesignRule): Files => ({
   ...SMALLEST,
@@ -422,13 +618,21 @@ const everyRule = (design: DesignRule): Files => ({
   'schedule.json': json({}),
   'biome.json': '{}\n',
   'package.json': json({ overrides: {}, dependencies: { astro: 'github:withastro/astro', 'left-pad': '1.3.0' } }),
-  [PAGE]: "---\n// @ts-ignore\nimport { ClientRouter } from 'astro:transitions';\n---\n<div server:defer></div>\n",
+  [PAGE]:
+    "---\n// @ts-ignore\nimport { ClientRouter } from 'astro:transitions';\nimport '../styles/pages/index.css';\n---\n<div server:defer></div>\n",
   'public/robots.txt': 'User-agent: *\n',
   'public/photo.png': png(1, 1),
   'src/assets/photo.png': png(LIMITS.imageMaxPx + 1, 1),
   'wrangler.toml': 'name = "example-ch"\n',
   [WRANGLER]: WRANGLER_CHANGED_BY_HAND,
   'redirects.json': json([{ from: 'alt/', to: '/neu/' }]),
+  [DESIGN]: DESIGN_WITH_ROW,
+  'src/styles/extra.css': '',
+  [ELEMENTS]: `${ELEMENTS_CSS}@layer elements {\n}\n`,
+  'src/components/Card.astro': '<div class="card"></div>\n',
+  [BOX]: BOX_ASTRO,
+  [BOX_CSS]: EVERY_RULE_BOX_CSS,
+  [PAGE_CSS]: '@layer page {\n  .box {\n    color: var(--color-text);\n  }\n}\n',
   ...DESIGN_PLANTS[design],
 });
 
@@ -438,9 +642,13 @@ const everyRuleNoSettings = (design: DesignRule): Files => ({
   'astro-kit.json': json({ ...EVERY_RULE_SETTINGS, site: 'http://example.ch' }),
 });
 
-/** `ORDER` without the rules of sub-step 9 that cannot report next to the given one. */
+/** `ORDER` without the rules that cannot report next to the given design rule. */
 const orderWith = (design: DesignRule): string[] =>
-  ORDER.filter((id) => id === design || !DESIGN_RULES.some((rule) => rule === id));
+  ORDER.filter((id) =>
+    design === 'design-format'
+      ? !AFTER_DESIGN_FORMAT.includes(id)
+      : id === design || !DESIGN_RULES.some((rule) => rule === id),
+  );
 
 const idsOf = (cases: readonly Case[]): { name: string; ids: readonly string[] }[] =>
   cases.map(([name, files]) => ({ name, ids: run(files).ids }));
@@ -464,6 +672,7 @@ test('the smallest project passes preflight, and preflight returns its settings'
     'docs/design.md',
     'schedule.json',
     'site.json',
+    'src/styles/elements.css',
     'src/styles/tokens.css',
     'tsconfig.json',
     'wrangler.jsonc',
@@ -491,6 +700,7 @@ test('each file of the smallest project is needed: without it, preflight has a f
     { file: 'wrangler.jsonc', ids: ['config-wrangler'] },
     { file: 'docs/design.md', ids: ['design-format'] },
     { file: 'src/styles/tokens.css', ids: ['design-tokens'] },
+    { file: 'src/styles/elements.css', ids: ['design-pairs'] },
   ]);
 });
 
@@ -518,6 +728,7 @@ test('the order of the rules is that of 6.1, step 2', () => {
     inSpec.filter((id) => RULE_BY_ID.has(id)),
     ORDER,
   );
+  assert.deepEqual(inSpec.slice(-14), ORDER.slice(-14), 'sub-steps 9 and 10 end the list, in this order');
 });
 
 test('the findings come in the order of 6.1, step 2, each rule in one run', () => {
@@ -559,6 +770,7 @@ const NEEDS_SETTINGS: readonly string[] = [
   'config-dep-allowlist',
   'modes-themes',
   'design-tokens',
+  'modes-media',
 ];
 
 /**
@@ -571,7 +783,7 @@ const needsSettings = (line: string): boolean =>
 
 test('without valid settings, every check that reads no setting still runs', () => {
   const seen = run(everyRuleNoSettings('design-format'));
-  const others = ORDER.filter((id) => !NEEDS_SETTINGS.includes(id));
+  const others = ORDER.filter((id) => !NEEDS_SETTINGS.includes(id) && !AFTER_DESIGN_FORMAT.includes(id));
   assert.equal(seen.options, undefined);
   assert.deepEqual(runsOf(seen.rules), others);
   assert.deepEqual(seen.ids, [...others].sort());
@@ -632,6 +844,30 @@ test('the dependency rule: a design rule runs only when the rules before it pass
       ['modes-themes'],
     ],
     ['both pass: design-tokens runs', withFiles({ [TOKENS]: TOKENS_CHANGED_BY_HAND }), ['design-tokens']],
+    [
+      'design-format fails: no design-specs, design-pairs or CSS rule that reads the tokens',
+      withBox('padding: var(--color-text);\n    margin: var(--space-99);\n    background-color: var(--color-text);', {
+        [DESIGN]: DESIGN_WITH_COLOR_MIX,
+      }),
+      ['design-format'],
+    ],
+    [
+      'design-format fails: the CSS rules that read no token still run',
+      withBox('padding: 13px;', { [DESIGN]: DESIGN_WITH_COLOR_MIX }),
+      ['css-literal', 'design-format'],
+    ],
+    [
+      'tokens.css does not parse: design-specs and design-pairs run, the CSS rules that read the tokens do not',
+      withBox('padding: var(--color-text);\n    margin: var(--space-99);\n    background-color: var(--color-text);', {
+        [TOKENS]: `${TOKENS_CSS}}\n`,
+      }),
+      ['design-pairs', 'design-tokens'],
+    ],
+    [
+      'both parse: the CSS rules that read the tokens run',
+      withBox('padding: var(--color-text);\n    margin: var(--space-99);'),
+      ['css-token-family', 'css-var-undefined'],
+    ],
   ];
   assert.deepEqual(idsOf(cases), expected(cases));
 });
@@ -649,6 +885,12 @@ test('each new finding names its place', () => {
   const line = TOKENS_CSS.split('\n').findIndex((text) => text.includes('0.5rem')) + 1;
   assert.ok(line > 1, 'the rendering holds the value');
   assert.deepEqual(places(withFiles({ [TOKENS]: TOKENS_CHANGED_BY_HAND })), [`src/styles/tokens.css:${line}`]);
+  const row = DESIGN_WITH_ROW.split('\n').findIndex((text) => text.startsWith('| h1 |')) + 1;
+  assert.deepEqual(places(withFiles({ [DESIGN]: DESIGN_WITH_ROW })), [`docs/design.md:${row}`]);
+  assert.deepEqual(places(withFiles({ 'src/styles/extra.css': '' })), ['src/styles/extra.css']);
+  assert.deepEqual(places(withFiles({ [BOX]: BOX_ASTRO })), [BOX]);
+  assert.deepEqual(places(withBox('padding: 13px;')), [`${BOX_CSS}:3`]);
+  assert.deepEqual(places(withBox('padding: var(--space-2);\n    margin: var(--space-99);')), [`${BOX_CSS}:4`]);
 });
 
 test('an empty folder gives the findings of the files that must exist, and no error', () => {

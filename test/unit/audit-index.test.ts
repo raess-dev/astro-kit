@@ -4,9 +4,13 @@ import { auditEdge } from '../../src/audit/edge.ts';
 import { AUDIT_ORDER, AUDITS, type AuditName, type AuditSet, runAudits } from '../../src/audit/index.ts';
 import { memoryContext } from '../../src/build.ts';
 import type { Audit, BuildContext, Design } from '../../src/context.ts';
+import { auditCss } from '../../src/css/rules.ts';
+import { auditDesign } from '../../src/design/rules.ts';
+import { renderTokens, TOKENS_FILE } from '../../src/design/tokens.ts';
 import { headersText } from '../../src/hosts/cloudflare.ts';
 import { Report } from '../../src/registry.ts';
-import { factsOf, optionsOf, SMALLEST } from './fixtures.ts';
+import { AUTO, BUILT_AUTO, DESIGN, ELEMENTS_CSS, pageHtml } from './css-rules-fixtures.ts';
+import { factsOf, inTempAsync, optionsOf, SMALLEST } from './fixtures.ts';
 import { SPEC } from './spec.ts';
 
 // The context of a case
@@ -134,14 +138,19 @@ test('an audit that throws stops the run: the error reaches the caller, and no l
   assert.deepEqual(seen.calls, ['page', 'site']);
 });
 
-test('at this milestone the audits are exactly the edge audit', () => {
-  assert.deepEqual(Object.keys(AUDITS), ['edge']);
+/** The audits of the kit at this milestone, in the order of step 4. */
+const KIT_AUDITS: readonly AuditName[] = ['css', 'design', 'edge'];
+
+test('at this milestone the audits are the css, design and edge audits', () => {
+  assert.deepEqual(Object.keys(AUDITS), [...KIT_AUDITS]);
+  assert.equal(AUDITS.css, auditCss);
+  assert.equal(AUDITS.design, auditDesign);
   assert.equal(AUDITS.edge, auditEdge);
 });
 
 test('the audits of the kit pass on the edge files that the kit writes: no id', async () => {
   const ctx = contextOf({ _headers: HEADERS, _redirects: '/alt/ /neu/ 301\n' });
-  assert.deepEqual(await runAudits(ctx), ['edge']);
+  assert.deepEqual(await runAudits(ctx), [...KIT_AUDITS]);
   assert.deepEqual([...ctx.report.ids()].sort(), []);
   assert.deepEqual(ctx.report.findings, []);
 });
@@ -160,6 +169,43 @@ test('the audits of the kit add the findings of the edge audit to the report of 
   }
   assert.deepEqual(
     seen,
-    cases.map(([name, , ids]) => ({ name, ran: ['edge'], ids })),
+    cases.map(([name, , ids]) => ({ name, ran: [...KIT_AUDITS], ids })),
   );
+});
+
+// The css and design audits read the built pages of the context and the project CSS under its root.
+
+/** The project CSS of a site whose global chunk is `BUILT_AUTO`. */
+const PROJECT_CSS: Readonly<Record<string, string>> = {
+  [TOKENS_FILE]: renderTokens(DESIGN, AUTO),
+  'src/styles/elements.css': ELEMENTS_CSS,
+  'src/styles/fonts.css': '',
+};
+
+/** Runs the audits of the kit on one built page in a site with `PROJECT_CSS`, and gives the rule of each finding. */
+function auditPage(html: string): Promise<string[]> {
+  return inTempAsync(PROJECT_CSS, async (root) => {
+    const ctx = memoryContext({
+      root,
+      dist: `${root}/dist`,
+      options: AUTO,
+      kitVersion: '0.0.0',
+      facts: factsOf(),
+      redirects: [],
+      design: DESIGN,
+      report: new Report(),
+      files: { 'index.html': html, _headers: headersText(AUTO), _redirects: '' },
+    });
+    await runAudits(ctx);
+    return ctx.report.findings.map((finding) => finding.rule);
+  });
+}
+
+test('the css and design audits pass on a page with the global chunk, and report a page that breaks one rule of each, css first', async () => {
+  const extra = BUILT_AUTO.replace('--stack-gap:var(--space-2)}', '--stack-gap:var(--space-2);--extra:1rem}');
+  assert.notEqual(extra, BUILT_AUTO, 'the test adds a custom property to the tokens layer');
+  assert.deepEqual(await auditPage(pageHtml([BUILT_AUTO], '<a href="/">Text</a>')), []);
+  assert.deepEqual(await auditPage(pageHtml([BUILT_AUTO], '<table></table>')), ['css-element-coverage']);
+  assert.deepEqual(await auditPage(pageHtml([extra])), ['design-tokens']);
+  assert.deepEqual(await auditPage(pageHtml([extra], '<table></table>')), ['css-element-coverage', 'design-tokens']);
 });

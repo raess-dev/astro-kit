@@ -159,7 +159,7 @@ function outcomes(cases: readonly Case[]): Outcome[] {
 
 const text = (length: number): string => 'x'.repeat(length);
 
-test('the registry holds the rules of milestones M2 and M3 in the order of section 8', () => {
+test('the registry holds the rules of milestones M2, M3 and part 5a of M5 in the order of section 8', () => {
   assert.deepEqual(
     RULES.map((rule) => [rule.id, rule.group, rule.stage]),
     [
@@ -184,17 +184,37 @@ test('the registry holds the rules of milestones M2 and M3 in the order of secti
       ['images-public', 'images', 'config'],
       ['images-original', 'images', 'config'],
       ['facts-schedule', 'facts', 'config'],
+      ['css-sources', 'css', 'config + build'],
+      ['css-layer-file', 'css', 'config'],
+      ['css-layer-order', 'css', 'build'],
+      ['css-literal', 'css', 'config + build'],
+      ['css-token-family', 'css', 'config + build'],
+      ['css-local-var', 'css', 'config + build'],
+      ['css-var-undefined', 'css', 'config + build'],
+      ['css-selector', 'css', 'config + build'],
+      ['css-classes', 'css', 'build'],
+      ['css-banned', 'css', 'config + build'],
+      ['css-media', 'css', 'config + build'],
+      ['css-unused', 'css', 'build'],
+      ['css-page', 'css', 'config + build'],
+      ['css-element-coverage', 'css', 'build'],
+      ['css-component-file', 'css', 'config'],
       ['design-format', 'design', 'config'],
       ['design-tokens', 'design', 'config + build'],
+      ['design-specs', 'design', 'config + build'],
+      ['design-pairs', 'design', 'config'],
       ['modes-themes', 'modes', 'config'],
+      ['modes-media', 'modes', 'config + build'],
       ['edge-headers', 'edge', 'build'],
       ['edge-redirects', 'edge', 'build'],
       ['legal-processing', 'legal', 'config'],
     ],
   );
+  // Section 8, Waivers: of these rules, only `css-element-coverage` and `css-unused` are waivable.
+  const waivable = ['css-element-coverage', 'css-unused'];
   for (const rule of RULES) {
     assert.equal(rule.level, 'error', rule.id);
-    assert.equal(rule.waivable, false, rule.id);
+    assert.equal(rule.waivable, waivable.includes(rule.id), rule.id);
     assert.ok(rule.standard.length > 0 && rule.message.length > 0 && rule.hint.length > 0, rule.id);
   }
 });
