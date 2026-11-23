@@ -1,6 +1,6 @@
 /**
- * The entries of the page, site, budgets and html audits (parts 5b and 5c of M5): each runs its rules in the order of
- * section 8, and together they hold every build rule of the two parts once.
+ * The entries of the page, site, budgets and html audits (parts 5b, 5c and 5d of M5): each runs its rules in the order
+ * of section 8, and together they hold every build rule of the three parts once.
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -63,6 +63,9 @@ const PART_5B_5C = [
   'budget-fonts',
 ];
 
+/** The build half that part 5d adds: `routes-slug` reads the built page paths. */
+const PART_5D = ['routes-slug'];
+
 /** The ids in the order of the registry, which is the order of section 8. */
 const inRegistryOrder = (list: readonly string[]): string[] =>
   RULES.map((rule) => rule.id).filter((id) => list.includes(id));
@@ -74,12 +77,12 @@ test('each audit runs its rules in the order of section 8', () => {
   }
 });
 
-test('the audits hold every build rule of parts 5b and 5c once, html-validate in the html audit', () => {
+test('the audits hold every build rule of parts 5b, 5c and 5d once, html-validate in the html audit', () => {
   const all = [...PAGE_RULES, ...SITE_RULES, ...BUDGET_RULES].map((rule) => rule.id);
   assert.equal(new Set(all).size, all.length);
-  assert.deepEqual([...all, 'html-validate'].sort(), [...PART_5B_5C].sort());
+  assert.deepEqual([...all, 'html-validate'].sort(), [...PART_5B_5C, ...PART_5D].sort());
   assert.equal(PART_5B_5C.length, 48);
-  for (const id of PART_5B_5C) {
+  for (const id of [...PART_5B_5C, ...PART_5D]) {
     const stage = RULE_BY_ID.get(id)?.stage;
     assert.ok(stage === 'build' || stage === 'config + build', id);
   }

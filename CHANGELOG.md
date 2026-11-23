@@ -84,3 +84,7 @@
 - The tool runner names the signal when a signal ends a tool. Astro can crash on a page that nests very deep, and
   `astro-kit build` then ended with 1 and no reason; now it prints `astro-kit: astro build was stopped by SIGSEGV`
   and that no check gave this result.
+- `routes-slug` has its build half. Every built page path other than `/404.html` must end in `/`, and each of its
+  segments must be a slug. A default-locale path must not start with a locale code or a reserved segment, and a
+  non-default path must have no reserved segment after `/<code>/`. Before, only the endpoint clause ran, so a page
+  built at `/en/getting_here/` passed the build.

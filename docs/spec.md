@@ -297,7 +297,7 @@ astro-kit/
 | `src/options.ts` | The `astro-kit.json` schema, `LIMITS`, `effectiveLimits`, `loadOptions`. |
 | `src/facts.ts` | Schemas and loaders for `site.json`, `schedule.json` and `glossary.json`. |
 | `src/redirects.ts` | The `redirects.json` schema and validation, and the `_redirects` lines. It holds the checks on one `from` and on one `to`, which `routes-redirects` and `edge-redirects` share. |
-| `src/routes.ts` | `RESERVED_SEGMENTS`, the locale of a path, locale homes, the 404 path, the slug pattern, and the checks of `astro:routes:resolved`: `routes-on-demand` and the endpoint clause of `routes-slug`, with `FORM_ROUTE` and `FORM_SHIM`. |
+| `src/routes.ts` | `RESERVED_SEGMENTS`, the locale of a path, locale homes, the 404 path, the slug pattern, the check of a built page path (the build half of `routes-slug`, which `src/audit/site.ts` runs), and the checks of `astro:routes:resolved`: `routes-on-demand` and the endpoint clause of `routes-slug`, with `FORM_ROUTE` and `FORM_SHIM`. |
 | `src/registry.ts` | `RULES` with levels and the waivable mark, `Report`, `Finding`, `FindingError`, waivers, `formatFindings`. |
 | `src/preflight.ts` | Runs every config-stage check, in a fixed order. |
 | `src/project.ts` | Checks on `package.json`, dependencies, sources, `public/` and image originals. |

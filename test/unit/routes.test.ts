@@ -15,6 +15,7 @@ import {
   localeOfPath,
   NOT_FOUND_PATH,
   PAGE_PATH,
+  pagePathProblems,
   pathSegments,
   RESERVED_SEGMENTS,
   type ResolvedRoute,
@@ -150,6 +151,42 @@ test('the default locale has its home at the root, every other locale under its 
   assert.deepEqual(localeHomes(options), ['/', '/fr/', '/it/']);
   assert.deepEqual(localeHomes(frenchFirst), ['/de/', '/']);
   assert.deepEqual(localeHomes({ defaultLocale: 'de', locales: [{ code: 'de' }] }), ['/']);
+});
+
+test('routes-slug, the build half: clean page paths and /404.html give no problem', () => {
+  for (const path of ['/', '/zimmer/', '/fr/', '/fr/chambres/', '/it/camere/doppie/', '/a1/b-2/', NOT_FOUND_PATH]) {
+    assert.deepEqual(pagePathProblems(path, options), [], path);
+  }
+  assert.deepEqual(pagePathProblems('/de/', frenchFirst), []);
+});
+
+test('routes-slug, the build half: each kind of unclean page path gives exactly its problems', () => {
+  const cases: [string, string[]][] = [
+    ['/en/getting_here/', ['the segment getting_here is not a slug']],
+    ['/Zimmer/', ['the segment Zimmer is not a slug']],
+    ['/fr/Chambres/', ['the segment Chambres is not a slug']],
+    ['/a--b/', ['the segment a--b is not a slug']],
+    ['/zimmer.html', ['the path does not end in /']],
+    ['/fr/404.html', ['the path does not end in /']],
+    ['/a_b/c.html', ['the path does not end in /', 'the segment a_b is not a slug']],
+    ['/de/zimmer/', ['a default-locale path starts with the locale code de']],
+    ['/api/zimmer/', ['it starts with the reserved segment api']],
+    ['/_kit/', ['it starts with the reserved segment _kit']],
+    ['/500/', ['it starts with the reserved segment 500']],
+    ['/.well-known/a/', ['it starts with the reserved segment .well-known']],
+    ['/fr/api/', ['it starts with the reserved segment api']],
+    ['/fr/_astro/x/', ['it starts with the reserved segment _astro']],
+  ];
+  for (const [path, problems] of cases) assert.deepEqual(pagePathProblems(path, options), problems, path);
+});
+
+test('routes-slug, the build half: a reserved name later in the path and a 404 segment give no problem', () => {
+  assert.deepEqual(pagePathProblems('/hilfe/api/', options), []);
+  assert.deepEqual(pagePathProblems('/fr/aide/api/', options), []);
+  assert.deepEqual(pagePathProblems('/fr/404/', options), []);
+  assert.deepEqual(pagePathProblems('/404/', options), []);
+  assert.deepEqual(pagePathProblems('/fr/de/', options), []);
+  assert.deepEqual(pagePathProblems('/fr/x/', frenchFirst), ['a default-locale path starts with the locale code fr']);
 });
 
 test('a locale home is matched exactly', () => {
