@@ -315,3 +315,22 @@ export function findRedirect<Row extends { from: string }>(rows: readonly Row[],
 export function matchesRedirect(rows: readonly { from: string }[], path: string): boolean {
   return findRedirect(rows, path) !== undefined;
 }
+
+/**
+ * `matchesRedirect` for many paths: the rows are read once. The forms of every static `from` go into a set, so a
+ * path costs one lookup and a scan of the dynamic rows only (at most 100 in a valid file), not a scan of every row.
+ * It gives the same answer as `matchesRedirect` for every path.
+ */
+export function redirectMatcher(rows: readonly { from: string }[]): (path: string) => boolean {
+  const statics = new Set<string>();
+  const dynamic: RegExp[] = [];
+  for (const row of rows) {
+    if (isDynamic(row.from)) dynamic.push(patternOf(row.from));
+    else for (const form of pathForms(row.from)) statics.add(form);
+  }
+  return (path) => {
+    const forms = pathForms(path);
+    if (statics.has(forms[0] ?? path)) return true;
+    return dynamic.some((pattern) => forms.some((form) => pattern.test(form)));
+  };
+}
