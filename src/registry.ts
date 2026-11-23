@@ -210,12 +210,28 @@ export const RULES: readonly Rule[] = [
     'Remove `export const prerender = false` from the route, or remove the route. For a form, use the forms feature of the kit.',
   ),
   r(
+    'routes-404',
+    'routes',
+    'build',
+    "`/404.html` exists in dist. (The project builds it from `src/pages/404.astro`; the rule reads only dist.) It is the only 404 page: no other built page path has a segment that is exactly `404`. Message for such a path `<p>`: `<p> has a 404 segment. Under build.format 'directory' it is written to <p>index.html, an ordinary page that answers 200. Cloudflare answers a missing URL only with a file named 404.html, which Astro builds only from src/pages/404.astro. Put every language on /404.html.` `/404.html` links every locale home (`/` and each `/<code>/`; a link to the file of a built home, `/fr/index.html`, counts too). It holds no form whose action starts with `/api/forms/`, because the `return` of such a form would fail. It passes every page rule that does not exempt it.",
+    'The one 404 page is missing, a second 404 page exists, or `/404.html` does not link every locale home or holds a form.',
+    'Build every language on one `src/pages/404.astro`, which Astro writes to `/404.html`, and remove every other `404` page. Link each locale home from it, and put no form on it.',
+  ),
+  r(
     'routes-slug',
     'routes',
     'config + build',
     'Every built page path other than `/404.html` ends in `/` (`…/index.html`), and each of its segments matches `^[a-z0-9]+(-[a-z0-9]+)*$`. A default-locale path does not start with a locale code or a reserved segment (`_astro`, `_actions`, `_server-islands`, `_image`, `_kit`, `api`, `500`, `.well-known`). A non-default path has no reserved segment after `/<code>/`. A `404` segment is left to `routes-404`, so it reports once. **The endpoint clause,** checked on the resolved routes: a project route of type `endpoint`, other than the form shim, is a static file route. Its pattern ends with a literal file extension `.<ext>` (`[a-z0-9]+`) that is not `html` or `htm`. Its first segment holds no parameter (`[`) and is not a reserved segment. When the first segment is a locale code, the second segment holds no parameter and is not a reserved segment. A parameter can stand for any name, so the kit cannot know which file it writes there. For example, `/[name].txt` and `/[dir]/[file].json` fail, and `/live.json` and `/feeds/[lang].json` pass. Its pattern is none of `/robots.txt`, `/_headers` and `/_redirects`, and no `/sitemap*.xml`. So a project endpoint can never write the file of a page or a file that the kit writes. `routes-on-demand` still requires it to be prerendered.',
     'A page path is not a clean slug path, or an endpoint is not a static file route.',
     'Rename the page so that each segment has only lower-case letters, digits and single hyphens, and starts with no reserved segment. Give an endpoint a fixed first segment and a file extension other than `.html`.',
+  ),
+  r(
+    'routes-translation',
+    'routes',
+    'build',
+    'Every non-default-locale page lists a default-locale alternate. In a `coverage: "full"` locale, every indexable default-locale page lists an alternate in that locale. An alternate is listed when its `hreflang` equals the tag in any ASCII case; a tag in another case is left to `hreflang-reciprocal`. `/404.html` is exempt.',
+    'A page lacks the translation link that its locales require.',
+    'Build the missing page in that locale, and list each page as an hreflang alternate of the other. A page of another locale needs its default-locale sibling.',
   ),
   r(
     'routes-redirects',
@@ -233,6 +249,39 @@ export const RULES: readonly Rule[] = [
     'With `speculationRules`, each page has exactly one `script[type=speculationrules]` whose `innerHTML === SPECULATION_JSON`, placed after the CSP meta. With it off, there is none.',
     'The speculation rules block of the kit is missing, doubled, changed or in the wrong place.',
     'Write no `speculationrules` script in the project: the kit inserts its own block right after the CSP meta. Remove any copy from the markup.',
+  ),
+  // budgets
+  r(
+    'budget-head',
+    'budgets',
+    'build',
+    'Compressed HTML up to and including `</head>` (the whole file when there is none) ≤ `headBytes` (14,336 B). The CSP meta tag of the page alone, compressed, ≤ `cspBytes` (4,096 B). A failure prints the separately compressed markup, CSS, CSP meta and JSON-LD. Compressed size is the larger of zstd level 3 and brotli quality 5.',
+    'The head of the page, or its CSP meta, is too large when compressed.',
+    'Cut the CSS of the page, the head markup or the JSON-LD; the detail gives each part. A CSP meta grows with each set of route files that import the same CSS: use dynamic routes and fewer such sets.',
+  ),
+  r(
+    'budget-document',
+    'budgets',
+    'build',
+    'The whole page compressed ≤ `documentBytes` (30,720 B). Compressed size is the larger of zstd level 3 and brotli quality 5.',
+    'The page is too large when compressed.',
+    'Shorten the page: split long content into more pages, and remove markup that repeats.',
+  ),
+  r(
+    'budget-dom',
+    'budgets',
+    'build',
+    '≤ `domElements` (1,400) elements and depth ≤ 32 (`domDepth`; `html` is depth 1).',
+    'The page has too many elements, or they nest too deep.',
+    'Remove wrapper elements and split long lists or tables across pages.',
+  ),
+  r(
+    'budget-fonts',
+    'budgets',
+    'build',
+    'Raw bytes of the distinct existing font files that any page or same-origin sheet of the site references ≤ 102,400 (`fontBytes`): one sum for the site. The regex is `/\\/[^"\'()\\s,]+\\.(?:woff2?|ttf|otf)(?=[?#"\'()\\s,]|$)/gi`.',
+    'The font files of the site are too large together.',
+    'Use fewer font files: subset them, use WOFF2, and drop weights and styles that the design does not need.',
   ),
   // images
   r(
@@ -366,6 +415,23 @@ export const RULES: readonly Rule[] = [
     'A heading skips a level.',
     'Use the next level below the heading of the section: `h2` after `h1`, `h3` after `h2`. Style a heading with CSS, not with its level.',
   ),
+  // hreflang
+  r(
+    'hreflang-reciprocal',
+    'hreflang',
+    'build',
+    'Alternates name configured tags (or `x-default`), exactly as configured, once each, are absolute under `site`, include the page itself, and point to emitted pages of the locale that the tag names, which list this page back. A page with no alternates is skipped.',
+    'The hreflang alternates of the page are not valid or not reciprocal.',
+    'List one alternate for each locale of the page, itself included, with the absolute URL of a built page that lists this page back.',
+  ),
+  r(
+    'hreflang-x-default',
+    'hreflang',
+    'build',
+    "`x-default` equals the page's default-locale alternate: both name the same page path. A page with no alternates, such as `/404.html`, is skipped. When either href is not an absolute `https` URL of the site without a query, that href is `hreflang-reciprocal`'s, and the two are not compared.",
+    'The `x-default` alternate is missing or not the default-locale alternate.',
+    'Add `<link rel="alternate" hreflang="x-default">` with the URL of the default-locale alternate.',
+  ),
   // indexing
   r(
     'indexing-noindex',
@@ -375,7 +441,56 @@ export const RULES: readonly Rule[] = [
     'A page carries `noindex`, or `/404.html` does not.',
     'Remove `noindex` from every page but `/404.html`, and add `<meta name="robots" content="noindex">` to `/404.html`. A page that must not be found does not belong in the build.',
   ),
+  // links
+  r(
+    'links-resolve',
+    'links',
+    'build',
+    'Every same-origin href other than a fragment-only `#id` equals, byte for byte, an emitted page path or a dist file. A fragment-only href names an id on the same page. An absolute one uses https. It is not a redirect source. Its fragment exists on the target.',
+    'A link points to no built page or file, to a redirect, or to a fragment that does not exist.',
+    'Link the built path itself, with its trailing `/` (`/zimmer/`), and an `id` that exists on the target page.',
+  ),
+  r(
+    'links-generic',
+    'links',
+    'build',
+    'Every link has an accessible name: the first that is not empty of the text of the elements that `aria-labelledby` names, `aria-label`, the link\'s text (a descendant with a non-empty `aria-label` counts as that label, an `img` as its `alt`, an `svg` as the text of its `title` child, a hidden descendant (`aria-hidden="true"` or `hidden`) and template content as nothing, and the text of a block stands between spaces), and the `title` attribute, with white space collapsed and trimmed and read up to 1,000 characters. Lower-cased and trimmed of non-letters, the name is not one of: here, click, click here, more, read more, learn more, link, hier, klicken, hier klicken, mehr, weiterlesen, mehr erfahren, ici, cliquez, cliquez ici, plus, lire la suite, en savoir plus, qui, clicca qui, di più, scopri di più, leggi tutto.',
+    'A link has no accessible name, or a name that does not say where it leads.',
+    'Name the target in the link text: "Zimmer und Preise", not "mehr". An image link needs an `alt`.',
+  ),
+  r(
+    'links-same-name',
+    'links',
+    'build',
+    'Links with the same accessible name on a page share one target (path plus fragment).',
+    'Two links of the page have the same name and different targets.',
+    'Give each link a name that tells its target apart, or point both links to the same target.',
+  ),
+  r(
+    'links-target-blank',
+    'links',
+    'build',
+    '`target` is only `_self`, `_top` or `_parent`.',
+    'A `target` attribute opens a new window or names a frame.',
+    'Remove the `target` attribute: the visitor decides where a link opens.',
+  ),
+  r(
+    'links-depth',
+    'links',
+    'build',
+    'Each locale home (`/`, `/<code>/`) exists when that locale has pages. Every indexable page is within 3 clicks (`clickDepth`) of its locale home (breadth-first over same-origin links). A link to the file of a built page (`/zimmer/index.html`) is a link to the page, as `links-resolve` accepts it.',
+    'A locale home is missing, or a page is more than three clicks from its locale home.',
+    'Build the home of each locale, and link the page from its home or from a page near it, for example from the sitemap page.',
+  ),
   // facts
+  r(
+    'facts-value',
+    'facts',
+    'build',
+    "Every email, phone number, CHE-UID, IBAN and CHF amount on a page equals a `site.json` value, including `contacts`. Swiss phones written `+41`, `0041` or `0` are normalized to E.164. CHF is compared in minor units against `prices` amounts. `mailto:` and `tel:` hrefs are checked too. Every Unicode space separator counts as a normal space, and each run of white space as one space, in the page text and in the `site.json` values alike. The patterns: email `/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+/g` in lower case; phone `/(?:\\+|00)\\d[\\d ()./-]{6,20}\\d/g` and the Swiss national form `/\\b0\\d{2}[ ./-]?\\d{3}[ ./-]?\\d{2}[ ./-]?\\d{2}\\b/g`, normalized to the digits with `+` for a leading `00` or `+` and `+41` for a national number; CHE-UID `/CHE-?\\d{3}\\.?\\d{3}\\.?\\d{3}/g` as `CHE-ddd.ddd.ddd`; IBAN `/\\b[A-Z]{2}\\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?\\b/g` without spaces; CHF `/(?:CHF|SFr\\.|Fr\\.)\\s?(\\d{1,3}(?:['’ ]\\d{3})+|\\d+)(?:[.,](\\d{2}|–|-))?/g` and `/(\\d{1,3}(?:['’ ]\\d{3})+|\\d+)(?:[.,](\\d{2}|–|-))?\\s?(?:CHF|Fr\\.)/g`, in minor units. Other currencies are not checked.",
+    'A contact detail, a company number, an IBAN or a price on the page differs from `site.json`.',
+    'Take the value from `site.json` (the facts of the client), or ask the owner to change the fact there. Write a foreign phone number with `+`.',
+  ),
   r(
     'facts-schedule',
     'facts',
@@ -383,6 +498,47 @@ export const RULES: readonly Rule[] = [
     '`schedule.json` matches its strict schema.',
     '`schedule.json` is missing or not valid.',
     'Fix the field that the finding names. Days are `Mo` to `Su`, times are `HH:MM` and dates are `YYYY-MM-DD`.',
+  ),
+  // content
+  r(
+    'content-stale',
+    'content',
+    'build',
+    'A translation matches its default-locale sibling (its hreflang alternate) in h2 count, in the site.json facts shown, and in internal link targets. The facts shown are the `site.json` values that `facts-value` finds on the page, as a set. The link targets of both pages are mapped into the default locale through hreflang before they are compared: a default-locale path stays, and another path becomes its default-locale alternate. A target is kept only when its hreflang maps back: a target that has no page in the default locale, or none in the locale of the translation, or whose alternate maps to another default-locale page, is left out on both sides.',
+    'A translation differs from its default-locale page in its sections, its facts or its links.',
+    'Update the translation to match the default-locale page: the same `h2` sections, the same facts and links to the same pages.',
+  ),
+  r(
+    'content-language',
+    'content',
+    'build',
+    "The rule looks at each leaf `p`, `li`, `td` or `blockquote` (one with no `p`, `li`, `td` or `blockquote` inside it) whose nearest `lang` (its own attribute or an ancestor's) is the page's `html lang`. It counts only the text that is not inside a descendant with another `lang`. When that text has ≥ 12 words (a word is a longest run of letters, with `'` and `’` between two letters inside it), the element fails if another language has ≥ 3 stopwords in it and more than twice the page language's count. Lists exist for de, fr, it and en, compared in lower case; pages in other languages are skipped.",
+    'A paragraph is in another language than the page, and it has no `lang` attribute.',
+    'Translate the text, or mark a quotation in another language with its `lang` attribute (`<blockquote lang="en">`).',
+  ),
+  r(
+    'content-copied',
+    'content',
+    'build',
+    "A translation's meta description differs from its default-locale sibling's. Titles and h1s may match.",
+    'The meta description of a translation is the one of its default-locale page.',
+    'Write the description in the language of the translation.',
+  ),
+  r(
+    'content-glossary',
+    'content',
+    'build',
+    "Title, description and body text contain no banned variant from `glossary.json`. Each text uses the list of the locale whose tag or code equals its nearest `lang` (its own element's or an ancestor's, up to `html`). For tag `de-CH` only, the built-in bans ß→ss, „→« and “→» apply too. Text under a `lang` that names no configured locale is skipped.",
+    'A text uses a variant that the glossary of its locale bans.',
+    'Write the term that `glossary.json` gives for the locale. In de-CH write `ss` for `ß` and the quotation marks « ».',
+  ),
+  r(
+    'content-nfc',
+    'content',
+    'build',
+    'Every text node and attribute value equals its NFC form.',
+    'A text or an attribute value is not in Unicode normalization form NFC.',
+    'Write the text in NFC: most editors do this when they save, or run `text.normalize("NFC")` on the content.',
   ),
   // css
   r(
@@ -632,12 +788,28 @@ export const RULES: readonly Rule[] = [
   ),
   // legal
   r(
+    'legal-pages',
+    'legal',
+    'build',
+    "Each declared legal note, privacy and accessibility path is a built page of its locale. Every indexable page links its own locale's legal note and privacy paths (the path, or the file of that page).",
+    'A declared legal page is not built, or a page does not link the legal note and the privacy page of its locale.',
+    'Build each legal page at its path in `astro-kit.json` `legal`, and link the legal note and the privacy page of the locale from every page, for example in the footer.',
+  ),
+  r(
     'legal-processing',
     'legal',
     'config',
     '`processing` contains `cdn` and `previews`, and with forms `forms` and `server`; it contains `forms`/`server` only with forms.',
     '`processing` does not match the features of the site.',
     'List `cdn` and `previews`. List `forms` and `server` with `features.forms`, and only then.',
+  ),
+  r(
+    'legal-statement',
+    'legal',
+    'build',
+    'A declared accessibility page claims conformance (a match of `konform`, `conforme`, `conformant` or `compliant`) only when `site.json` has `accessibilityAudit`. A match is a whole word, in any letter case: `/(?<!\\p{L})(konform|conforme|conformant|compliant)(?!\\p{L})/iu`. It is not a claim when one of `not`, `non`, `nicht`, `pas`, `kein`, `keine` stands as a whole word in the 24 characters before it.',
+    'The accessibility page claims conformance without an audit in `site.json`.',
+    'Remove the claim, or ask the owner to add the audit to `site.json` `accessibilityAudit`.',
   ),
   // media
   r(

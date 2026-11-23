@@ -1,8 +1,8 @@
 /**
  * What the build audits share about built pages (specification, section 8 and its Measurement details): a page read
- * once as a list of elements, attributes, text, accessible names, labels, the CSP meta, scripts, robots and the
- * links of a page, and the index of the site. The page and html audits read pages through this module, so that every
- * rule sees the same document and no rule parses a page again.
+ * once as a list of elements, attributes, text, accessible names, labels, the CSP meta, scripts, robots, the hreflang
+ * alternates and the links of a page, and the index of the site. The page, site, budgets and html audits all read
+ * pages through this module, so that every rule sees the same document and no rule parses a page again.
  *
  * **Hostile input.** A page may have 2 MB, nest 5,000 elements deep, or hold odd bytes. So nothing here recurses
  * over the tree, and nothing is quadratic in the size of a page:
@@ -17,7 +17,7 @@
  * Each helper caches what it reads in a `WeakMap` on the page or on the context, so a rule may call it freely.
  */
 import { type HTMLElement, type Node, NodeType, TextNode } from 'node-html-parser';
-import type { BuildContext, BuiltPage } from '../context.ts';
+import { type BuildContext, type BuiltPage, pagePathOf } from '../context.ts';
 import { readAttributes } from '../inject.ts';
 import type { Locale, Options } from '../options.ts';
 
@@ -280,6 +280,12 @@ export const descendantsOf = (element: HTMLElement, skip?: (element: HTMLElement
 export const collapse = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
 /**
+ * Every Unicode space separator (`\p{Zs}`: U+00A0, U+202F, U+2009 and the others) as U+0020, then each run of white
+ * space as one space, trimmed: the normalization of `facts-value`, in this order (Measurement details).
+ */
+export const normalizeSpaces = (text: string): string => collapse(text.replace(/\p{Zs}/gu, ' '));
+
+/**
  * The `textContent` of an element, as the DOM gives it, without recursion: the texts of its text nodes in document
  * order. Template content is no part of it, as in the DOM. `skip` leaves out the subtree of an element, and
  * `replace` gives the text that stands for an element and its subtree. The element itself is never skipped or
@@ -321,6 +327,54 @@ export function textOf(
   }
   return parts.join('');
 }
+
+const PAGE_TEXTS = new WeakMap<BuiltPage, { page: string; legal: string }>();
+
+/** The page text and the legal text of a page, found once. */
+function textsOf(page: BuiltPage): { page: string; legal: string } {
+  let found = PAGE_TEXTS.get(page);
+  if (found === undefined) {
+    const dom = domOf(page);
+    const of = (element: HTMLElement | undefined): string =>
+      element === undefined ? '' : collapse(textOf(element).normalize('NFC'));
+    found = { page: of(dom.body), legal: of(dom.main) };
+    PAGE_TEXTS.set(page, found);
+  }
+  return found;
+}
+
+/**
+ * The page text (Measurement details): the `textContent` of `body`, in NFC, with each run of white space as one
+ * space. `''` without a `body`. `facts-value` applies `normalizeSpaces` to it before it looks for candidates.
+ */
+export const pageText = (page: BuiltPage): string => textsOf(page).page;
+
+/** The legal text (Measurement details): the same for the first `main`. `''` without a `main`. */
+export const legalText = (page: BuiltPage): string => textsOf(page).legal;
+
+/** Says whether two `lang` values name one language tag: BCP 47 compares tags without regard to ASCII case. */
+export const sameLang = (a: string | undefined, b: string | undefined): boolean =>
+  a !== undefined && b !== undefined && asciiLower(a) === asciiLower(b);
+
+/**
+ * The text of an element without the subtrees of its descendants that carry a `lang` attribute naming another
+ * language than the nearest `lang` of the element (`content-language`).
+ */
+export function sameLangText(dom: PageDom, element: HTMLElement): string {
+  const own = dom.lang(element);
+  return textOf(element, {
+    skip: (child) => {
+      const lang = attr(child, 'lang');
+      return lang !== undefined && !sameLang(lang, own);
+    },
+  });
+}
+
+/**
+ * The words of a text (Measurement details): each longest run of letters (`\p{L}`), where `'` and `’` between two
+ * letters stay inside the word. The pattern cannot backtrack: a letter is never an apostrophe.
+ */
+export const wordsOf = (text: string): string[] => text.match(/\p{L}+(?:['’]\p{L}+)*/gu) ?? [];
 
 // Names and labels
 
@@ -488,6 +542,19 @@ function nameOf(dom: PageDom, element: HTMLElement): string {
 }
 
 /**
+ * A name as `links-generic` compares it with its list: in lower case, with the characters that are not letters
+ * removed from its start and its end (`"Mehr …"` gives `mehr`).
+ */
+export function nameKey(name: string): string {
+  const chars = Array.from(name.toLowerCase());
+  let start = 0;
+  let end = chars.length;
+  while (start < end && !/\p{L}/u.test(chars[start] ?? '')) start += 1;
+  while (end > start && !/\p{L}/u.test(chars[end - 1] ?? '')) end -= 1;
+  return chars.slice(start, end).join('');
+}
+
+/**
  * The `label` elements of a form control: each `label` whose `for` is the id of the control, and the nearest
  * ancestor `label` without `for` (HTML labels a control in both ways). Document order, each once.
  */
@@ -645,6 +712,9 @@ export const hasNoindex = (page: BuiltPage): boolean => [...robotsByName(page).v
 /** Says whether a page carries `noindex` for every crawler: in a `meta[name=robots]`. */
 export const hasRobotsNoindex = (page: BuiltPage): boolean => isNoindex(robotsOf(page));
 
+/** Says whether a page is indexable: it is not `/404.html` and carries no robots `noindex`. */
+export const isIndexable = (page: BuiltPage): boolean => !page.is404 && !hasNoindex(page);
+
 // The site
 
 /** The pages and files of a build as tables, and the host of the site. */
@@ -676,6 +746,13 @@ export function siteOf(ctx: BuildContext): SiteIndex {
 /** The settings of one locale by its code, or `undefined`. */
 export const localeOf = (options: Pick<Options, 'locales'>, code: string): Locale | undefined =>
   options.locales.find((locale) => locale.code === code);
+
+/**
+ * The configured locale that a `lang` value names: its tag or its code, in any ASCII case (`content-glossary`).
+ * `undefined` for a `lang` that names no configured locale.
+ */
+export const localeOfLang = (options: Pick<Options, 'locales'>, lang: string): Locale | undefined =>
+  options.locales.find((locale) => sameLang(locale.tag, lang) || sameLang(locale.code, lang));
 
 // Links
 
@@ -820,4 +897,79 @@ export function linksOf(ctx: BuildContext, page: BuiltPage): readonly PageLink[]
     LINKS.set(page, found);
   }
   return found;
+}
+
+/**
+ * The built page that a same-origin path names: a page path, or the file of a page (`/zimmer/index.html` names
+ * `/zimmer/`), as `links-resolve` accepts both. `undefined` for any other path.
+ */
+export function pageAt(ctx: BuildContext, path: string): BuiltPage | undefined {
+  const { pages, files } = siteOf(ctx);
+  const direct = pages.get(path);
+  if (direct !== undefined) return direct;
+  const file = path.slice(1);
+  return file.endsWith('.html') && files.has(file) ? pages.get(pagePathOf(file)) : undefined;
+}
+
+/**
+ * The paths of the built pages that a page links, as a set: each same-origin link whose path names a built page
+ * (`pageAt`: the page path, or the file of the page). A link to a fragment of the page itself counts as the page
+ * itself only when it has a path.
+ */
+export function linkedPages(ctx: BuildContext, page: BuiltPage): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const link of linksOf(ctx, page)) {
+    if (link.target.kind !== 'internal') continue;
+    const target = pageAt(ctx, link.target.path);
+    if (target !== undefined) out.add(target.path);
+  }
+  return out;
+}
+
+// hreflang
+
+/** One hreflang alternate of a page: a `link` whose `rel` holds `alternate` and that has an `hreflang`. */
+export interface Alternate {
+  element: HTMLElement;
+  /** The `hreflang` as written. */
+  hreflang: string;
+  href: string;
+  target: HrefTarget;
+  /** The page path for an absolute same-origin `https` href (`hreflang-reciprocal`), else `undefined`. */
+  path: string | undefined;
+}
+
+const ALTERNATES = new WeakMap<BuiltPage, readonly Alternate[]>();
+
+/** The hreflang alternates of a page, in document order, parsed once. */
+export function alternatesOf(ctx: BuildContext, page: BuiltPage): readonly Alternate[] {
+  let found = ALTERNATES.get(page);
+  if (found === undefined) {
+    const { host } = siteOf(ctx);
+    found = domOf(page)
+      .byTag('link')
+      .filter((element) => tokensOf(element, 'rel').includes('alternate') && hasAttr(element, 'hreflang'))
+      .map((element) => {
+        const href = attr(element, 'href') ?? '';
+        const target = resolveHref(href, page.path, host);
+        const path =
+          target.kind === 'internal' && target.absolute && target.scheme === 'https' && target.query === ''
+            ? target.path
+            : undefined;
+        return { element, hreflang: attr(element, 'hreflang') ?? '', href, target, path };
+      });
+    ALTERNATES.set(page, found);
+  }
+  return found;
+}
+
+/**
+ * The alternate of a page in one locale: the built page that its first alternate with the tag of that locale (as
+ * written, exact) names. `undefined` when the page lists none, or when that page is not built.
+ */
+export function alternateIn(ctx: BuildContext, page: BuiltPage, code: string): BuiltPage | undefined {
+  const tag = localeOf(ctx.options, code)?.tag;
+  if (tag === undefined) return undefined;
+  const path = alternatesOf(ctx, page).find((alternate) => alternate.hreflang === tag)?.path;
+  return path === undefined ? undefined : siteOf(ctx).pages.get(path);
 }

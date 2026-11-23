@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { auditBudgets } from '../../src/audit/budgets.ts';
 import { auditEdge } from '../../src/audit/edge.ts';
 import { auditHtml } from '../../src/audit/html.ts';
 import { AUDIT_ORDER, AUDITS, type AuditName, type AuditSet, runAudits } from '../../src/audit/index.ts';
 import { auditPage } from '../../src/audit/page.ts';
+import { auditSite } from '../../src/audit/site.ts';
 import { memoryContext } from '../../src/build.ts';
 import type { Audit, BuildContext, Design } from '../../src/context.ts';
 import { auditCss } from '../../src/css/rules.ts';
@@ -142,11 +144,14 @@ test('an audit that throws stops the run: the error reaches the caller, and no l
 });
 
 /** The audits of the kit, in the order of step 4. */
-const KIT_AUDITS: readonly AuditName[] = ['page', 'css', 'design', 'edge', 'html'];
+const KIT_AUDITS: readonly AuditName[] = ['page', 'site', 'budgets', 'css', 'design', 'edge', 'html'];
 
-test('the audits of the kit are the page, css, design, edge and html audits, each at its name', () => {
+test('the audits of the kit are the seven audits of step 4, each at its name', () => {
   assert.deepEqual(Object.keys(AUDITS), [...KIT_AUDITS]);
+  assert.deepEqual(Object.keys(AUDITS), [...AUDIT_ORDER]);
   assert.equal(AUDITS.page, auditPage);
+  assert.equal(AUDITS.site, auditSite);
+  assert.equal(AUDITS.budgets, auditBudgets);
   assert.equal(AUDITS.css, auditCss);
   assert.equal(AUDITS.design, auditDesign);
   assert.equal(AUDITS.edge, auditEdge);
@@ -159,21 +164,23 @@ test('the audits of the kit are the page, css, design, edge and html audits, eac
  */
 const PAGE_FAMILY: AuditSet = {
   page: auditPage,
+  site: auditSite,
+  budgets: auditBudgets,
   edge: auditEdge,
   html: auditHtml,
 };
 
 /** The names of `PAGE_FAMILY`, in the order of step 4. */
-const PAGE_FAMILY_NAMES: readonly AuditName[] = ['page', 'edge', 'html'];
+const PAGE_FAMILY_NAMES: readonly AuditName[] = ['page', 'site', 'budgets', 'edge', 'html'];
 
 /** The `_headers` text that the kit writes for the settings of the fixture site. */
 const FIXTURE_HEADERS = headersText(FIXTURE_OPTIONS);
 
-/** The smallest site of the page audit, with the edge files that the kit writes for it. */
+/** The smallest site of the page, site and budgets audits, with the edge files that the kit writes for it. */
 const fixtureSite = (more: Readonly<Record<string, string>> = {}): BuildContext =>
   fixtureContext({ ...site(), _headers: FIXTURE_HEADERS, _redirects: '/alt/ / 301\n', ...more });
 
-test('the page, edge and html audits pass on a whole site with the edge files that the kit writes: no id', async () => {
+test('the page, site, budgets, edge and html audits pass on a whole site with the edge files that the kit writes: no id', async () => {
   const ctx = fixtureSite();
   assert.deepEqual(await runAudits(ctx, PAGE_FAMILY), [...PAGE_FAMILY_NAMES]);
   assert.deepEqual([...ctx.report.ids()].sort(), []);
@@ -206,6 +213,7 @@ test('on a whole site, a broken edge file gives the edge id alone, and a broken 
     '<meta charset="utf-8"><meta name="robots" content="noindex">',
   );
   assert.notEqual(noindexHome, home, 'the test plants noindex on the home page');
+  const { '404.html': _notFound, ...without404 } = files;
   const cases: readonly [name: string, files: Readonly<Record<string, string>>, ids: readonly string[]][] = [
     ['no _headers file', { ...files, _redirects: '' }, ['edge-headers']],
     [
@@ -213,6 +221,7 @@ test('on a whole site, a broken edge file gives the edge id alone, and a broken 
       { ...files, _headers: FIXTURE_HEADERS, _redirects: '/alt/ / 200\n' },
       ['edge-redirects'],
     ],
+    ['no /404.html', { ...without404, _headers: FIXTURE_HEADERS, _redirects: '' }, ['routes-404']],
     [
       'a page with noindex',
       { ...files, 'index.html': noindexHome, _headers: FIXTURE_HEADERS, _redirects: '' },

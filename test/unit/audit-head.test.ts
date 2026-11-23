@@ -19,6 +19,7 @@ import {
   auditHeadTitle,
   auditIndexingNoindex,
 } from '../../src/audit/page/head.ts';
+import { auditFactsValue } from '../../src/audit/text.ts';
 import type { BuildContext } from '../../src/context.ts';
 import type { Options } from '../../src/options.ts';
 import { Report } from '../../src/registry.ts';
@@ -750,6 +751,11 @@ test('head-jsonld reads keys named __proto__ and constructor as properties, and 
 test('head-jsonld reads /404.html too', () => {
   const files = { '404.html': notFoundPage(OPTIONS, { head: ld([{ ...ORGANIZATION, '@type': 'Review' }]) }) };
   assert.deepEqual(findings(run(auditHeadJsonld, files)), ['head-jsonld /404.html a node has the banned type Review']);
+});
+
+test('a wrong fact in JSON-LD is head-jsonld alone: JSON-LD is no page text of facts-value', () => {
+  const files = hotelHome({ ...HOTEL, telephone: '+41815550199', email: 'x@laerchenwald.example' });
+  assert.deepEqual(ids(run([auditHeadJsonld, auditFactsValue], files, TEST_SITE)), ['head-jsonld']);
 });
 
 // headings-h1

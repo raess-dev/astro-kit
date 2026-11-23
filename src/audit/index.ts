@@ -5,9 +5,11 @@
 import type { Audit, BuildContext } from '../context.ts';
 import { auditCss } from '../css/rules.ts';
 import { auditDesign } from '../design/rules.ts';
+import { auditBudgets } from './budgets.ts';
 import { auditEdge } from './edge.ts';
 import { auditHtml } from './html.ts';
 import { auditPage } from './page.ts';
+import { auditSite } from './site.ts';
 
 /** The audit groups in the order of step 4: page, site, budgets, CSS, design (built halves), edge, html-validate. */
 export const AUDIT_ORDER = ['page', 'site', 'budgets', 'css', 'design', 'edge', 'html'] as const;
@@ -26,7 +28,10 @@ export const AUDITS: AuditSet = {
   // page: the built halves of the rules that read each page on its own: head, JSON-LD, headings, indexing, CSP,
   // the speculation block, the mode script and switch, images, fonts, shell, SVG and media.
   page: auditPage,
-  // site and budgets: the rules that read the pages together, and the budgets, arrive in part 5c of M5.
+  // site: routes, hreflang, links, depth, facts, content and legal, across the pages.
+  site: auditSite,
+  // budgets: compressed sizes, DOM counts and the font files of the site.
+  budgets: auditBudgets,
   // css: the built halves of the `css-*` rules and of `modes-media`.
   css: auditCss,
   // design: the built halves of `design-tokens` and `design-specs` (`design-pairs` has no built half).
