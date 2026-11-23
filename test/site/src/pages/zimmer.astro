@@ -1,0 +1,86 @@
+---
+import rooms from '../assets/photos/rooms.jpg';
+import FeatureCard from '../components/FeatureCard.astro';
+import Photo from '../components/Photo.astro';
+import PriceList from '../components/PriceList.astro';
+import TextSection from '../components/TextSection.astro';
+import type { PriceItem } from '../data/facts.ts';
+import { linkTo } from '../data/routes.ts';
+import Page from '../layouts/Page.astro';
+
+const locale = 'de';
+const prices: PriceItem[] = [
+  { label: 'Einzelzimmer', price: 'room-single', unit: 'pro Nacht', note: 'Für eine Person, mit Frühstück.' },
+  { label: 'Doppelzimmer', price: 'room-double', unit: 'pro Nacht', note: 'Für zwei Personen, mit Frühstück.' },
+  {
+    label: 'Familienzimmer',
+    price: 'room-family',
+    unit: 'pro Nacht',
+    note: 'Für zwei Erwachsene und bis zu zwei Kinder, mit Frühstück.',
+  },
+  { label: 'Hund', price: 'dog', unit: 'pro Nacht', note: 'Mit Decke und Napf im Zimmer.' },
+  {
+    label: 'Garagenplatz',
+    price: 'parking',
+    unit: 'pro Tag',
+    note: 'In der Garage unter dem Haus, mit einer Ladestation für Elektroautos.',
+  },
+];
+---
+
+<Page
+  locale={locale}
+  page="rooms"
+  title="Zimmer und Preise – Hotel Lärchenwald in Sils"
+  description="Einzel-, Doppel- und Familienzimmer aus Arvenholz, alle mit Balkon und Frühstück. Hier stehen die Preise pro Nacht, für Ihren Hund und für die Garage."
+  modified="2026-11-23"
+>
+  <TextSection>
+    <h1>Zimmer und Preise</h1>
+    <p class="lede">
+      Alle 24 Zimmer sind mit Arvenholz ausgebaut und haben einen Balkon. Die meisten blicken auf den Silsersee oder ins
+      Fextal, die Einzelzimmer liegen ruhig gegen den Wald. Das Frühstück ist immer im Preis inbegriffen.
+    </p>
+    <Photo
+      src={rooms}
+      alt="Ein Doppelzimmer mit Wänden aus Arvenholz, einem breiten Bett und der offenen Tür zum Balkon"
+      caption="Ein Doppelzimmer im zweiten Stock, mit Blick ins Fextal."
+    />
+
+    <h2>Unsere Zimmer</h2>
+    <div class="grid">
+      <FeatureCard title="Einzelzimmer">
+        <p>
+          Ein ruhiges Zimmer mit einem Bett von 120 cm Breite, einem Schreibtisch am Fenster und einem Balkon gegen den
+          Wald.
+        </p>
+      </FeatureCard>
+      <FeatureCard title="Doppelzimmer">
+        <p>
+          Ein Doppelbett von 180 cm oder zwei getrennte Betten, eine Sitzecke und ein Balkon mit Blick auf den See oder
+          ins Fextal.
+        </p>
+      </FeatureCard>
+      <FeatureCard title="Familienzimmer">
+        <p>
+          Zwei Räume mit einer Tür dazwischen: ein Doppelbett für die Eltern und zwei Betten für die Kinder. Ein
+          Kinderbett stellen wir Ihnen gern dazu.
+        </p>
+      </FeatureCard>
+    </div>
+
+    <h2>Preise</h2>
+    <PriceList locale={locale} items={prices} />
+    <p>
+      Alle Preise verstehen sich in Schweizer Franken und enthalten die Mehrwertsteuer. Die Kurtaxe der Gemeinde kommt
+      hinzu.
+    </p>
+
+    <h2>Zimmer anfragen</h2>
+    <p>
+      Schreiben Sie uns, wann Sie kommen möchten, wie viele Personen Sie sind und welches Zimmer Sie wünschen. Wir
+      antworten Ihnen innerhalb eines Tages.
+    </p>
+    <p><a class="button" href={linkTo('contact', locale)}>Zimmer anfragen</a></p>
+  </TextSection>
+</Page>

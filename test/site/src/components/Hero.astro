@@ -2,7 +2,12 @@
 /**
  * The hero of a home page: a short label, the `h1` of the page, and below them the lede and the main links
  * (the default slot). Its background is the hero gradient, and its text rises once when the page opens.
+ * Below the text stands the hero photo. It is the largest image of the page, so it loads with `priority`: eager,
+ * with `fetchpriority="high"`. A page has at most one such image.
  */
+
+import { Picture } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
 import '../styles/components/hero.css';
 
 interface Props {
@@ -10,9 +15,16 @@ interface Props {
   eyebrow: string;
   /** The text of the page's `h1`. */
   title: string;
+  /** The hero photo, at least 1280 px wide, and what it shows in the language of the page. */
+  photo: { src: ImageMetadata; alt: string };
 }
 
-const { eyebrow, title } = Astro.props;
+const { eyebrow, title, photo } = Astro.props;
+
+/** The widths of the photo: the page content is at most 72 rem (1152 px) wide. */
+const WIDTHS = [640, 1280];
+/** The width of the page content: 72 rem, or the viewport without the side padding of the page. */
+const SIZES = '(min-width: 77rem) 72rem, calc(100vw - 2.5rem)';
 ---
 
 <section class="hero">
@@ -20,5 +32,17 @@ const { eyebrow, title } = Astro.props;
     <p class="hero__eyebrow">{eyebrow}</p>
     <h1>{title}</h1>
     <slot />
+  </div>
+  <div class="hero__media center">
+    <Picture
+      class="hero__photo"
+      src={photo.src}
+      alt={photo.alt}
+      priority
+      formats={['avif']}
+      fallbackFormat="webp"
+      widths={WIDTHS}
+      sizes={SIZES}
+    />
   </div>
 </section>

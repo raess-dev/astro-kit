@@ -1,0 +1,56 @@
+---
+import ContactCard from '../components/ContactCard.astro';
+import TextSection from '../components/TextSection.astro';
+import { contact } from '../data/facts.ts';
+import Page from '../layouts/Page.astro';
+
+const locale = 'de';
+const jobs = contact('Jobs');
+---
+
+<Page
+  locale={locale}
+  page="jobs"
+  title="Jobs im Hotel Lärchenwald – Saisonstellen in Sils"
+  description="Wir suchen für die Sommer- und die Wintersaison Mitarbeitende im Service, in der Küche und in der Hauswirtschaft, mit Zimmer im Dorf und fairen Arbeitszeiten."
+  modified="2026-11-23"
+>
+  <TextSection>
+    <h1>Arbeiten im Hotel Lärchenwald</h1>
+    <p class="lede">
+      Unser Team zählt in der Saison zwanzig Personen, und viele kommen jedes Jahr wieder. Wir arbeiten in einem kleinen
+      Haus, mit klaren Abläufen und mit Zeit für unsere Gäste.
+    </p>
+
+    <h2>Offene Stellen</h2>
+    <ul>
+      <li>
+        <strong>Service</strong>: Sie begleiten unsere Gäste vom Frühstück bis zum Abendmenü und kennen die Weine aus
+        dem Veltlin.
+      </li>
+      <li>
+        <strong>Küche</strong>: Sie kochen mit Reto Caduff und seinem Team die Gerichte des Engadins aus frischen
+        Zutaten der Region.
+      </li>
+      <li>
+        <strong>Hauswirtschaft</strong>: Sie sorgen dafür, dass jedes Zimmer und jede Stube unserer Gäste einladend und
+        sauber ist.
+      </li>
+    </ul>
+
+    <h2>Was wir Ihnen bieten</h2>
+    <ul>
+      <li>Ein eigenes Zimmer im Personalhaus im Dorf, fünf Gehminuten vom Hotel.</li>
+      <li>Fünf Arbeitstage pro Woche und einen Dienstplan, den Sie zwei Wochen im Voraus kennen.</li>
+      <li>Das Essen mit dem Team, auch an Ihren freien Tagen.</li>
+      <li>Ein Saisonabonnement für die Bergbahnen und die Busse im Oberengadin.</li>
+    </ul>
+
+    <h2>Bewerbung</h2>
+    <p>
+      Schicken Sie uns Ihren Lebenslauf und ein paar Sätze dazu, warum Sie bei uns arbeiten möchten. Seraina Clalüna
+      beantwortet jede Bewerbung persönlich.
+    </p>
+    <ContactCard locale={locale} name="Personal und Bewerbungen" phone={jobs.phone} email={jobs.email} />
+  </TextSection>
+</Page>

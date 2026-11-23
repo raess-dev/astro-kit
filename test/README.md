@@ -63,7 +63,8 @@ One spike alone: `node --test test/acceptance/spikes/s05.ts`.
 
 - `harness.ts`: the packed kit, the base copy, the case folders, and the runners for the kit CLI, Astro, Chromium and
   the measured values. `serve.ts` is the static server of the suite. `wrangler.ts` runs `wrangler dev`, with no login
-  and no network. `photos.ts` makes deterministic photos.
+  and no network. `photos.ts` makes deterministic photos. `site-assets.ts` made the binary files of the test site
+  (see "The photos and the PDF of the site").
 - `site.test.ts`: the site cases. A case copies the site into `<base>/cases/<name>/` with `siteCase(name, change)`,
   applies one change, and runs a command of the kit CLI there with `run(case, command)`. A passing case asserts
   status 0 and, with `passedLine(result)`, that the passed line is the last line of stdout and stands once in the
@@ -116,6 +117,8 @@ One spike alone: `node --test test/acceptance/spikes/s05.ts`.
   Controls show that each comparison can fail. A gap is a defect of the kit or of the test: fix the module at the
   cause, add the value to its unit test, and correct the specification. The file takes a few seconds after the
   build.
+- `site-assets.test.ts`: the committed PDF menu equals the one that `site-assets.ts` makes from `site.json`. A
+  change of a menu fact in `site.json` without a new PDF fails here.
 - `spikes.test.ts` and `spikes/`: the spikes S1 to S19. `spikes/sNN.ts` holds the tests of one spike. Every other
   file in that folder is a helper of a spike.
 - `kit/`: a small stand-in integration for the spikes. It is not the kit. `kit.test.ts` checks that it holds the
@@ -151,6 +154,30 @@ to another host, change these places under `test/site/`:
 - `docs/spec.md`: the open question about the domain.
 
 No file under `src/` holds the host: the pages read it from the two JSON files.
+
+### The photos and the PDF of the site
+
+The site commits its binary files. `test/acceptance/site-assets.ts` made them, and it is kit test code, not a file of
+the site:
+
+- the photos `src/assets/photos/home-hero.jpg` (1280 × 720), `rooms.jpg`, `restaurant.jpg` and `getting-here.jpg`
+  (960 × 640 each). Each is one color with the noise of `photos.ts` (xorshift32 with seed 7, the noise of 14.2,
+  JPEG quality 82). Only the size and the color differ. Each file stays under 200 KB;
+- the share image `public/og.jpg` (1200 × 630), with less noise, so it stays far under the 153,600 B of `head-og`;
+- the menu `public/speisekarte.pdf`: one A4 page of text with its title in the document information. It takes the
+  price of the evening menu and the phone of the restaurant from `site.json`.
+
+Run at the repository root, after `npm ci --ignore-scripts`:
+
+```sh
+node test/acceptance/site-assets.ts           # writes the files that differ, and names them
+node test/acceptance/site-assets.ts --check   # writes nothing; status 1 when a file differs
+```
+
+`sharp` comes from the Astro install of the repository (`node_modules/astro`), so the script adds no dependency.
+Another `sharp` version can write other JPEG bytes. The photos then look the same, and `--check` names them. Run the
+script again after a change of the price of the evening menu or of the phone of the restaurant in `site.json`:
+`site-assets.test.ts` fails until the PDF is new.
 
 ### Build the site by hand
 

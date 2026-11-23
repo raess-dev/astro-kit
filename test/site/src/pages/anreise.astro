@@ -1,0 +1,69 @@
+---
+import lake from '../assets/photos/getting-here.jpg';
+import Photo from '../components/Photo.astro';
+import TextSection from '../components/TextSection.astro';
+import { price } from '../data/facts.ts';
+import { linkTo } from '../data/routes.ts';
+import Page from '../layouts/Page.astro';
+
+const locale = 'de';
+---
+
+<Page
+  locale={locale}
+  page="gettingHere"
+  title="Anreise nach Sils – mit Bahn, Bus und Auto zum Hotel"
+  description="So kommen Sie ins Hotel Lärchenwald: mit der Rhätischen Bahn und dem Bus bis Sils/Segl Maria, mit dem Auto über den Julier- oder den Malojapass."
+  modified="2026-11-23"
+>
+  <TextSection>
+    <h1>Anreise</h1>
+    <p class="lede">
+      Sils liegt im Oberengadin, zwischen St. Moritz und dem Malojapass. Mit Bahn und Bus erreichen Sie uns in jeder
+      Jahreszeit bequem. Ein Auto brauchen Sie im Tal nicht.
+    </p>
+    <Photo
+      src={lake}
+      alt="Der Silsersee mit dem Dorf Sils Maria am Ufer, dahinter die Berge am Eingang des Fextals"
+      caption="Der Blick vom Hotel über den Silsersee."
+    />
+
+    <h2>Mit Bahn und Bus</h2>
+    <ol>
+      <li>
+        Mit der Rhätischen Bahn fahren Sie über Chur und durch das Albulatal nach St. Moritz. Die Strecke gehört zum
+        Welterbe der UNESCO.
+      </li>
+      <li>
+        Vor dem Bahnhof St. Moritz steigen Sie in den Bus Richtung Maloja. Nach etwa zwanzig Minuten steigen Sie an der
+        Haltestelle «Sils/Segl Maria, Posta» aus.
+      </li>
+      <li>
+        Von der Haltestelle gehen Sie fünf Minuten zu Fuss: über den Dorfplatz und den Weg ins Fextal hinauf. Unser Haus
+        steht am Waldrand.
+      </li>
+    </ol>
+    <p>
+      Aus dem Süden fahren Sie mit dem Bus von Chiavenna über den Malojapass. Er hält ebenfalls an der Haltestelle im
+      Dorf.
+    </p>
+
+    <h2>Mit dem Auto</h2>
+    <p>
+      Von Zürich fahren Sie über Chur und den Julierpass nach Silvaplana und weiter nach Sils. Aus Italien kommen Sie
+      über den Malojapass. Beide Pässe sind das ganze Jahr offen. Im Winter brauchen Sie Winterreifen, an manchen Tagen
+      auch Schneeketten.
+    </p>
+    <p>
+      Der Dorfkern von Sils Maria ist für den Verkehr gesperrt, nur Hotelgäste fahren bis vor das Haus. Ihr Auto steht
+      in unserer Garage unter dem Haus, für {price('parking', locale)} pro Tag.
+    </p>
+
+    <h2>Abholung an der Haltestelle</h2>
+    <p>
+      Mit viel Gepäck oder bei Schnee holen wir Sie gern an der Haltestelle ab. Sagen Sie uns bei Ihrer Anfrage, mit
+      welchem Bus Sie ankommen.
+    </p>
+    <p><a class="button" href={linkTo('contact', locale)}>Abholung anfragen</a></p>
+  </TextSection>
+</Page>

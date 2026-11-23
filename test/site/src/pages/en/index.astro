@@ -1,15 +1,21 @@
 ---
+import homeHero from '../../assets/photos/home-hero.jpg';
 import FeatureCard from '../../components/FeatureCard.astro';
 import GuestQuote from '../../components/GuestQuote.astro';
 import Hero from '../../components/Hero.astro';
 import TextSection from '../../components/TextSection.astro';
 import { closures, formatPhone, mailHref, openingHours, price, site, telHref } from '../../data/facts.ts';
+import { linkTo } from '../../data/routes.ts';
 import { UI } from '../../data/ui.ts';
 import Page from '../../layouts/Page.astro';
 import '../../styles/pages/en/index.css';
 
 const locale = 'en';
 const text = UI[locale];
+const heroPhoto = {
+  src: homeHero,
+  alt: 'Hotel Lärchenwald at the edge of the forest above Lake Sils, in the first light of the morning',
+};
 ---
 
 <Page
@@ -18,12 +24,16 @@ const text = UI[locale];
   title="Hotel Lärchenwald – a family hotel in Sils im Engadin"
   description="A family-run hotel by the larch forest above Lake Sils: quiet rooms panelled in stone pine, Engadin cooking and walks from the door. Ask us for a room."
 >
-  <Hero eyebrow="Sils im Engadin · 1,809 m above sea level" title="Quiet days between the larches and the lake">
+  <Hero
+    eyebrow="Sils im Engadin · 1,809 m above sea level"
+    photo={heroPhoto}
+    title="Quiet days between the larches and the lake"
+  >
     <p class="lede">
       Hotel Lärchenwald stands at the entrance to the Fex valley, ten minutes on foot from Lake Sils. For three
       generations the Clalüna family has welcomed guests here who come for the silence, good food and long walks.
     </p>
-    <p><a class="button" href={mailHref(site.email)}>Ask for a room</a></p>
+    <p><a class="button" href={linkTo('contact', locale)}>Ask for a room</a></p>
     <p>Or call us on <a href={telHref(site.phone)}>{formatPhone(site.phone)}</a></p>
   </Hero>
 
@@ -50,6 +60,7 @@ const text = UI[locale];
           price.
         </p>
         <p><strong>Double room from {price('room-double', locale)} per night</strong></p>
+        <p><a href={linkTo('rooms', locale)}>All rooms and their prices</a></p>
       </FeatureCard>
       <FeatureCard title="Engadin cooking">
         <p>
@@ -57,6 +68,7 @@ const text = UI[locale];
           chard leaves), game from the valley and the nut tart of the Engadin, baked to his grandmother’s recipe.
         </p>
         <p><strong>Evening menu {price('dinner-menu', locale)} per person</strong></p>
+        <p><a href={linkTo('restaurant', locale)}>The restaurant and the menu</a></p>
       </FeatureCard>
       <FeatureCard title="Walks from the front door">
         <p>
@@ -90,6 +102,7 @@ const text = UI[locale];
       “Sils/Segl Maria, Posta” is five minutes on foot from the hotel. If you wish, we will meet you there and carry
       your luggage.
     </p>
+    <p><a href={linkTo('gettingHere', locale)}>Getting here by train, bus and car</a></p>
     <address>
       {site.name}<br>
       {site.address.street}<br>

@@ -1,0 +1,80 @@
+---
+import restaurant from '../../assets/photos/restaurant.jpg';
+import ContactCard from '../../components/ContactCard.astro';
+import Photo from '../../components/Photo.astro';
+import PriceList from '../../components/PriceList.astro';
+import TextSection from '../../components/TextSection.astro';
+import { closures, contact } from '../../data/facts.ts';
+import { localeInfo } from '../../data/locales.ts';
+import { documentOf } from '../../data/routes.ts';
+import { UI } from '../../data/ui.ts';
+import Page from '../../layouts/Page.astro';
+
+// French typography: `&#8239;` is the narrow no-break space inside « » and before a colon or a semicolon.
+const locale = 'fr';
+const text = UI[locale];
+const kitchen = contact('Restaurant');
+// The menu is written in German.
+const menuLanguage = localeInfo('de').tag;
+---
+
+<Page
+  locale={locale}
+  page="restaurant"
+  title="Restaurant – la cuisine de l’Engadine à l’Hotel Lärchenwald"
+  description="Un menu du soir en quatre plats, avec les produits de l’Engadine et du val Bregaglia, pour nos hôtes et ceux du village. Réservez votre table par téléphone."
+  modified="2026-11-23"
+>
+  <TextSection>
+    <h1>Restaurant</h1>
+    <p class="lede">
+      Dans la salle en arole et sur la terrasse, le chef Reto Caduff vous sert des plats simples de l’Engadine, préparés
+      avec les produits de la région, pour nos hôtes et pour les gens du village.
+    </p>
+    <Photo
+      src={restaurant}
+      alt="La salle en arole le soir, avec les tables dressées, des bougies et le vieux poêle en pierre ollaire"
+      caption="La salle en arole et son poêle en pierre ollaire de 1926."
+    />
+
+    <h2>Le menu du soir</h2>
+    <p>
+      Chaque soir, nous servons un menu en quatre plats&#8239;: soupe à l’orge, capuns, gibier du val Fex et tourte aux
+      noix selon la recette de la grand-mère. En été, nous cueillons les herbes à l’alpage&#8239;; les légumes viennent
+      du val Bregaglia.
+    </p>
+    <PriceList
+      locale={locale}
+      items={[
+        {
+          label: 'Menu du soir en quatre plats',
+          price: 'dinner-menu',
+          unit: 'par personne',
+          note: 'Sur demande, nous le préparons végétarien. Dites-le-nous en réservant.',
+        },
+      ]}
+    />
+
+    <h2>La carte</h2>
+    <p>
+      Les quatre plats du menu du soir de la saison et son prix figurent sur notre carte. Pour les vins, notre service
+      vous conseille à table. La carte est rédigée en allemand.
+    </p>
+    <p><a href={documentOf('restaurant')} hreflang={menuLanguage}>La carte en PDF, en allemand</a></p>
+
+    <h2>Réserver une table</h2>
+    <p>
+      Les gens du village et de la vallée sont les bienvenus. Merci de réserver votre table par téléphone auprès du
+      restaurant.
+    </p>
+    <ContactCard locale={locale} name="Restaurant Lärchenwald" phone={kitchen.phone} />
+    <dl>
+      {closures(locale).map((range) => (
+        <>
+          <dt>{text.closed}</dt>
+          <dd>{range}</dd>
+        </>
+      ))}
+    </dl>
+  </TextSection>
+</Page>

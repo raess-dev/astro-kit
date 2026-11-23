@@ -1,0 +1,37 @@
+@layer components {
+  /* The navigation takes a row of its own below the brand name and the tools of the header. */
+  .main-nav {
+    flex-basis: 100%;
+
+    .main-nav__list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0 var(--space-4);
+      max-inline-size: none;
+      padding-inline-start: 0;
+      list-style-type: none;
+    }
+
+    /* Each link stands alone, so it is a target of 44 px in both directions. */
+    .main-nav__link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-inline-size: var(--size-target);
+      min-block-size: var(--size-target);
+      text-decoration-line: none;
+    }
+
+    .main-nav__link:hover {
+      text-decoration-line: underline;
+    }
+
+    /* The page that shows the navigation: marked by weight and a line, not by color alone. */
+    .main-nav__link[aria-current="page"] {
+      font-weight: var(--weight-bold);
+      color: var(--color-title);
+      text-decoration-line: underline;
+      text-decoration-thickness: var(--line-thick);
+    }
+  }
+}

@@ -1,0 +1,95 @@
+---
+import rooms from '../../assets/photos/rooms.jpg';
+import FeatureCard from '../../components/FeatureCard.astro';
+import Photo from '../../components/Photo.astro';
+import PriceList from '../../components/PriceList.astro';
+import TextSection from '../../components/TextSection.astro';
+import type { PriceItem } from '../../data/facts.ts';
+import { linkTo } from '../../data/routes.ts';
+import Page from '../../layouts/Page.astro';
+
+// French typography: `&#8239;` is the narrow no-break space inside « » and before a colon or a semicolon.
+const locale = 'fr';
+const prices: PriceItem[] = [
+  {
+    label: 'Chambre simple',
+    price: 'room-single',
+    unit: 'par nuit',
+    note: 'Pour une personne, petit-déjeuner compris.',
+  },
+  {
+    label: 'Chambre double',
+    price: 'room-double',
+    unit: 'par nuit',
+    note: 'Pour deux personnes, petit-déjeuner compris.',
+  },
+  {
+    label: 'Chambre familiale',
+    price: 'room-family',
+    unit: 'par nuit',
+    note: 'Pour deux adultes et deux enfants au plus, petit-déjeuner compris.',
+  },
+  { label: 'Chien', price: 'dog', unit: 'par nuit', note: 'Avec une couverture et une gamelle dans la chambre.' },
+  {
+    label: 'Place au garage',
+    price: 'parking',
+    unit: 'par jour',
+    note: 'Dans le garage sous la maison, avec une borne de recharge pour les voitures électriques.',
+  },
+];
+---
+
+<Page
+  locale={locale}
+  page="rooms"
+  title="Chambres et prix – Hotel Lärchenwald à Sils"
+  description="Chambres simples, doubles et familiales en arole, toutes avec balcon et petit-déjeuner. Voici les prix par nuit, pour votre chien et pour le garage."
+  modified="2026-11-23"
+>
+  <TextSection>
+    <h1>Chambres et prix</h1>
+    <p class="lede">
+      Les 24 chambres sont lambrissées d’arole et ont toutes un balcon. La plupart donnent sur le lac de Sils ou sur le
+      val Fex&#8239;; les chambres simples, au calme, donnent sur la forêt. Le petit-déjeuner est toujours compris dans
+      le prix.
+    </p>
+    <Photo
+      src={rooms}
+      alt="Une chambre double aux murs d’arole, avec un grand lit et la porte du balcon ouverte"
+      caption="Une chambre double au deuxième étage, avec vue sur le val Fex."
+    />
+
+    <h2>Nos chambres</h2>
+    <div class="grid">
+      <FeatureCard title="Chambre simple">
+        <p>
+          Une chambre calme avec un lit de 120 cm de large, un bureau près de la fenêtre et un balcon du côté de la
+          forêt.
+        </p>
+      </FeatureCard>
+      <FeatureCard title="Chambre double">
+        <p>
+          Un lit double de 180 cm ou deux lits séparés, un coin salon et un balcon avec vue sur le lac ou sur le val
+          Fex.
+        </p>
+      </FeatureCard>
+      <FeatureCard title="Chambre familiale">
+        <p>
+          Deux pièces reliées par une porte&#8239;: un lit double pour les parents et deux lits pour les enfants. Nous
+          ajoutons volontiers un lit pour bébé.
+        </p>
+      </FeatureCard>
+    </div>
+
+    <h2>Prix</h2>
+    <PriceList locale={locale} items={prices} />
+    <p>Tous les prix s’entendent en francs suisses, TVA comprise. La taxe de séjour de la commune s’y ajoute.</p>
+
+    <h2>Demander une chambre</h2>
+    <p>
+      Écrivez-nous quand vous souhaitez venir, combien de personnes vous êtes et quelle chambre vous désirez. Nous vous
+      répondons dans la journée.
+    </p>
+    <p><a class="button" href={linkTo('contact', locale)}>Demander une chambre</a></p>
+  </TextSection>
+</Page>

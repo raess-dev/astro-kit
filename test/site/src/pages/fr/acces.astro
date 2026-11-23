@@ -1,0 +1,67 @@
+---
+import lake from '../../assets/photos/getting-here.jpg';
+import Photo from '../../components/Photo.astro';
+import TextSection from '../../components/TextSection.astro';
+import { price } from '../../data/facts.ts';
+import { linkTo } from '../../data/routes.ts';
+import Page from '../../layouts/Page.astro';
+
+// French typography: `&#8239;` is the narrow no-break space inside « » and before a colon or a semicolon.
+const locale = 'fr';
+---
+
+<Page
+  locale={locale}
+  page="gettingHere"
+  title="Accès à Sils – venir à l’hôtel en train, en bus et en voiture"
+  description="Rejoindre l’Hotel Lärchenwald en train et en bus jusqu’à Sils/Segl Maria, ou en voiture par le col du Julier ou par le col de la Maloja."
+  modified="2026-11-23"
+>
+  <TextSection>
+    <h1>Accès</h1>
+    <p class="lede">
+      Sils se trouve en Haute-Engadine, entre Saint-Moritz et le col de la Maloja. En train et en bus, vous nous
+      rejoignez facilement en toute saison. Dans la vallée, vous n’avez pas besoin de voiture.
+    </p>
+    <Photo
+      src={lake}
+      alt="Le lac de Sils avec le village de Sils Maria sur la rive et, derrière, les montagnes à l’entrée du val Fex"
+      caption="La vue de l’hôtel sur le lac de Sils."
+    />
+
+    <h2>En train et en bus</h2>
+    <ol>
+      <li>
+        Avec les Chemins de fer rhétiques, vous passez par Coire et la vallée de l’Albula jusqu’à Saint-Moritz. La ligne
+        est inscrite au patrimoine mondial de l’UNESCO.
+      </li>
+      <li>
+        Devant la gare de Saint-Moritz, vous prenez le bus en direction de Maloja. Après une vingtaine de minutes, vous
+        descendez à l’arrêt «&#8239;Sils/Segl Maria, Posta&#8239;».
+      </li>
+      <li>
+        De l’arrêt, vous marchez cinq minutes&#8239;: vous traversez la place du village et montez le chemin du val Fex.
+        Notre maison se trouve à l’orée de la forêt.
+      </li>
+    </ol>
+    <p>Depuis le sud, le bus de Chiavenna passe le col de la Maloja. Il s’arrête lui aussi au village.</p>
+
+    <h2>En voiture</h2>
+    <p>
+      Depuis Zurich, vous passez par Coire et le col du Julier jusqu’à Silvaplana, puis vous continuez vers Sils. Depuis
+      l’Italie, vous arrivez par le col de la Maloja. Les deux cols sont ouverts toute l’année. En hiver, il vous faut
+      des pneus d’hiver, certains jours aussi des chaînes.
+    </p>
+    <p>
+      Le centre de Sils Maria est fermé à la circulation&#8239;; seuls les hôtes de l’hôtel peuvent rouler jusqu’à la
+      maison. Votre voiture reste dans notre garage sous la maison, pour {price('parking', locale)} par jour.
+    </p>
+
+    <h2>Navette depuis l’arrêt</h2>
+    <p>
+      Avec beaucoup de bagages ou par temps de neige, nous venons volontiers vous chercher à l’arrêt. Dites-nous dans
+      votre demande par quel bus vous arrivez.
+    </p>
+    <p><a class="button" href={linkTo('contact', locale)}>Demander la navette</a></p>
+  </TextSection>
+</Page>

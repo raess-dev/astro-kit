@@ -1,17 +1,20 @@
 ---
 /**
  * The footer of every page: the address and the contact data of `site.json`, the reception hours and the next
- * closure of `schedule.json`, and the links to the two legal pages of the locale.
+ * closure of `schedule.json`, and the links to the two legal pages and the sitemap page of the locale.
  */
 import '../styles/components/site-footer.css';
 import { closures, formatPhone, mailHref, openingHours, site, telHref } from '../data/facts.ts';
 import type { Locale } from '../data/locales.ts';
-import { linkTo } from '../data/routes.ts';
+import { linkTo, type PageKey } from '../data/routes.ts';
 import { UI } from '../data/ui.ts';
 
 interface Props {
   locale: Locale;
 }
+
+/** The pages that the footer links on every page: the two legal pages, which every page must link, and the sitemap. */
+const FOOTER_KEYS: readonly PageKey[] = ['legalNote', 'privacy', 'sitemap'];
 
 const { locale } = Astro.props;
 const text = UI[locale];
@@ -50,10 +53,15 @@ const year = new Date().getFullYear();
           </p>
         ))}
       </div>
-      <nav aria-label={text.legalNav}>
+      <nav aria-label={text.footerNav}>
         <ul class="site-footer__links">
-          <li><a class="site-footer__link" href={linkTo('legalNote', locale)}>{text.legalNote}</a></li>
-          <li><a class="site-footer__link" href={linkTo('privacy', locale)}>{text.privacy}</a></li>
+          {FOOTER_KEYS.map((key) => (
+            <li>
+              <a class="site-footer__link" href={linkTo(key, locale)}>
+                {text.pages[key]}
+              </a>
+            </li>
+          ))}
         </ul>
       </nav>
     </div>

@@ -1,0 +1,50 @@
+---
+/**
+ * A card with the way to reach one desk of the hotel: its name, the address of the house when the card asks for it,
+ * a phone number and an email address. Every value comes from `site.json`, so the card and the facts cannot differ.
+ */
+import '../styles/components/contact-card.css';
+import { formatPhone, mailHref, site, telHref } from '../data/facts.ts';
+import type { Locale } from '../data/locales.ts';
+import { UI } from '../data/ui.ts';
+
+interface Props {
+  locale: Locale;
+  /** The name of the desk or of the house. */
+  name: string;
+  /** The phone number in E.164 form. */
+  phone?: string | undefined;
+  /** The email address. */
+  email?: string | undefined;
+  /** True when the card shows the address of the house. */
+  address?: boolean;
+}
+
+const { locale, name, phone, email, address = false } = Astro.props;
+const text = UI[locale];
+// One text each, so that no line break of the template puts a space before the colon.
+const phoneLabel = `${text.phone}${text.colon}`;
+const emailLabel = `${text.email}${text.colon}`;
+---
+
+<address class="contact-card">
+  <p class="contact-card__name">{name}</p>
+  {address && (
+    <p>
+      {site.address.street}
+      <br>
+      {site.address.postalCode}
+      {site.address.locality}
+    </p>
+  )}
+  {phone !== undefined && (
+    <p>
+      {phoneLabel} <a href={telHref(phone)}>{formatPhone(phone)}</a>
+    </p>
+  )}
+  {email !== undefined && (
+    <p>
+      {emailLabel} <a href={mailHref(email)}>{email}</a>
+    </p>
+  )}
+</address>

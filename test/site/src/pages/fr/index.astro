@@ -1,9 +1,11 @@
 ---
+import homeHero from '../../assets/photos/home-hero.jpg';
 import FeatureCard from '../../components/FeatureCard.astro';
 import GuestQuote from '../../components/GuestQuote.astro';
 import Hero from '../../components/Hero.astro';
 import TextSection from '../../components/TextSection.astro';
 import { closures, formatPhone, mailHref, openingHours, price, site, telHref } from '../../data/facts.ts';
+import { linkTo } from '../../data/routes.ts';
 import { UI } from '../../data/ui.ts';
 import Page from '../../layouts/Page.astro';
 import '../../styles/pages/fr/index.css';
@@ -11,6 +13,10 @@ import '../../styles/pages/fr/index.css';
 // French typography: `&#8239;` is the narrow no-break space inside « » and before a colon or a semicolon.
 const locale = 'fr';
 const text = UI[locale];
+const heroPhoto = {
+  src: homeHero,
+  alt: 'L’Hotel Lärchenwald à l’orée de la forêt, au-dessus du lac de Sils, dans la première lumière du matin',
+};
 ---
 
 <Page
@@ -19,13 +25,17 @@ const text = UI[locale];
   title="Hotel Lärchenwald – hôtel de famille à Sils, en Engadine"
   description="Hôtel de famille à l’orée des mélèzes, au-dessus du lac de Sils. Chambres en bois d’arole, cuisine de l’Engadine et sentiers au départ de la maison."
 >
-  <Hero eyebrow={'Sils, en Engadine · 1809\u00a0m d’altitude'} title="Le calme entre les mélèzes et le lac">
+  <Hero
+    eyebrow={'Sils, en Engadine · 1809\u00a0m d’altitude'}
+    photo={heroPhoto}
+    title="Le calme entre les mélèzes et le lac"
+  >
     <p class="lede">
       L’Hotel Lärchenwald se trouve à l’entrée du val Fex, à dix minutes à pied du lac de Sils. Depuis trois
       générations, la famille Clalüna y accueille des hôtes qui cherchent le silence, une bonne table et de longues
       promenades.
     </p>
-    <p><a class="button" href={mailHref(site.email)}>Demander une chambre</a></p>
+    <p><a class="button" href={linkTo('contact', locale)}>Demander une chambre</a></p>
     <p>Ou appelez-nous{text.colon} <a href={telHref(site.phone)}>{formatPhone(site.phone)}</a></p>
   </Hero>
 
@@ -52,6 +62,7 @@ const text = UI[locale];
           dans le prix.
         </p>
         <p><strong>Chambre double dès {price('room-double', locale)} par nuit</strong></p>
+        <p><a href={linkTo('rooms', locale)}>Toutes les chambres et leurs prix</a></p>
       </FeatureCard>
       <FeatureCard title="La cuisine de l’Engadine">
         <p>
@@ -59,6 +70,7 @@ const text = UI[locale];
           vallée et tourte aux noix selon la recette de sa grand-mère.
         </p>
         <p><strong>Menu du soir {price('dinner-menu', locale)} par personne</strong></p>
+        <p><a href={linkTo('restaurant', locale)}>Le restaurant et la carte</a></p>
       </FeatureCard>
       <FeatureCard title="La randonnée dès le pas de la porte">
         <p>
@@ -93,6 +105,7 @@ const text = UI[locale];
       vingt minutes. L’arrêt «&#8239;Sils/Segl Maria, Posta&#8239;» est à cinq minutes à pied de l’hôtel. Si vous le
       souhaitez, nous venons vous y chercher avec vos bagages.
     </p>
+    <p><a href={linkTo('gettingHere', locale)}>Venir en train, en bus et en voiture</a></p>
     <address>
       {site.name}<br>
       {site.address.street}<br>

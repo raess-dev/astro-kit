@@ -1,0 +1,21 @@
+---
+import PageIndex from '../../components/PageIndex.astro';
+import TextSection from '../../components/TextSection.astro';
+import Page from '../../layouts/Page.astro';
+
+const locale = 'fr';
+---
+
+<Page
+  locale={locale}
+  page="sitemap"
+  title="Plan du site – toutes les pages de l’Hotel Lärchenwald"
+  description="Toutes les pages de ce site en un coup d’œil, de l’hôtel et de ses chambres au restaurant, à l’accès, au contact, aux emplois et aux informations légales."
+  modified="2026-11-23"
+>
+  <TextSection>
+    <h1>Plan du site</h1>
+    <p class="lede">Vous trouvez ici toutes les pages de ce site dans une seule liste.</p>
+    <PageIndex locale={locale} page="sitemap" />
+  </TextSection>
+</Page>

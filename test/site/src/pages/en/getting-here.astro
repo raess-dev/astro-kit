@@ -1,0 +1,65 @@
+---
+import lake from '../../assets/photos/getting-here.jpg';
+import Photo from '../../components/Photo.astro';
+import TextSection from '../../components/TextSection.astro';
+import { price } from '../../data/facts.ts';
+import { linkTo } from '../../data/routes.ts';
+import Page from '../../layouts/Page.astro';
+
+const locale = 'en';
+---
+
+<Page
+  locale={locale}
+  page="gettingHere"
+  title="Getting here – by train, bus and car to Sils"
+  description="How to reach Hotel Lärchenwald: by Rhaetian Railway and bus to Sils/Segl Maria, or by car over the Julier pass or the Maloja pass."
+  modified="2026-11-23"
+>
+  <TextSection>
+    <h1>Getting here</h1>
+    <p class="lede">
+      Sils lies in the Upper Engadin, between St. Moritz and the Maloja pass. By train and bus you can reach us easily
+      in every season. You will not need a car in the valley.
+    </p>
+    <Photo
+      src={lake}
+      alt="Lake Sils with the village of Sils Maria on its shore, and behind it the mountains at the entrance to the Fex valley"
+      caption="The view from the hotel across Lake Sils."
+    />
+
+    <h2>By train and bus</h2>
+    <ol>
+      <li>
+        Take the Rhaetian Railway via Chur and through the Albula valley to St. Moritz. The line is a UNESCO World
+        Heritage Site.
+      </li>
+      <li>
+        In front of St. Moritz station, take the bus towards Maloja. After about twenty minutes, get off at the stop
+        “Sils/Segl Maria, Posta”.
+      </li>
+      <li>
+        From the stop it is a five-minute walk: across the village square and up the path into the Fex valley. Our house
+        stands at the edge of the forest.
+      </li>
+    </ol>
+    <p>From the south, the bus from Chiavenna crosses the Maloja pass. It also stops in the village.</p>
+
+    <h2>By car</h2>
+    <p>
+      From Zurich, drive via Chur and over the Julier pass to Silvaplana, and on to Sils. From Italy, you come over the
+      Maloja pass. Both passes are open all year. In winter you need winter tyres, and on some days snow chains too.
+    </p>
+    <p>
+      The centre of Sils Maria is closed to traffic, and only hotel guests may drive up to the house. Your car stays in
+      our garage under the house, for {price('parking', locale)} per day.
+    </p>
+
+    <h2>Pick-up from the bus stop</h2>
+    <p>
+      If you have a lot of luggage or there is snow, we will gladly collect you from the stop. Tell us in your request
+      which bus you will arrive on.
+    </p>
+    <p><a class="button" href={linkTo('contact', locale)}>Ask for a pick-up</a></p>
+  </TextSection>
+</Page>

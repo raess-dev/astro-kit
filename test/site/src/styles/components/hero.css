@@ -20,6 +20,16 @@
       text-transform: uppercase;
       color: var(--color-title);
     }
+
+    /* The photo does not move: it is the largest image of the page, and it shows at once. */
+    .hero__media {
+      padding-block-start: var(--space-6);
+    }
+
+    .hero__photo {
+      border-radius: var(--radius-l);
+      box-shadow: var(--shadow-card);
+    }
   }
 
   @keyframes hero-rise {

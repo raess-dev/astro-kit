@@ -1,0 +1,21 @@
+---
+import PageIndex from '../../components/PageIndex.astro';
+import TextSection from '../../components/TextSection.astro';
+import Page from '../../layouts/Page.astro';
+
+const locale = 'en';
+---
+
+<Page
+  locale={locale}
+  page="sitemap"
+  title="Sitemap – every page of Hotel Lärchenwald"
+  description="Every page of this website at a glance: the hotel, the rooms and prices, the restaurant, getting here, contact and the legal pages."
+  modified="2026-11-23"
+>
+  <TextSection>
+    <h1>Sitemap</h1>
+    <p class="lede">Here you will find every page of this website in one list.</p>
+    <PageIndex locale={locale} page="sitemap" />
+  </TextSection>
+</Page>

@@ -1,0 +1,32 @@
+---
+/**
+ * The main navigation in the header of every page: one link for each page of the hotel that the locale has. So
+ * every page of the locale is one click from every other page. The link of the page that shows it is marked with
+ * `aria-current`, by weight and a line, not by color alone.
+ */
+import '../styles/components/main-nav.css';
+import type { Locale } from '../data/locales.ts';
+import { linkTo, NAV_KEYS, type PageKey, pagesIn } from '../data/routes.ts';
+import { UI } from '../data/ui.ts';
+
+interface Props {
+  locale: Locale;
+  /** The key of the page that shows the navigation. The 404 page has none. */
+  page: PageKey | undefined;
+}
+
+const { locale, page } = Astro.props;
+const text = UI[locale];
+---
+
+<nav class="main-nav" aria-label={text.mainNav}>
+  <ul class="main-nav__list">
+    {pagesIn(NAV_KEYS, locale).map((key) => (
+      <li>
+        <a class="main-nav__link" href={linkTo(key, locale)} aria-current={key === page ? 'page' : undefined}>
+          {text.pages[key]}
+        </a>
+      </li>
+    ))}
+  </ul>
+</nav>

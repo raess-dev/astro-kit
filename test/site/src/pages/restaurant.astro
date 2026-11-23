@@ -1,0 +1,74 @@
+---
+import restaurant from '../assets/photos/restaurant.jpg';
+import ContactCard from '../components/ContactCard.astro';
+import Photo from '../components/Photo.astro';
+import PriceList from '../components/PriceList.astro';
+import TextSection from '../components/TextSection.astro';
+import { closures, contact } from '../data/facts.ts';
+import { documentOf } from '../data/routes.ts';
+import { UI } from '../data/ui.ts';
+import Page from '../layouts/Page.astro';
+
+const locale = 'de';
+const text = UI[locale];
+const kitchen = contact('Restaurant');
+---
+
+<Page
+  locale={locale}
+  page="restaurant"
+  title="Restaurant – Engadiner Küche im Hotel Lärchenwald"
+  description="Ein Abendmenü in vier Gängen aus Zutaten des Engadins und des Bergells, für Hotelgäste und für Gäste aus dem Dorf. Reservieren Sie Ihren Tisch per Telefon."
+  modified="2026-11-23"
+>
+  <TextSection>
+    <h1>Restaurant</h1>
+    <p class="lede">
+      In der Arvenstube und auf der Terrasse serviert Ihnen Küchenchef Reto Caduff einfache Engadiner Gerichte aus
+      Zutaten der Region, für unsere Hotelgäste und für Gäste aus dem Dorf.
+    </p>
+    <Photo
+      src={restaurant}
+      alt="Die Arvenstube am Abend, mit gedeckten Tischen, Kerzen und dem alten Specksteinofen"
+      caption="Die Arvenstube mit dem Specksteinofen aus dem Jahr 1926."
+    />
+
+    <h2>Das Abendmenü</h2>
+    <p>
+      Jeden Abend servieren wir ein Menü in vier Gängen: Gerstensuppe, Capuns, Wild aus dem Fextal und Nusstorte nach
+      dem Rezept der Grossmutter. Die Kräuter holen wir im Sommer auf der Alp, das Gemüse kommt aus dem Bergell.
+    </p>
+    <PriceList
+      locale={locale}
+      items={[
+        {
+          label: 'Abendmenü in vier Gängen',
+          price: 'dinner-menu',
+          unit: 'pro Person',
+          note: 'Auf Wunsch kochen wir es vegetarisch. Sagen Sie es uns bei der Reservation.',
+        },
+      ]}
+    />
+
+    <h2>Die Speisekarte</h2>
+    <p>
+      Die vier Gänge des Abendmenüs dieser Saison und sein Preis stehen auf unserer Speisekarte. Die Weine empfiehlt
+      Ihnen unser Service am Tisch.
+    </p>
+    <p><a href={documentOf('restaurant')}>Die Speisekarte als PDF</a></p>
+
+    <h2>Tisch reservieren</h2>
+    <p>
+      Gäste aus dem Dorf und aus dem Tal sind willkommen. Reservieren Sie Ihren Tisch bitte per Telefon beim Restaurant.
+    </p>
+    <ContactCard locale={locale} name="Restaurant Lärchenwald" phone={kitchen.phone} />
+    <dl>
+      {closures(locale).map((range) => (
+        <>
+          <dt>{text.closed}</dt>
+          <dd>{range}</dd>
+        </>
+      ))}
+    </dl>
+  </TextSection>
+</Page>

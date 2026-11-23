@@ -1,0 +1,57 @@
+---
+import ContactCard from '../../components/ContactCard.astro';
+import TextSection from '../../components/TextSection.astro';
+import { contact } from '../../data/facts.ts';
+import Page from '../../layouts/Page.astro';
+
+// French typography: `&#8239;` is the narrow no-break space inside « » and before a colon or a semicolon.
+const locale = 'fr';
+const jobs = contact('Jobs');
+---
+
+<Page
+  locale={locale}
+  page="jobs"
+  title="Emplois à l’Hotel Lärchenwald – postes saisonniers à Sils"
+  description="Pour les saisons d’été et d’hiver, nous cherchons des collaboratrices et des collaborateurs pour le service, la cuisine et l’entretien des chambres."
+  modified="2026-11-23"
+>
+  <TextSection>
+    <h1>Travailler à l’Hotel Lärchenwald</h1>
+    <p class="lede">
+      En saison, notre équipe compte vingt personnes, et beaucoup reviennent chaque année. Nous travaillons dans une
+      petite maison, avec des tâches claires et du temps pour nos hôtes.
+    </p>
+
+    <h2>Postes ouverts</h2>
+    <ul>
+      <li>
+        <strong>Service</strong>&#8239;: vous accompagnez nos hôtes du petit-déjeuner au menu du soir, et vous
+        connaissez les vins de la Valteline.
+      </li>
+      <li>
+        <strong>Cuisine</strong>&#8239;: avec Reto Caduff et son équipe, vous préparez les plats de l’Engadine avec des
+        produits frais de la région.
+      </li>
+      <li>
+        <strong>Entretien</strong>&#8239;: vous veillez à ce que chaque chambre et chaque salle soit propre et
+        accueillante pour nos hôtes.
+      </li>
+    </ul>
+
+    <h2>Ce que nous vous offrons</h2>
+    <ul>
+      <li>Une chambre à vous dans la maison du personnel, au village, à cinq minutes à pied de l’hôtel.</li>
+      <li>Cinq jours de travail par semaine, et un horaire que vous connaissez deux semaines à l’avance.</li>
+      <li>Les repas avec l’équipe, aussi pendant vos jours de congé.</li>
+      <li>Un abonnement de saison pour les remontées mécaniques et les bus de Haute-Engadine.</li>
+    </ul>
+
+    <h2>Candidature</h2>
+    <p>
+      Envoyez-nous votre CV et quelques phrases sur ce qui vous donne envie de travailler chez nous. Seraina Clalüna
+      répond personnellement à chaque candidature.
+    </p>
+    <ContactCard locale={locale} name="Personnel et candidatures" phone={jobs.phone} email={jobs.email} />
+  </TextSection>
+</Page>

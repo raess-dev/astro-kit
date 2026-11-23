@@ -1,0 +1,41 @@
+---
+/**
+ * The list of every page of a locale, for the sitemap page: the pages of the hotel, then the legal pages and the
+ * sitemap page itself. The link of the page that shows the list is marked with `aria-current`.
+ */
+import '../styles/components/page-index.css';
+import type { Locale } from '../data/locales.ts';
+import { linkTo, NAV_KEYS, PAGE_KEYS, type PageKey, pagesIn } from '../data/routes.ts';
+import { UI } from '../data/ui.ts';
+
+interface Props {
+  locale: Locale;
+  /** The key of the page that shows the list. */
+  page: PageKey;
+}
+
+const { locale, page } = Astro.props;
+const text = UI[locale];
+const hotel = pagesIn(NAV_KEYS, locale);
+const groups = [
+  { heading: text.indexHotel, keys: hotel },
+  { heading: text.indexMore, keys: pagesIn(PAGE_KEYS, locale).filter((key) => !hotel.includes(key)) },
+];
+---
+
+<div class="page-index grid">
+  {groups.map((group) => (
+    <section class="stack">
+      <h2>{group.heading}</h2>
+      <ul class="page-index__list">
+        {group.keys.map((key) => (
+          <li>
+            <a class="page-index__link" href={linkTo(key, locale)} aria-current={key === page ? 'page' : undefined}>
+              {text.pages[key]}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  ))}
+</div>

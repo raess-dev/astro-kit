@@ -1,0 +1,58 @@
+---
+import ContactCard from '../components/ContactCard.astro';
+import TextSection from '../components/TextSection.astro';
+import { closures, contact, mailHref, openingHours, site } from '../data/facts.ts';
+import { UI } from '../data/ui.ts';
+import Page from '../layouts/Page.astro';
+
+const locale = 'de';
+const text = UI[locale];
+const kitchen = contact('Restaurant');
+---
+
+<Page
+  locale={locale}
+  page="contact"
+  title="Kontakt und Anfrage – Hotel Lärchenwald in Sils"
+  description="Rufen Sie uns an oder schreiben Sie uns: Die Rezeption hilft Ihnen bei der Anfrage für ein Zimmer, einen Tisch im Restaurant oder die Abholung am Bus."
+  modified="2026-11-23"
+>
+  <TextSection>
+    <h1>Kontakt</h1>
+    <p class="lede">
+      Sie erreichen unsere Rezeption jeden Tag per Telefon und per E-Mail. Wir beantworten jede Anfrage persönlich,
+      meist am selben Tag.
+    </p>
+
+    <h2>Rezeption</h2>
+    <ContactCard locale={locale} name={site.name} address phone={site.phone} email={site.email} />
+    <dl>
+      {openingHours(locale, text.everyDay).map((row) => (
+        <>
+          <dt>{text.reception}</dt>
+          <dd>
+            {row.days}, {row.hours} {text.hoursSuffix}
+          </dd>
+        </>
+      ))}
+      {closures(locale).map((range) => (
+        <>
+          <dt>{text.closed}</dt>
+          <dd>{range}</dd>
+        </>
+      ))}
+    </dl>
+
+    <h2>Zimmer anfragen</h2>
+    <p>
+      Schreiben Sie uns, an welchem Tag Sie ankommen und abreisen, wie viele Personen Sie sind und welches Zimmer Sie
+      wünschen. Sagen Sie uns auch, ob Ihr Hund mitkommt und ob Sie einen Platz in der Garage brauchen. Wir bestätigen
+      Ihre Reservation schriftlich.
+    </p>
+    <p><a class="button" href={mailHref(site.email)}>Anfrage per E-Mail senden</a></p>
+
+    <h2>Tisch im Restaurant</h2>
+    <p>Einen Tisch für das Abendmenü reservieren Sie direkt beim Restaurant.</p>
+    <ContactCard locale={locale} name="Restaurant Lärchenwald" phone={kitchen.phone} />
+  </TextSection>
+</Page>

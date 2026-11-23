@@ -96,9 +96,9 @@ the width of the containing block, so they are for `padding` only.
 |---|---|---|
 | `--size-page` | `72rem` | The largest width of the page content. |
 | `--size-measure` | `38rem` | The largest width of a line of running text. |
-| `--size-heading` | `46rem` | The largest width of a heading. |
+| `--size-heading` | `46rem` | The largest width of a heading, and of a photo in running text. |
 | `--size-card` | `17rem` | The smallest width of a grid column. |
-| `--size-target` | `2.75rem` | The smallest width and height of a link or control that stands alone (44 px). |
+| `--size-target` | `2.75rem` | The smallest width and height of a link or control that stands alone (44 px), such as a link of the navigation. |
 | `--size-icon` | `1.25rem` | A radio button. |
 | `--size-mark` | `2rem` | The brand mark in the header. |
 | `--size-mode-switch` | `10.5rem` | The width of the mode switch, closed and open. |
@@ -110,7 +110,7 @@ the width of the containing block, so they are for `padding` only.
 |---|---|---|
 | `--radius-s` | `0.25rem` | Links that look like a control, the skip link. |
 | `--radius-m` | `0.5rem` | Disclosures and panels. |
-| `--radius-l` | `1rem` | Cards. |
+| `--radius-l` | `1rem` | Cards and photos. |
 | `--radius-pill` | `62.5rem` | Buttons. |
 
 ## Line
@@ -205,10 +205,19 @@ The site has one animation: the hero text rises once when the page opens. Nothin
 | `.skip-link:focus` | `background-color` | `--color-surface` |
 | `.site-header` | `border-block-end-color` | `--color-line` |
 | `.site-header .site-header__mark` | `fill` | `--color-brand` |
+| `.main-nav .main-nav__link` | `min-block-size` | `--size-target` |
+| `.main-nav .main-nav__link` | `min-inline-size` | `--size-target` |
 | `.mode-switch` | `inline-size` | `--size-mode-switch` |
 | `.hero` | `background-image` | `--gradient-hero` |
 | `.hero` | `padding-block` | `--space-section` |
 | `.hero .hero__content` | `animation-duration` | `--duration-slow` |
+| `.hero .hero__photo` | `border-radius` | `--radius-l` |
+| `.photo` | `max-inline-size` | `--size-heading` |
+| `.photo .photo__image` | `border-radius` | `--radius-l` |
+| `.price-list .price-list__price` | `color` | `--color-title` |
+| `.contact-card` | `background-color` | `--color-surface` |
+| `.contact-card` | `border-radius` | `--radius-l` |
+| `.page-index .page-index__link` | `min-block-size` | `--size-target` |
 | `.text-section` | `padding-block` | `--space-7` |
 | `.feature-card` | `background-color` | `--color-surface` |
 | `.feature-card` | `border-radius` | `--radius-l` |

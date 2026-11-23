@@ -1,0 +1,58 @@
+---
+import ContactCard from '../../components/ContactCard.astro';
+import TextSection from '../../components/TextSection.astro';
+import { closures, contact, mailHref, openingHours, site } from '../../data/facts.ts';
+import { UI } from '../../data/ui.ts';
+import Page from '../../layouts/Page.astro';
+
+const locale = 'en';
+const text = UI[locale];
+const kitchen = contact('Restaurant');
+---
+
+<Page
+  locale={locale}
+  page="contact"
+  title="Contact and requests – Hotel Lärchenwald in Sils"
+  description="Call us or write to us. Our reception will help you to ask for a room, a table in the restaurant or a pick-up from the bus stop."
+  modified="2026-11-23"
+>
+  <TextSection>
+    <h1>Contact</h1>
+    <p class="lede">
+      You can reach our reception by phone and by email every day. We answer every request personally, usually on the
+      same day.
+    </p>
+
+    <h2>Reception</h2>
+    <ContactCard locale={locale} name={site.name} address phone={site.phone} email={site.email} />
+    <dl>
+      {openingHours(locale, text.everyDay).map((row) => (
+        <>
+          <dt>{text.reception}</dt>
+          <dd>
+            {row.days}, {row.hours} {text.hoursSuffix}
+          </dd>
+        </>
+      ))}
+      {closures(locale).map((range) => (
+        <>
+          <dt>{text.closed}</dt>
+          <dd>{range}</dd>
+        </>
+      ))}
+    </dl>
+
+    <h2>Ask for a room</h2>
+    <p>
+      Tell us the days of your arrival and departure, how many of you there are and which room you would like. Let us
+      know too if your dog is coming with you and if you need a space in the garage. We will confirm your booking in
+      writing.
+    </p>
+    <p><a class="button" href={mailHref(site.email)}>Send a request by email</a></p>
+
+    <h2>A table in the restaurant</h2>
+    <p>To book a table for the evening menu, call the restaurant directly.</p>
+    <ContactCard locale={locale} name="Restaurant Lärchenwald" phone={kitchen.phone} />
+  </TextSection>
+</Page>

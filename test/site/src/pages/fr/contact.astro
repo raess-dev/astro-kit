@@ -1,0 +1,58 @@
+---
+import ContactCard from '../../components/ContactCard.astro';
+import TextSection from '../../components/TextSection.astro';
+import { closures, contact, mailHref, openingHours, site } from '../../data/facts.ts';
+import { UI } from '../../data/ui.ts';
+import Page from '../../layouts/Page.astro';
+
+const locale = 'fr';
+const text = UI[locale];
+const kitchen = contact('Restaurant');
+---
+
+<Page
+  locale={locale}
+  page="contact"
+  title="Contact et demande – Hotel Lärchenwald à Sils"
+  description="Appelez-nous ou écrivez-nous. La réception vous aide à demander une chambre, une table au restaurant ou la navette depuis l’arrêt du bus."
+  modified="2026-11-23"
+>
+  <TextSection>
+    <h1>Contact</h1>
+    <p class="lede">
+      Notre réception répond chaque jour au téléphone et par e-mail. Nous traitons chaque demande personnellement, le
+      plus souvent le jour même.
+    </p>
+
+    <h2>Réception</h2>
+    <ContactCard locale={locale} name={site.name} address phone={site.phone} email={site.email} />
+    <dl>
+      {openingHours(locale, text.everyDay).map((row) => (
+        <>
+          <dt>{text.reception}</dt>
+          <dd>
+            {row.days}, {row.hours} {text.hoursSuffix}
+          </dd>
+        </>
+      ))}
+      {closures(locale).map((range) => (
+        <>
+          <dt>{text.closed}</dt>
+          <dd>{range}</dd>
+        </>
+      ))}
+    </dl>
+
+    <h2>Demander une chambre</h2>
+    <p>
+      Indiquez-nous vos dates d’arrivée et de départ, le nombre de personnes et la chambre que vous souhaitez.
+      Dites-nous aussi si votre chien vous accompagne et si vous avez besoin d’une place au garage. Nous confirmons
+      votre réservation par écrit.
+    </p>
+    <p><a class="button" href={mailHref(site.email)}>Envoyer une demande par e-mail</a></p>
+
+    <h2>Une table au restaurant</h2>
+    <p>Pour le menu du soir, réservez votre table directement auprès du restaurant.</p>
+    <ContactCard locale={locale} name="Restaurant Lärchenwald" phone={kitchen.phone} />
+  </TextSection>
+</Page>

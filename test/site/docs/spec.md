@@ -48,20 +48,31 @@ Each page has one intent, one main message and one call to action. The paths are
 
 | Page | Intent and audience | Message | Call to action |
 |---|---|---|---|
-| Home | A first visit. All audiences. | A quiet family hotel between the larch forest and the lake; what a stay is like, and what a double room costs. | Ask for a room: by email at stage 1, on the contact page from stage 2. |
+| Home | A first visit. All audiences. | A quiet family hotel between the larch forest and the lake; what a stay is like, and what a double room costs. | Ask for a room on the contact page. |
 | Rooms and prices | Guests who compare. | Three kinds of room, each with its price for a night with breakfast; the prices for a dog and for the car park. | Send a booking request. |
-| Restaurant | Hotel guests and guests from the village. | Engadin cooking, the evening menu and its price, the opening hours. | Call the restaurant for a table; read the menu as a PDF. |
+| Restaurant | Hotel guests and guests from the village. | Engadin cooking, the evening menu and its price, the closures between the seasons. | Call the restaurant for a table; read the menu as a PDF. |
 | Getting here | Guests who plan the journey. | By train and bus in every season; by car, with the car park; the walk from the bus stop. | Ask for the pick-up from the bus stop. |
-| Contact and booking request | Guests who are ready to ask. | Two short forms: a question, or a booking request with dates and room. | Send the form, or call. |
+| Contact and booking request | Guests who are ready to ask. | How to reach the reception and the restaurant, and what a booking request holds. Two short forms follow at stage 3: a question, or a booking request with dates and room. | Write an email, or call. |
 | Jobs | Job seekers (German and French only). | The house as an employer; the open positions of the season. | Write to the jobs address. |
 | Legal note | Anyone who must know who runs the site. | The company, its address, its register entry and its tax number. | None. |
 | Privacy | Anyone who asks what the site does with data. | What is processed, by whom and why, in plain words; the rights of the visitor. | Write to the hotel. |
 | Sitemap page | Visitors who look for a page; search engines. | Every page of the language, in one list. | None. |
 | 404 | Visitors on a wrong address, in any language. | The page does not exist; here is the way back. | Go to the home page of your language. |
 
-**Stage 1** has the home page, the legal note and the privacy page in the three languages, and the 404 page. The
-other pages follow at stage 2. Until then no page links a page that does not exist, and the home page asks for a
+**Stage 1** had the home page, the legal note and the privacy page in the three languages, and the 404 page.
+**Stage 2** adds the other pages: 26 pages and the 404 page. The header holds the main navigation with every page of
+the hotel in its language, and the footer links the legal pages and the sitemap page. So every page is one click
+from every other page. **Stage 3** adds the two forms to the contact page. Until then the contact page asks for a
 room by email and by phone.
+
+**Photos.** Each home page has the hero photo, and the rooms, restaurant and getting-here pages each have one photo
+with a caption. The photos stand in `src/assets/photos/` and reach the pages through Astro's `Picture`, as AVIF with
+a WebP fallback. Every page has the share image `public/og.jpg`. The photos of this sample site are generated
+stand-ins: the acceptance suite of the kit makes them (`test/acceptance/site-assets.ts` of the kit repository), and
+their alt texts describe the photos that the hotel would take.
+
+**The PDF menu.** `public/speisekarte.pdf` is the menu of the restaurant, in German. `site.json` maps it to the
+German restaurant page, and the French and English restaurant pages link it too, marked as German.
 
 **Content that every version of the home page holds:** the price of the double room and the price of the evening
 menu, the phone number and the email address of the hotel, the reception hours and the next closure. The German home
@@ -112,11 +123,15 @@ Clalüna family runs it. The persons who may sign for the company are named in t
 - **The domain.** The production domain is not known yet. The site uses the provisional host `laerchenwald.example`.
   The host stands in `astro-kit.json`, `site.json`, `wrangler.jsonc`, `AGENTS.md` and this brief, and in no file
   under `src/`. `test/README.md` of the kit repository lists these places. That file is outside this folder.
-- **Photos.** The hero photo of the home page and the share image come at stage 2.
+- **Photos.** The photos are generated stand-ins. The hotel replaces them with its own photos, at the same names
+  and sizes, and checks each alt text.
 - **Legal check.** Should a lawyer read the legal note and the privacy page before the launch? Two points for that
   check. Cloudflare can also process data in states other than the United States, and the privacy page names no
-  guarantee for them. And stage 1 asks for a room by email and by phone, but the page says nothing about these
-  enquiries.
+  guarantee for them. And stage 1 asks for a room by email and by phone, and stage 2 asks job seekers for a CV by
+  email, but the page says nothing about these enquiries or applications.
+- **The hours of the restaurant.** `schedule.json` holds the reception hours only, so the restaurant pages show no
+  hours, only the closures between the seasons. Should `schedule.json` get the hours of the restaurant and the
+  terrace? The owner adds such a fact.
 - **The stored display mode.** The privacy page mentions it. The owner decides whether it stays.
 - **The edge of a card in the contrast themes.** A card has a background and a shadow, and a line only with forced
   colors. In every theme its background has a contrast of about 1.1:1 to the page, and in the dark contrast theme the

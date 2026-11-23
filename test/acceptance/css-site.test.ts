@@ -14,7 +14,8 @@
  *   `docs/design.md` (7.10).
  * - Every declaration value gives literals of a known kind; in the project layers (`elements`, `components`,
  *   `page`) it gives no literal and no family problem (7.3).
- * - The layer order of each built page is the order of 7.1, with `astro` first.
+ * - The layer order of each built page is the order of 7.1, with `astro` first. A sub-layer `astro.*` belongs to
+ *   `astro`.
  *
  * Chromium is not needed: the differential stage compares the analyzers with the browser.
  * Run: node --test test/acceptance/css-site.test.ts
@@ -314,7 +315,10 @@ test('M4: the CSS analyzers read every rule and declaration of the built pages a
   // A source file may be empty: `fonts.css` of a site without fonts.
   for (const { text, found } of analyses.filter((each) => each.text.form === 'built')) {
     assert.ok(found.declarations > 0, `${text.name}: no declaration`);
-    assert.deepEqual(found.layers, ORDER, `${text.name}: the layer order`);
+    // A sub-layer of `astro`, such as `astro.images` of a page with an Astro image, belongs to `astro` (7.1,
+    // css-layer-order). A sub-layer of any other layer stays in the list, and fails.
+    const layers = found.layers.filter((name) => !name.startsWith('astro.'));
+    assert.deepEqual(layers, ORDER, `${text.name}: the layer order`);
   }
   // The site has real CSS: hundreds of rules and declarations, not an empty text that passes.
   assert.ok(rules > 100, `${rules} rules in all`);
