@@ -95,3 +95,7 @@
   `Picture`. The contact pages have no form until M7. `test/acceptance/site-assets.ts` makes the committed photos,
   the share image and the PDF, and `site-assets.test.ts` checks that the PDF is the one that `site.json` gives.
   `css-site.test.ts` reads a sub-layer `astro.*` as part of the layer `astro`, as 7.1 says.
+- Milestone M5, part 5d: the planted sets `build` (38 ids), `css` (10 ids), `design` and `modes`, and the five
+  agent mistakes, in `test/acceptance/planted-build.test.ts` and `planted.test.ts`. Each set runs `build` once and
+  asserts its exact ids and no passed line. `KIT_PLANTED_DROP=<id>` runs the `build` or the `css` set without one
+  plant, for the removal proof of a review.

@@ -51,6 +51,9 @@ One spike alone: `node --test test/acceptance/spikes/s05.ts`.
     the dependencies of `test/site/package.json` changed, or when the packed kit of the run is another one than the
     kit it holds. A change in `src/` gives another packed kit. Then make a fresh base copy: run once without
     `KIT_ACCEPTANCE_BASE` and with `KIT_ACCEPTANCE_KEEP=1`.
+- `KIT_PLANTED_DROP=<id>` runs a planted set without the plant of that id, and expects the list without that id. It
+  is for the review only, one run for each id: `planted-build.test.ts` takes an id of the `build` set, and
+  `planted.test.ts` one of the `css` set. A file fails on an id that is not in its set. CI never sets it.
 - `CHROME_PATH=<file>` names the browser. Without it, the suite uses the Chromium that `playwright-core` installed
   (`npx --no playwright-core install chromium`), else `/usr/bin/google-chrome`. When it does not find the Playwright
   build, it says so once on stderr: no pin decides the browser of that run.
@@ -117,6 +120,15 @@ One spike alone: `node --test test/acceptance/spikes/s05.ts`.
   Controls show that each comparison can fail. A gap is a defect of the kit or of the test: fix the module at the
   cause, add the value to its unit test, and correct the specification. The file takes a few seconds after the
   build.
+- `planted-build.test.ts`: the `build` set of the planted sets of M5. One copy of the site gets every plant of the
+  set, one plant for each id, and `build` runs once. The test asserts the exact sorted ids, status 1 and no passed
+  line. A plant on the shared layout or the header acts on one page only. The ids of later rules join with them:
+  the forms ids at M7, `legal-origins` and `origins-third-party` at M8, `legal-approved` at M9.
+- `planted.test.ts`: the planted sets `css`, `design` and `modes` of M5, and the five typical agent mistakes. A set
+  plants every violation of its list in one copy and runs `build` once; it asserts the exact sorted ids and no
+  passed line. The plants of the `css` set are a table, one entry per id. A case that changes `docs/design.md` runs
+  `tokens` first. Each mistake is one change on its own copy and gives exactly one id. `js-budget` joins the `css`
+  set at M8.
 - `site-assets.test.ts`: the committed PDF menu equals the one that `site-assets.ts` makes from `site.json`. A
   change of a menu fact in `site.json` without a new PDF fails here.
 - `spikes.test.ts` and `spikes/`: the spikes S1 to S19. `spikes/sNN.ts` holds the tests of one spike. Every other
