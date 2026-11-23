@@ -11,9 +11,11 @@ import { parseDesign } from '../../src/design/parse.ts';
 import { renderTokens } from '../../src/design/tokens.ts';
 import { renderWrangler } from '../../src/hosts/cloudflare.ts';
 import astroKit from '../../src/index.ts';
+import { enabledModes } from '../../src/modes.ts';
 import type { Options } from '../../src/options.ts';
 import { FindingError, Report } from '../../src/registry.ts';
 import { SHIMS } from '../../src/shims.ts';
+import { cspContent, cspMeta } from './audit-fixtures.ts';
 import {
   EXAMPLE,
   type Files,
@@ -294,8 +296,8 @@ function designMd(themes: readonly ThemeName[]): string {
 }
 
 /**
- * The smallest `elements.css` that uses the pairs of the design document as 7.4 says, with a rule for the two
- * elements of the built pages below (`css-element-coverage`).
+ * The smallest `elements.css` that uses the pairs of the design document as 7.4 says, with a rule for each listed
+ * element of the built pages below: the text and the mode switch (`css-element-coverage`).
  */
 const ELEMENTS_CSS = [
   '@layer elements {',
@@ -310,7 +312,11 @@ const ELEMENTS_CSS = [
   '    outline-color: var(--color-text);',
   '  }',
   '  h1,',
-  '  p {',
+  '  p,',
+  '  fieldset,',
+  '  legend,',
+  '  label,',
+  '  input {',
   '    margin-block-end: var(--space-2);',
   '  }',
   '}',
@@ -327,7 +333,8 @@ function tokensOf(design: string, options: Options): string {
 
 /**
  * The smallest project that passes preflight for the settings: `astro-kit.json`, the two facts files that must
- * exist, the three shims, `wrangler.jsonc`, the design document, its `tokens.css` and `elements.css`. The kit
+ * exist, the three shims, `wrangler.jsonc`, the design document, its `tokens.css`, `elements.css` and an empty
+ * `fonts.css`. The kit
  * compares `wrangler.jsonc` only for a static site, so a forms site gets the static text too.
  */
 function projectFiles(settings: unknown, themes: readonly ThemeName[] = LIGHT): Files {
@@ -342,6 +349,7 @@ function projectFiles(settings: unknown, themes: readonly ThemeName[] = LIGHT): 
     'docs/design.md': design,
     'src/styles/tokens.css': tokensOf(design, options),
     'src/styles/elements.css': ELEMENTS_CSS,
+    'src/styles/fonts.css': '',
   };
 }
 
@@ -1524,14 +1532,237 @@ interface Page {
  * CSS minifies them with the targets of 6.1 (13.1 item 40). The css and design audits pass on it.
  */
 const BUILT_STYLE =
-  '@layer astro;@layer reset{*,:before,:after{box-sizing:border-box}*{margin:0}img,picture,svg,video,canvas{block-size:auto;max-inline-size:100%;display:block}input,button,textarea,select{font:inherit;color:inherit}[hidden]:not([hidden=until-found]),:root:not([data-mode]) [data-mode-switch]{display:none!important}.visually-hidden:not(:focus-within){clip-path:inset(50%)!important;white-space:nowrap!important;block-size:1px!important;inline-size:1px!important;position:absolute!important;overflow:hidden!important}:focus-visible:not([tabindex="-1"]){outline-style:solid!important}@media (prefers-reduced-motion:reduce){*,:before,:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}}@layer tokens{:root{color-scheme:light;--color-text:#222;--color-page:#fff;--font-body:system-ui, sans-serif;--text-m:1rem;--space-2:.5rem}}@layer elements{body{color:var(--color-text);background-color:var(--color-page)}a{color:var(--color-text)}:focus-visible{outline-color:var(--color-text)}h1,p{margin-block-end:var(--space-2)}}@layer layout{.stack{gap:var(--stack-gap);flex-direction:column;display:flex}.cluster{align-items:center;gap:var(--cluster-gap);flex-wrap:wrap;display:flex}.grid{gap:var(--grid-gap);grid-template-columns:repeat(auto-fit, minmax(min(100%, var(--grid-min)), 1fr));display:grid}.center{box-sizing:content-box;max-inline-size:var(--center-max);padding-inline:var(--center-gutter);margin-inline:auto}}@layer components,page;@media (prefers-reduced-motion:no-preference){@view-transition{navigation:auto}}';
+  '@layer astro;@layer reset{*,:before,:after{box-sizing:border-box}*{margin:0}img,picture,svg,video,canvas{block-size:auto;max-inline-size:100%;display:block}input,button,textarea,select{font:inherit;color:inherit}[hidden]:not([hidden=until-found]),:root:not([data-mode]) [data-mode-switch]{display:none!important}.visually-hidden:not(:focus-within){clip-path:inset(50%)!important;white-space:nowrap!important;block-size:1px!important;inline-size:1px!important;position:absolute!important;overflow:hidden!important}:focus-visible:not([tabindex="-1"]){outline-style:solid!important}@media (prefers-reduced-motion:reduce){*,:before,:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}}@layer tokens{:root{color-scheme:light;--color-text:#222;--color-page:#fff;--font-body:system-ui, sans-serif;--text-m:1rem;--space-2:.5rem}}@layer elements{body{color:var(--color-text);background-color:var(--color-page)}a{color:var(--color-text)}:focus-visible{outline-color:var(--color-text)}h1,p,fieldset,legend,label,input{margin-block-end:var(--space-2)}}@layer layout{.stack{gap:var(--stack-gap);flex-direction:column;display:flex}.cluster{align-items:center;gap:var(--cluster-gap);flex-wrap:wrap;display:flex}.grid{gap:var(--grid-gap);grid-template-columns:repeat(auto-fit, minmax(min(100%, var(--grid-min)), 1fr));display:grid}.center{box-sizing:content-box;max-inline-size:var(--center-max);padding-inline:var(--center-gutter);margin-inline:auto}}@layer components,page;@media (prefers-reduced-motion:no-preference){@view-transition{navigation:auto}}';
 
-/** A page as Astro builds it: the CSP meta follows the head tags of the project and stands before the `<style>`. */
-const page = (title: string, styleHash: string, head = ''): Page => ({
-  before: `<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>${title}</title>${head}`,
-  meta: `<meta http-equiv="content-security-policy" content="default-src 'self'; script-src 'self' 'sha256-c2NyaXB0'; style-src 'self' 'sha256-${styleHash}';">`,
-  after: `<style>${BUILT_STYLE}</style></head><body><h1>${title}</h1><p>Zimmer für Gäste, schön &amp; ruhig.</p></body></html>`,
-});
+/** One page of the fake site: its path, its texts, the content of `main`, and its translation. */
+interface FakePage {
+  path: string;
+  title: string;
+  description: string;
+  main: string;
+  /** A JSON-LD block in the head, after the icons, or nothing. */
+  jsonld?: string;
+  /** The path of the same page in the other locale of a site with `fr`. */
+  translation?: string;
+}
+
+/** The texts of the frame of a page in one locale: the skip link, the legal links and the mode switch. */
+interface FrameTexts {
+  tag: string;
+  home: string;
+  skip: string;
+  legalNote: [path: string, name: string];
+  privacy: [path: string, name: string];
+  mode: string;
+  modes: ReadonlyMap<string, string>;
+}
+
+const FRAMES: ReadonlyMap<string, FrameTexts> = new Map([
+  [
+    'de',
+    {
+      tag: 'de-CH',
+      home: '/',
+      skip: 'Zum Inhalt springen',
+      legalNote: ['/impressum/', 'Impressum'],
+      privacy: ['/datenschutz/', 'Datenschutz'],
+      mode: 'Darstellung',
+      modes: new Map([
+        ['auto', 'Automatisch'],
+        ['light', 'Hell'],
+        ['dark', 'Dunkel'],
+        ['contrast', 'Mehr Kontrast'],
+      ]),
+    },
+  ],
+  [
+    'fr',
+    {
+      tag: 'fr-CH',
+      home: '/fr/',
+      skip: 'Aller au contenu',
+      legalNote: ['/fr/mentions-legales/', 'Mentions légales'],
+      privacy: ['/fr/protection-des-donnees/', 'Protection des données'],
+      mode: 'Affichage',
+      modes: new Map([
+        ['auto', 'Automatique'],
+        ['light', 'Clair'],
+        ['dark', 'Sombre'],
+        ['contrast', 'Plus de contraste'],
+      ]),
+    },
+  ],
+]);
+
+const frameOf = (code: string): FrameTexts => need(FRAMES.get(code), `the frame texts of ${code}`);
+
+/** The `WebPage` node of the rooms page, with the date that the sitemap gives as `lastmod`. */
+const roomsJsonld = (tag: string): string =>
+  `<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","dateModified":"2025-06-01","inLanguage":"${tag}"}</script>`;
+
+/** The pages of the fake site in German: the home, the rooms page that links the PDF, and the two legal pages. */
+const GERMAN_PAGES: readonly FakePage[] = [
+  {
+    path: '/',
+    title: 'Hotel Example – Ferien im Tal',
+    description: 'Ein kleines Hotel über dem See, mit ruhigen Zimmern und Wegen ab der Haustür.',
+    main: '<h1>Willkommen im Hotel Example</h1> <p><a href="/zimmer/">Unsere Zimmer</a></p>',
+    translation: '/fr/',
+  },
+  {
+    path: '/zimmer/',
+    title: 'Zimmer im Hotel Example',
+    description: 'Zimmer für Gäste, schön und ruhig, mit Blick auf den See und die Berge.',
+    main: '<h1>Zimmer</h1> <p>Zimmer für Gäste, schön &amp; ruhig.</p> <p><a href="/docs/preise.pdf">Preisliste als PDF</a></p>',
+    jsonld: roomsJsonld('de-CH'),
+    translation: '/fr/chambres/',
+  },
+  {
+    path: '/impressum/',
+    title: 'Impressum des Hotels Example',
+    description: 'Wer das Hotel Example betreibt und wer für die Inhalte dieser Seiten verantwortlich ist.',
+    main: '<h1>Impressum</h1> <p>Example AG betreibt das Hotel.</p>',
+    translation: '/fr/mentions-legales/',
+  },
+  {
+    path: '/datenschutz/',
+    title: 'Datenschutz im Hotel Example',
+    description: 'Welche Daten diese Seiten bearbeiten, wozu, wie lange, und welche Rechte Sie haben.',
+    main: '<h1>Datenschutz</h1> <p>Diese Seiten setzen kein Cookie.</p>',
+    translation: '/fr/protection-des-donnees/',
+  },
+];
+
+/** The same pages in French, for a site with `fr`. */
+const FRENCH_PAGES: readonly FakePage[] = [
+  {
+    path: '/fr/',
+    title: 'Hôtel Example – vacances dans la vallée',
+    description: 'Un petit hôtel au-dessus du lac, avec des chambres calmes et des sentiers devant la porte.',
+    main: '<h1>Bienvenue à l’hôtel Example</h1> <p><a href="/fr/chambres/">Nos chambres</a></p>',
+    translation: '/',
+  },
+  {
+    path: '/fr/chambres/',
+    title: 'Les chambres de l’hôtel Example',
+    description: 'Des chambres belles et calmes, avec vue sur le lac et sur les montagnes de la vallée.',
+    main: '<h1>Chambres</h1> <p>Des chambres belles et calmes.</p> <p><a href="/docs/preise.pdf">Liste des prix en PDF</a></p>',
+    jsonld: roomsJsonld('fr-CH'),
+    translation: '/zimmer/',
+  },
+  {
+    path: '/fr/mentions-legales/',
+    title: 'Mentions légales de l’hôtel Example',
+    description: 'Qui exploite l’hôtel Example et qui répond du contenu de ces pages, en quelques lignes.',
+    main: '<h1>Mentions légales</h1> <p>Example AG exploite l’hôtel.</p>',
+    translation: '/impressum/',
+  },
+  {
+    path: '/fr/protection-des-donnees/',
+    title: 'Protection des données à l’hôtel Example',
+    description: 'Quelles données ces pages traitent, dans quel but, combien de temps, et quels sont vos droits.',
+    main: '<h1>Protection des données</h1> <p>Ces pages ne posent aucun cookie.</p>',
+    translation: '/datenschutz/',
+  },
+];
+
+/** The three icon links of every page (`head-icons`), and their files in dist. */
+const ICON_LINKS =
+  '<link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">';
+const ICON_FILES = ['favicon.ico', 'icon.svg', 'apple-touch-icon.png'] as const;
+
+/** The mode switch of 9.3 for the enabled options, or nothing with fewer than two options. */
+function modeSwitchOf(options: Options, frame: FrameTexts): string {
+  const modes = enabledModes(options);
+  if (modes.length < 2) return '';
+  const radios = modes
+    .map((mode) => `<label> <input type="radio" name="mode" value="${mode}"> ${frame.modes.get(mode) ?? mode} </label>`)
+    .join(' ');
+  return ` <fieldset data-mode-switch> <legend>${frame.mode}</legend> ${radios} </fieldset>`;
+}
+
+/**
+ * A page as Astro builds it, in the shape of the test site: the head tags of the project, then the CSP meta with the
+ * hashes of the kit and of the one `<style>`, then the `<style>`; then the skip link, the header with the mode
+ * switch, `main` and the footer with the legal links. `head` holds more tags after the project head tags.
+ */
+function builtPage(options: Options, fake: FakePage, head = '', meta = true): Page {
+  const code = fake.path.startsWith('/fr/') ? 'fr' : 'de';
+  const frame = frameOf(code);
+  const url = `${options.site}${fake.path}`;
+  const twoLocales = options.locales.length > 1 && fake.translation !== undefined;
+  const pair = twoLocales
+    ? new Map([
+        [code, fake.path],
+        [code === 'de' ? 'fr' : 'de', fake.translation ?? ''],
+      ])
+    : undefined;
+  const alternates =
+    pair === undefined
+      ? ''
+      : [
+          `<link rel="alternate" hreflang="de-CH" href="${options.site}${pair.get('de') ?? ''}">`,
+          `<link rel="alternate" hreflang="fr-CH" href="${options.site}${pair.get('fr') ?? ''}">`,
+          `<link rel="alternate" hreflang="x-default" href="${options.site}${pair.get('de') ?? ''}">`,
+        ].join('');
+  const og = [
+    '<meta property="og:type" content="website">',
+    '<meta property="og:site_name" content="Hotel Example">',
+    `<meta property="og:title" content="${fake.title}">`,
+    `<meta property="og:description" content="${fake.description}">`,
+    `<meta property="og:url" content="${url}">`,
+    `<meta property="og:locale" content="${frame.tag.replace('-', '_')}">`,
+  ].join('');
+  const [notePath, noteName] = frame.legalNote;
+  const [privacyPath, privacyName] = frame.privacy;
+  return {
+    before: `<!DOCTYPE html><html lang="${frame.tag}"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${fake.title}</title><meta name="description" content="${fake.description}"><link rel="canonical" href="${url}">${alternates}${og}${ICON_LINKS}${fake.jsonld ?? ''}${head}`,
+    meta: meta ? cspMeta(cspContent(options, { styles: [BUILT_STYLE] })) : '',
+    after: `<style>${BUILT_STYLE}</style></head> <body> <a class="visually-hidden" href="#content">${frame.skip}</a> <header> <a href="${frame.home}">Hotel Example</a>${modeSwitchOf(options, frame)} </header> <main id="content"> ${fake.main} </main> <footer> <a href="${notePath}">${noteName}</a> <a href="${privacyPath}">${privacyName}</a> </footer> </body> </html>`,
+  };
+}
+
+/** The one 404 page: `noindex`, no canonical and no Open Graph tags, and a link to each locale home. */
+function notFoundOf(options: Options): Page {
+  const frame = frameOf('de');
+  const french = options.locales.some((locale) => locale.code === 'fr')
+    ? ' <p lang="fr-CH"><a href="/fr/">Vers la page d’accueil</a></p>'
+    : '';
+  const [notePath, noteName] = frame.legalNote;
+  const [privacyPath, privacyName] = frame.privacy;
+  return {
+    before: `<!DOCTYPE html><html lang="de-CH"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Nicht gefunden</title><meta name="description" content="Diese Seite gibt es nicht. Vielleicht ist die Adresse falsch geschrieben."><meta name="robots" content="noindex">${ICON_LINKS}`,
+    meta: cspMeta(cspContent(options, { styles: [BUILT_STYLE] })),
+    after: `<style>${BUILT_STYLE}</style></head> <body> <a class="visually-hidden" href="#content">${frame.skip}</a> <header> <a href="/">Hotel Example</a>${modeSwitchOf(options, frame)} </header> <main id="content"> <h1>Diese Seite gibt es nicht</h1> <p><a href="/">Zur Startseite</a></p>${french} </main> <footer> <a href="${notePath}">${noteName}</a> <a href="${privacyPath}">${privacyName}</a> </footer> </body> </html>`,
+  };
+}
+
+/** The dist file of a page path: `/` gives `index.html`, `/zimmer/` gives `zimmer/index.html`. */
+const fileOfPath = (path: string): string => `${path.slice(1)}index.html`;
+
+/**
+ * The pages of the fake dist for the settings, by file: the four German pages and `/404.html`, and with `fr` the
+ * four French pages. Every page passes the audits of the kit. `extra` pages are linked from the home page.
+ */
+function builtPages(
+  settings: unknown,
+  extra: readonly Page[] = [],
+  extraPaths: readonly string[] = [],
+): Record<string, Page> {
+  const options = optionsOf(settings);
+  const french = options.locales.some((locale) => locale.code === 'fr');
+  const links = extraPaths.map((path) => ` <p><a href="${path}">Seite ${path}</a></p>`).join('');
+  const pages: Record<string, Page> = {};
+  for (const fake of [...GERMAN_PAGES, ...(french ? FRENCH_PAGES : [])]) {
+    const main = fake.path === '/' ? `${fake.main}${links}` : fake.main;
+    pages[fileOfPath(fake.path)] = builtPage(options, { ...fake, main });
+  }
+  pages['404.html'] = notFoundOf(options);
+  extra.forEach((page, index) => {
+    pages[fileOfPath(need(extraPaths[index], 'a path of an extra page'))] = page;
+  });
+  return pages;
+}
 
 const sourceOf = (built: Page): string => built.before + built.meta + built.after;
 const withInsert = (built: Page, insert: string): string => built.before + built.meta + insert + built.after;
@@ -1539,31 +1770,25 @@ const withInsert = (built: Page, insert: string): string => built.before + built
 /** The bytes of a text, one character for each byte, so that a comparison shows every byte. */
 const bytesOf = (text: string): string => Buffer.from(text, 'utf8').toString('latin1');
 
-const canonical = (path: string): string => `<link rel="canonical" href="https://example.ch${path}">`;
-
-/** The pages of the fake dist: two that the sitemap lists, one with `noindex`, and the 404 page. */
-const BUILT_PAGES: Readonly<Record<string, Page>> = {
-  'index.html': page('Start', 'aG9tZQ==', canonical('/')),
-  'zimmer/index.html': page(
-    'Zimmer',
-    'emltbWVy',
-    `${canonical('/zimmer/')}<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","dateModified":"2025-06-01"}</script>`,
-  ),
-  'entwurf/index.html': page(
-    'Entwurf',
-    'ZW50d3VyZg==',
-    `${canonical('/entwurf/')}<meta name="robots" content="noindex">`,
-  ),
-  '404.html': page('Nicht gefunden', 'NDA0'),
-};
+/** The bytes of each page with the insert of `build:done`, by file. */
+const insertedBytes = (pages: Readonly<Record<string, Page>>, insert: string): Record<string, string> =>
+  Object.fromEntries(Object.entries(pages).map(([file, built]) => [file, bytesOf(withInsert(built, insert))]));
 
 const PDF = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0x0a, 0xff, 0x00]);
 
-/** The files of a fake client directory under `folder`: the pages, a CSS file and a PDF. */
-const distFiles = (folder: string): Files => ({
-  ...Object.fromEntries(Object.entries(BUILT_PAGES).map(([file, built]) => [`${folder}/${file}`, sourceOf(built)])),
+/** `site.json` with the PDF of the fake dist as a document of the rooms page (`media-pdf`). */
+const SITE_WITH_PDF = { ...SITE, documents: { 'docs/preise.pdf': '/zimmer/' } };
+
+/**
+ * The files of a fake client directory under `folder` for the settings: the pages, a CSS file, the icons and a PDF,
+ * and the `site.json` that names the PDF.
+ */
+const distFiles = (folder: string, settings: unknown, pages = builtPages(settings)): Files => ({
+  ...Object.fromEntries(Object.entries(pages).map(([file, built]) => [`${folder}/${file}`, sourceOf(built)])),
+  ...Object.fromEntries(ICON_FILES.map((file) => [`${folder}/${file}`, file])),
   [`${folder}/_astro/index.a1b2c3.css`]: '@layer reset{h1{margin:0}}',
   [`${folder}/docs/preise.pdf`]: PDF,
+  'site.json': json(SITE_WITH_PDF),
 });
 
 const REDIRECTS = [
@@ -1585,6 +1810,8 @@ const SITEMAP = [
   '<?xml version="1.0" encoding="UTF-8"?>',
   '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
   '<url><loc>https://example.ch/</loc></url>',
+  '<url><loc>https://example.ch/datenschutz/</loc></url>',
+  '<url><loc>https://example.ch/impressum/</loc></url>',
   '<url><loc>https://example.ch/zimmer/</loc><lastmod>2025-06-01</lastmod></url>',
   '</urlset>',
   '',
@@ -1630,9 +1857,9 @@ function textOf(file: string): string {
   }
 }
 
-/** The bytes of each page of the fake dist, by file. */
-const pageBytes = (dist: string): Record<string, string> =>
-  Object.fromEntries(Object.keys(BUILT_PAGES).map((file) => [file, readFileSync(join(dist, file)).toString('latin1')]));
+/** The bytes of each given page of the fake dist, by file. */
+const pageBytes = (dist: string, pages: Readonly<Record<string, Page>>): Record<string, string> =>
+  Object.fromEntries(Object.keys(pages).map((file) => [file, readFileSync(join(dist, file)).toString('latin1')]));
 
 /** The text of each edge file of the client directory, by file. */
 const edgeTexts = (dist: string): Record<string, string> =>
@@ -1659,8 +1886,9 @@ test('build:done on a static site: both inserts right after the CSP meta, no oth
   const input: SiteInput = {
     settings: FOUR_MODES,
     themes: FOUR_THEMES,
-    files: { ...distFiles('dist'), 'redirects.json': json(REDIRECTS) },
+    files: { ...distFiles('dist', FOUR_MODES), 'redirects.json': json(REDIRECTS) },
   };
+  const pages = builtPages(FOUR_MODES);
   const seen = await inSite(input, (site) =>
     withSha('0123456789abcdef0123456789abcdef01234567', async () => {
       const dist = join(site.root, 'dist');
@@ -1671,7 +1899,7 @@ test('build:done on a static site: both inserts right after the CSP meta, no oth
         error,
         before,
         after: Date.now(),
-        pages: pageBytes(dist),
+        pages: pageBytes(dist, pages),
         edge: edgeTexts(dist),
         pdf: [...readFileSync(join(dist, 'docs/preise.pdf'))],
         css: textOf(join(dist, '_astro/index.a1b2c3.css')),
@@ -1685,10 +1913,7 @@ test('build:done on a static site: both inserts right after the CSP meta, no oth
   // The mode script comes first, then the speculation block (6.1, step 1). Every other byte is as Astro wrote it.
   const insert = modeInsertOf(['auto', 'light', 'dark', 'contrast'], 'auto') + SPECULATION_INSERT;
   assert.equal(sha256(modeScriptOf(['auto', 'light', 'dark', 'contrast'], 'auto')), MODE_HASH_ALL);
-  assert.deepEqual(
-    seen.pages,
-    Object.fromEntries(Object.entries(BUILT_PAGES).map(([file, built]) => [file, bytesOf(withInsert(built, insert))])),
-  );
+  assert.deepEqual(seen.pages, insertedBytes(pages, insert));
   assert.ok(seen.pages['index.html']?.includes(`';">${bytesOf(insert)}<style>`), 'between the meta and the <style>');
   assert.deepEqual(seen.pdf, [...PDF]);
   assert.equal(seen.css, '@layer reset{h1{margin:0}}');
@@ -1703,7 +1928,7 @@ test('build:done on a static site: both inserts right after the CSP meta, no oth
       'sitemap.xml': SITEMAP,
       '.well-known/security.txt': securityOf('de'),
       '_kit/release.txt': `0123456789abcdef0123456789abcdef01234567\n@raess/astro-kit ${VERSION}\n`,
-      '_kit/routes.txt': '/\n/docs/preise.pdf\n/entwurf/\n/zimmer/\n',
+      '_kit/routes.txt': '/\n/datenschutz/\n/docs/preise.pdf\n/impressum/\n/zimmer/\n',
     },
   );
 
@@ -1736,23 +1961,22 @@ test('build:done inserts only what the settings ask for, and release.txt says lo
   const seen: { name: string; error: unknown; pages: Record<string, string>; release: string }[] = [];
   for (const [name, settings, themes] of cases) {
     seen.push(
-      await inSite({ settings, themes, files: distFiles('dist') }, (site) =>
+      await inSite({ settings, themes, files: distFiles('dist', settings) }, (site) =>
         withSha(undefined, async () => {
           const error = await buildDone(site);
           const dist = join(site.root, 'dist');
-          return { name, error, pages: pageBytes(dist), release: textOf(join(dist, '_kit/release.txt')) };
+          const pages = pageBytes(dist, builtPages(settings));
+          return { name, error, pages, release: textOf(join(dist, '_kit/release.txt')) };
         }),
       ),
     );
   }
   assert.deepEqual(
     seen,
-    cases.map(([name, , , insert]) => ({
+    cases.map(([name, settings, , insert]) => ({
       name,
       error: undefined,
-      pages: Object.fromEntries(
-        Object.entries(BUILT_PAGES).map(([file, built]) => [file, bytesOf(withInsert(built, insert))]),
-      ),
+      pages: insertedBytes(builtPages(settings), insert),
       release: `local\n@raess/astro-kit ${VERSION}\n`,
     })),
   );
@@ -1765,7 +1989,7 @@ test('build:done on a forms site works in the client directory, and merges the _
     settings: EXAMPLE,
     themes: LIGHT_DARK,
     files: {
-      ...distFiles('dist/client'),
+      ...distFiles('dist/client', EXAMPLE),
       'dist/client/_headers': adapterRule,
       'dist/server/entry.mjs': 'export {};\n',
     },
@@ -1776,7 +2000,7 @@ test('build:done on a forms site works in the client directory, and merges the _
     return {
       setup: site.error,
       error,
-      pages: pageBytes(client),
+      pages: pageBytes(client, builtPages(EXAMPLE)),
       headers: textOf(join(client, '_headers')),
       security: textOf(join(client, '.well-known/security.txt')),
       outside: EDGE_FILES.map((file) => textOf(join(site.root, 'dist', file)).startsWith('no file ')),
@@ -1786,10 +2010,7 @@ test('build:done on a forms site works in the client directory, and merges the _
   assert.equal(seen.setup, undefined);
   assert.equal(seen.error, undefined);
   const insert = modeInsertOf(['auto', 'light', 'dark'], 'auto') + SPECULATION_INSERT;
-  assert.deepEqual(
-    seen.pages,
-    Object.fromEntries(Object.entries(BUILT_PAGES).map(([file, built]) => [file, bytesOf(withInsert(built, insert))])),
-  );
+  assert.deepEqual(seen.pages, insertedBytes(builtPages(EXAMPLE), insert));
   assert.equal(seen.headers, HEADERS, 'the rule of the kit comes first, and there is one asset rule');
   assert.equal(withoutTime(seen.security), securityOf('de, fr'));
   assert.deepEqual(
@@ -1820,7 +2041,7 @@ test('build:done throws a FindingError with exactly the ids of the audits that f
   const seen: { name: string; ids: string[]; written: boolean[] }[] = [];
   for (const [name, files] of PLANTS) {
     seen.push(
-      await inSite({ settings: SMALLEST, files: { ...distFiles('dist'), ...files } }, async (site) => {
+      await inSite({ settings: SMALLEST, files: { ...distFiles('dist', SMALLEST), ...files } }, async (site) => {
         const error = await buildDone(site);
         const dist = join(site.root, 'dist');
         return {
@@ -1841,7 +2062,7 @@ test('build:done keeps a rule of an existing _headers that passes the audit', as
   const seen = await inSite(
     {
       settings: SMALLEST,
-      files: { ...distFiles('dist'), 'dist/_headers': '# A comment.\n/docs/*\n  X-Robots-Tag: noindex\n' },
+      files: { ...distFiles('dist', SMALLEST), 'dist/_headers': '# A comment.\n/docs/*\n  X-Robots-Tag: noindex\n' },
     },
     async (site) => ({ error: await buildDone(site), headers: textOf(join(site.root, 'dist/_headers')) }),
   );
@@ -1849,26 +2070,44 @@ test('build:done keeps a rule of an existing _headers that passes the audit', as
   assert.equal(seen.headers, `${HEADERS}/docs/*\n  X-Robots-Tag: noindex\n`);
 });
 
-test('build:done stops with a plain error for a page without a CSP meta, and only when there is an insert', async () => {
-  // The page has the CSS of every page, so only its missing meta can fail the build.
-  const bare = `<!DOCTYPE html><html lang="de"><head><title>Kontakt</title><style>${BUILT_STYLE}</style></head><body><h1>Kontakt</h1></body></html>`;
-  const files = { ...distFiles('dist'), 'dist/kontakt/index.html': bare, 'dist/a/b/index.html': bare };
-  const run = (settings: unknown): Promise<{ message: string; page: string; headers: boolean }> =>
-    inSite({ settings, files }, async (site) => {
+test('build:done stops with a plain error for a page without a CSP meta when there is an insert; without one, csp-meta reports it', async () => {
+  // The two pages pass every other rule, so only their missing meta can fail the build.
+  const options = optionsOf(SMALLEST);
+  const bareOf = (path: string, title: string): Page =>
+    builtPage(
+      options,
+      {
+        path,
+        title,
+        description: `Die Seite ${title} des Hotels Example, ohne die Richtlinie der Inhaltssicherheit.`,
+        main: `<h1>${title}</h1>`,
+      },
+      '',
+      false,
+    );
+  const paths = ['/kontakt/', '/a/b/'];
+  const extra = [bareOf('/kontakt/', 'Kontakt zum Hotel Example'), bareOf('/a/b/', 'Eine tiefe Seite des Hotels')];
+  const bare = sourceOf(need(extra[0], 'the bare page'));
+  assert.ok(!bare.includes('content-security-policy'), 'the page has no CSP meta');
+  const run = (settings: unknown): Promise<{ message: string; findings: string[]; page: string; headers: boolean }> =>
+    inSite({ settings, files: distFiles('dist', settings, builtPages(settings, extra, paths)) }, async (site) => {
       const error = await buildDone(site);
       return {
         message: error === undefined ? 'passed' : messageOf(error),
+        findings: error instanceof FindingError ? findingsOf(error).map((line) => line.split(':')[0] ?? '') : [],
         page: textOf(join(site.root, 'dist/kontakt/index.html')),
         headers: !textOf(join(site.root, 'dist/_headers')).startsWith('no file '),
       };
     });
   assert.deepEqual(await run(SMALLEST), {
     message: 'astro-kit: a/b/index.html has no CSP meta\nastro-kit: kontakt/index.html has no CSP meta',
+    findings: [],
     page: bare,
     headers: false,
   });
   assert.deepEqual(await run({ ...SMALLEST, prefetch: NO_SPECULATION }), {
-    message: 'passed',
+    message: 'a FindingError: csp-meta',
+    findings: ['csp-meta /a/b/', 'csp-meta /kontakt/'],
     page: bare,
     headers: true,
   });
@@ -1893,7 +2132,7 @@ test('build:done loads the facts, the redirects and the design again: a file tha
   const seen: { name: string; setup: unknown; ids: string[]; headers: boolean }[] = [];
   for (const [name, change] of cases) {
     seen.push(
-      await inSite({ settings: SMALLEST, files: distFiles('dist') }, async (site) => {
+      await inSite({ settings: SMALLEST, files: distFiles('dist', SMALLEST) }, async (site) => {
         change(site.root);
         const error = await buildDone(site);
         const headers = !textOf(join(site.root, 'dist/_headers')).startsWith('no file ');

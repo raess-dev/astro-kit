@@ -1099,6 +1099,40 @@ export function classNames(compound: Compound): NameSelector[] {
   return out;
 }
 
+/**
+ * The class names of a first compound that can hold a component root (7.1, 7.8): its own (`[class~=x]` too, with each
+ * `:is()` of one compound put into it), and those of the first compound of each argument of its `:is()` and
+ * `:where()` (CSS Nesting writes a parent list in this way).
+ */
+export function rootCandidates(compound: Compound, depth = 0): string[] {
+  const flat = flatten(compound);
+  const out = classNames(flat).map((item) => item.name);
+  if (depth >= MAX_DEPTH) return out;
+  for (const pseudo of flat.pseudoClasses) {
+    if (pseudo.name !== 'is' && pseudo.name !== 'where') continue;
+    for (const selector of pseudo.selectors ?? []) {
+      const first = selector.compounds[0];
+      if (first !== undefined) out.push(...rootCandidates(first, depth + 1));
+    }
+  }
+  return out;
+}
+
+/**
+ * The component of a selector: the one whose root or modifier class its first compound holds, as `rootCandidates`
+ * reads it (7.8). `undefined` when it starts at no component root. Built CSS has no file name, so the class tells the
+ * component, and a Components row of `docs/design.md` is read in the same way.
+ */
+export function rootComponentOf(selector: ComplexSelector, components: ReadonlySet<string>): string | undefined {
+  const first = selector.compounds[0];
+  for (const name of first === undefined ? [] : rootCandidates(first)) {
+    const owner = ownerOf(name, components);
+    const role = owner === undefined ? undefined : classRole(name, owner);
+    if (owner !== undefined && (role === 'root' || role === 'modifier')) return owner;
+  }
+  return undefined;
+}
+
 /** The operators of an attribute selector that match a part of a value: `^=`, `$=`, `*=` and `|=`. */
 const PART_OPERATORS: ReadonlySet<string> = new Set(['^=', '$=', '*=', '|=']);
 

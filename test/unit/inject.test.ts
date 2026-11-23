@@ -254,6 +254,14 @@ test('cspMetaEnd gives the index right after the meta', () => {
   assert.equal(cspMetaEnd('<i><p>'), undefined);
 });
 
+test('cspMetaEnd reads only a meta that a browser applies: none after the head ends, none in a template', () => {
+  assert.equal(cspMetaEnd(`<html><head>${META}</head>`), 12 + META.length);
+  assert.equal(cspMetaEnd(`<html><head></head><body>${META}</body>`), undefined);
+  assert.equal(cspMetaEnd(`<html><head><title>a</title></HEAD >${META}`), undefined);
+  assert.equal(cspMetaEnd(`<html><body><main>${META}</main>`), undefined);
+  assert.equal(cspMetaEnd(`<head><template>${META}</template>${META}`), 6 + 10 + META.length + 11 + META.length);
+});
+
 test('the text goes right after the first CSP meta, and a page without one gives undefined', () => {
   const insert = (html: string): string | undefined => {
     const result = insertAfterCspMeta(Buffer.from(html), INSERT);

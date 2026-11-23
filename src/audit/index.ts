@@ -6,6 +6,8 @@ import type { Audit, BuildContext } from '../context.ts';
 import { auditCss } from '../css/rules.ts';
 import { auditDesign } from '../design/rules.ts';
 import { auditEdge } from './edge.ts';
+import { auditHtml } from './html.ts';
+import { auditPage } from './page.ts';
 
 /** The audit groups in the order of step 4: page, site, budgets, CSS, design (built halves), edge, html-validate. */
 export const AUDIT_ORDER = ['page', 'site', 'budgets', 'css', 'design', 'edge', 'html'] as const;
@@ -17,21 +19,22 @@ export type AuditName = (typeof AUDIT_ORDER)[number];
 export type AuditSet = Readonly<Partial<Record<AuditName, Audit>>>;
 
 /**
- * The audits that exist at this milestone. A later milestone adds its audit under its name, and `runAudits` runs
- * it at its place in `AUDIT_ORDER`.
+ * The audits of the kit. A later milestone adds its rules to the audit of their group, and `runAudits` runs every
+ * audit at its place in `AUDIT_ORDER`.
  */
 export const AUDITS: AuditSet = {
-  // page (M5, `src/audit/page.ts`): head, JSON-LD, headings, indexing, CSP, scripts, the mode script and switch,
-  // images, fonts, origins, shell, SVG, media and forms, for each page.
-  // site (M5, `src/audit/site.ts`): routes, hreflang, links, depth, facts, content and legal, across the pages.
-  // budgets (M5, `src/audit/budgets.ts`): compressed sizes, DOM counts, fonts and JS import closures.
+  // page: the built halves of the rules that read each page on its own: head, JSON-LD, headings, indexing, CSP,
+  // the speculation block, the mode script and switch, images, fonts, shell, SVG and media.
+  page: auditPage,
+  // site and budgets: the rules that read the pages together, and the budgets, arrive in part 5c of M5.
   // css: the built halves of the `css-*` rules and of `modes-media`.
   css: auditCss,
   // design: the built halves of `design-tokens` and `design-specs` (`design-pairs` has no built half).
   design: auditDesign,
   // edge: `_headers` and `_redirects`, after `writeEdgeFiles` wrote them.
   edge: auditEdge,
-  // html (M5, `src/audit/html.ts`): html-validate with the kit config.
+  // html: html-validate with the kit config, last.
+  html: auditHtml,
 };
 
 /**
