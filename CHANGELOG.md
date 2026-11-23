@@ -81,3 +81,6 @@
   pages whose facts equal `site.json`. Two facts patterns and the font regex backtrack on long runs, so they run as
   linear matchers that give the same matches. A link to the file of a page (`/x/index.html`) counts as a link to the
   page in every rule.
+- The tool runner names the signal when a signal ends a tool. Astro can crash on a page that nests very deep, and
+  `astro-kit build` then ended with 1 and no reason; now it prints `astro-kit: astro build was stopped by SIGSEGV`
+  and that no check gave this result.
