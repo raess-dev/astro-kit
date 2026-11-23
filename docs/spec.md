@@ -958,6 +958,7 @@ Canonical: ${site}/.well-known/security.txt
   - Env: `ASTRO_TELEMETRY_DISABLED=1`. It tees the output.
   - On failure it appends the lines matching `/✗ \[|^\s+(fix|rule): /` to `GITHUB_STEP_SUMMARY` inside a ```` ```text ```` fence, or `<pkg> <args> failed; see the job log.` when there are none.
   - A missing package fails with `astro-kit: <pkg> is not installed; run npm ci --ignore-scripts`.
+  - A tool that a signal ends (a crash, or a kill) fails with status 1. The runner then prints `astro-kit: <pkg> <args> was stopped by <signal>: the tool crashed or was killed, so no check gave this result.` on stderr, because such a tool often prints no reason.
 - **Network re-spawn.** For `smoke`, `provision` and `feedback`: when `HTTPS_PROXY` or `https_proxy` is set and `NODE_USE_ENV_PROXY` is not, re-spawn the CLI with `NODE_USE_ENV_PROXY=1` and `NODE_NO_WARNINGS=1`, and return the child's status (`?? 1`). `ci` is excluded, so that an unresolvable host (ENOTFOUND) is a skip, not a proxy refusal.
 - **User agents.**
   - `astro-kit/<v> (+https://github.com/raess-dev/astro-kit; smoke)`

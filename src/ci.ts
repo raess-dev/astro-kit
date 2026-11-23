@@ -52,6 +52,10 @@ export const FINDING_LINE = /✗ \[|^\s+(fix|rule): /;
 /** The message for a package that no `node_modules` folder holds (6.4). */
 export const notInstalled = (pkg: string): string => `astro-kit: ${pkg} is not installed; run npm ci --ignore-scripts`;
 
+/** The message for a tool that a signal ended before it gave a status (6.4). */
+export const toolStopped = (pkg: string, args: readonly string[], signal: string): string =>
+  `astro-kit: ${[pkg, ...args].join(' ')} was stopped by ${signal}: the tool crashed or was killed, so no check gave this result.`;
+
 /** The summary text for a failed tool that printed no finding (6.4). */
 export const toolFailed = (pkg: string, args: readonly string[]): string =>
   `${[pkg, ...args].join(' ')} failed; see the job log.`;
@@ -167,7 +171,11 @@ export function runTool(root: string, pkg: string, args: readonly string[], io: 
       io.err(`astro-kit: ${pkg} did not start: ${error.message}\n`);
       settle(1);
     });
-    child.on('close', (code) => settle(code ?? 1));
+    child.on('close', (code, signal) => {
+      // A signal leaves no status and often no output. Without this line, the run ends with 1 and no reason.
+      if (signal !== null && !settled) io.err(`${toolStopped(pkg, args, signal)}\n`);
+      settle(code ?? 1);
+    });
   });
 }
 

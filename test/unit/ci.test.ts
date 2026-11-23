@@ -17,6 +17,7 @@ import {
   type ToolIo,
   tokens,
   toolFailed,
+  toolStopped,
 } from '../../src/ci.ts';
 import { DOCS_PATH, type Finding, failures, formatFindings, getRule } from '../../src/registry.ts';
 import { type Files, inTemp, inTempAsync, json, SMALLEST } from './fixtures.ts';
@@ -416,11 +417,11 @@ const TOOL_CASES: readonly ToolCase[] = [
     summary: '\n```text\n✗ [a-b] x: y\n    fix: z\n```\n',
   },
   {
-    name: 'a tool that a signal ends gives 1',
+    name: 'a tool that a signal ends gives 1, and the line that names the signal',
     fake: { kill: true },
     code: 1,
     out: '',
-    err: '',
+    err: `${toolStopped('tool', ['run', '--flag'], 'SIGKILL')}\n`,
     summary: FAILED,
   },
   {
