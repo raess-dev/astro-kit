@@ -1,0 +1,23 @@
+@layer components {
+  .page-index {
+    --stack-gap: var(--space-3);
+
+    .page-index__list {
+      gap: 0;
+      padding-inline-start: 0;
+      list-style-type: none;
+    }
+
+    /* Each link stands alone in its row, so it is a target of 44 px. */
+    .page-index__link {
+      display: inline-flex;
+      align-items: center;
+      min-block-size: var(--size-target);
+    }
+
+    .page-index__link[aria-current="page"] {
+      font-weight: var(--weight-bold);
+      color: var(--color-title);
+    }
+  }
+}

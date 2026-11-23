@@ -1,0 +1,21 @@
+---
+import PageIndex from '../components/PageIndex.astro';
+import TextSection from '../components/TextSection.astro';
+import Page from '../layouts/Page.astro';
+
+const locale = 'de';
+---
+
+<Page
+  locale={locale}
+  page="sitemap"
+  title="Sitemap – alle Seiten des Hotels Lärchenwald"
+  description="Alle Seiten dieser Website auf einen Blick: das Hotel, die Zimmer und Preise, das Restaurant, die Anreise, der Kontakt, die Jobs und die rechtlichen Angaben."
+  modified="2026-11-23"
+>
+  <TextSection>
+    <h1>Sitemap</h1>
+    <p class="lede">Hier finden Sie jede Seite dieser Website in einer Liste.</p>
+    <PageIndex locale={locale} page="sitemap" />
+  </TextSection>
+</Page>

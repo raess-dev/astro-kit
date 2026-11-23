@@ -38,6 +38,18 @@ export function contact(name: string): (typeof site.contacts)[number] {
 /** The ids of the prices in `site.json`. */
 export type PriceId = 'room-single' | 'room-double' | 'room-family' | 'dog' | 'parking' | 'dinner-menu';
 
+/** One row of a price list: a name, a price of `site.json` and what the price is for. */
+export interface PriceItem {
+  /** The name of the item, such as the kind of room. */
+  label: string;
+  /** The id of the price in `site.json`. */
+  price: PriceId;
+  /** What the price is for, after the amount: `pro Nacht`. */
+  unit: string;
+  /** One sentence on what the price includes. */
+  note?: string;
+}
+
 /**
  * A price of `site.json` as text in the form of the locale, for example `CHF 320.00` or `320.00 CHF`.
  * The amount in the file is in minor units (Rappen).

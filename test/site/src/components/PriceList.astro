@@ -1,0 +1,28 @@
+---
+/**
+ * A list of prices: each item has its name, its price from `site.json` and what the price includes. The price is
+ * text, written by `price()`, so it equals the fact.
+ */
+import '../styles/components/price-list.css';
+import { type PriceItem, price } from '../data/facts.ts';
+import type { Locale } from '../data/locales.ts';
+
+interface Props {
+  locale: Locale;
+  items: readonly PriceItem[];
+}
+
+const { locale, items } = Astro.props;
+---
+
+<dl class="price-list">
+  {items.map((item) => (
+    <div class="price-list__item">
+      <dt>{item.label}</dt>
+      <dd class="price-list__price">
+        {price(item.price, locale)} {item.unit}
+      </dd>
+      {item.note !== undefined && <dd class="price-list__note">{item.note}</dd>}
+    </div>
+  ))}
+</dl>

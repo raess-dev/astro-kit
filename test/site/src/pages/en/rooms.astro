@@ -1,0 +1,80 @@
+---
+import rooms from '../../assets/photos/rooms.jpg';
+import FeatureCard from '../../components/FeatureCard.astro';
+import Photo from '../../components/Photo.astro';
+import PriceList from '../../components/PriceList.astro';
+import TextSection from '../../components/TextSection.astro';
+import type { PriceItem } from '../../data/facts.ts';
+import { linkTo } from '../../data/routes.ts';
+import Page from '../../layouts/Page.astro';
+
+const locale = 'en';
+const prices: PriceItem[] = [
+  { label: 'Single room', price: 'room-single', unit: 'per night', note: 'For one person, with breakfast.' },
+  { label: 'Double room', price: 'room-double', unit: 'per night', note: 'For two people, with breakfast.' },
+  {
+    label: 'Family room',
+    price: 'room-family',
+    unit: 'per night',
+    note: 'For two adults and up to two children, with breakfast.',
+  },
+  { label: 'Dog', price: 'dog', unit: 'per night', note: 'With a blanket and a bowl in the room.' },
+  {
+    label: 'Garage space',
+    price: 'parking',
+    unit: 'per day',
+    note: 'In the garage under the house, with a charging point for electric cars.',
+  },
+];
+---
+
+<Page
+  locale={locale}
+  page="rooms"
+  title="Rooms and prices – Hotel Lärchenwald in Sils"
+  description="Single, double and family rooms in stone pine, each with a balcony and breakfast. Here are the prices per night, for your dog and for the garage."
+  modified="2026-11-23"
+>
+  <TextSection>
+    <h1>Rooms and prices</h1>
+    <p class="lede">
+      All 24 rooms are panelled in stone pine and have a balcony. Most look out over Lake Sils or into the Fex valley;
+      the single rooms face the quiet forest. Breakfast is always included in the price.
+    </p>
+    <Photo
+      src={rooms}
+      alt="A double room with stone pine walls, a wide bed and the open door to the balcony"
+      caption="A double room on the second floor, looking into the Fex valley."
+    />
+
+    <h2>Our rooms</h2>
+    <div class="grid">
+      <FeatureCard title="Single room">
+        <p>A quiet room with a bed 120 cm wide, a desk by the window and a balcony that faces the forest.</p>
+      </FeatureCard>
+      <FeatureCard title="Double room">
+        <p>
+          A double bed 180 cm wide or two separate beds, a seating corner and a balcony with a view of the lake or the
+          Fex valley.
+        </p>
+      </FeatureCard>
+      <FeatureCard title="Family room">
+        <p>
+          Two rooms with a door between them: a double bed for the parents and two beds for the children. We will gladly
+          add a cot.
+        </p>
+      </FeatureCard>
+    </div>
+
+    <h2>Prices</h2>
+    <PriceList locale={locale} items={prices} />
+    <p>All prices are in Swiss francs and include VAT. The local visitor’s tax is charged on top.</p>
+
+    <h2>Ask for a room</h2>
+    <p>
+      Tell us when you would like to come, how many of you there are and which room you would like. We will answer
+      within a day.
+    </p>
+    <p><a class="button" href={linkTo('contact', locale)}>Ask for a room</a></p>
+  </TextSection>
+</Page>

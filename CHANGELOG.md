@@ -84,3 +84,18 @@
 - The tool runner names the signal when a signal ends a tool. Astro can crash on a page that nests very deep, and
   `astro-kit build` then ended with 1 and no reason; now it prints `astro-kit: astro build was stopped by SIGSEGV`
   and that no check gave this result.
+- `routes-slug` has its build half. Every built page path other than `/404.html` must end in `/`, and each of its
+  segments must be a slug. A default-locale path must not start with a locale code or a reserved segment, and a
+  non-default path must have no reserved segment after `/<code>/`. Before, only the endpoint clause ran, so a page
+  built at `/en/getting_here/` passed the build.
+- The test site, stage 2 (milestone M5, part 5d). It has 17 more pages: rooms, restaurant, getting here, contact,
+  jobs and a sitemap page in German and in French, and the same in English without jobs. So it has 26 pages and
+  `/404.html`. The pages hold the content of 14.2: the six prices as text, the PDF menu, the guest quote in English,
+  one priority photo on each home, and the share image on every page. The photos come from `src/assets/` through
+  `Picture`. The contact pages have no form until M7. `test/acceptance/site-assets.ts` makes the committed photos,
+  the share image and the PDF, and `site-assets.test.ts` checks that the PDF is the one that `site.json` gives.
+  `css-site.test.ts` reads a sub-layer `astro.*` as part of the layer `astro`, as 7.1 says.
+- Milestone M5, part 5d: the planted sets `build` (38 ids), `css` (10 ids), `design` and `modes`, and the five
+  agent mistakes, in `test/acceptance/planted-build.test.ts` and `planted.test.ts`. Each set runs `build` once and
+  asserts its exact ids and no passed line. `KIT_PLANTED_DROP=<id>` runs the `build` or the `css` set without one
+  plant, for the removal proof of a review.

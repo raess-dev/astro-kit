@@ -16,6 +16,7 @@ import {
   auditLinksSameName,
   auditLinksTargetBlank,
   auditRoutes404,
+  auditRoutesSlug,
   auditRoutesTranslation,
   notFoundSegmentMessage,
   SITE_RULES,
@@ -161,6 +162,48 @@ test('routes-404 fails a form on /404.html that posts to /api/forms/, and a cont
 test('routes-404 leaves a kit form on another page to the form rules', () => {
   const main = '<h1>Kontakt</h1> <form method="post" action="/api/forms/contact"><button>Senden</button></form>';
   assert.deepEqual(ids(run(auditRoutes404, withMain(main))), []);
+});
+
+// routes-slug, the build half
+
+test('routes-slug passes the fixture site: every page path is a clean slug path', () => {
+  assert.deepEqual(ids(run(auditRoutesSlug, site())), []);
+});
+
+test('routes-slug fails a built page path with an underscore, at the path, with the file', () => {
+  const report = run(auditRoutesSlug, siteWith({ 'fr/getting_here/index.html': page(OPTIONS, '/fr/getting_here/') }));
+  assert.deepEqual(ids(report), ['routes-slug']);
+  assert.deepEqual(findings(report), [
+    'routes-slug /fr/getting_here/ built as fr/getting_here/index.html: the segment getting_here is not a slug',
+  ]);
+});
+
+test('routes-slug fails upper case, a path without a final slash and a reserved or locale first segment', () => {
+  const cases: [string, string][] = [
+    ['Zimmer/index.html', '/Zimmer/'],
+    ['fr/404.html', '/fr/404.html'],
+    ['zimmer.html', '/zimmer.html'],
+    ['de/zimmer/index.html', '/de/zimmer/'],
+    ['api/index.html', '/api/'],
+    ['_kit/seite/index.html', '/_kit/seite/'],
+    ['fr/api/index.html', '/fr/api/'],
+  ];
+  for (const [file, path] of cases) {
+    const report = run(auditRoutesSlug, siteWith({ [file]: page(OPTIONS, path) }));
+    assert.deepEqual(ids(report), ['routes-slug'], file);
+    assert.equal(findings(report)[0]?.startsWith(`routes-slug ${path} built as ${file}: `), true, file);
+  }
+});
+
+test('routes-slug leaves /404.html and a 404 segment alone: routes-404 reports /fr/404/ once', () => {
+  const files = siteWith({ 'fr/404/index.html': page(OPTIONS, '/fr/404/') });
+  assert.deepEqual(ids(run(auditRoutesSlug, files)), []);
+  assert.deepEqual(ids(run([auditRoutes404, auditRoutesSlug], files)), ['routes-404']);
+});
+
+test('routes-slug runs in the site audit, between routes-404 and routes-translation', () => {
+  const list = SITE_RULES.map((rule) => rule.id);
+  assert.deepEqual(list.slice(0, 3), ['routes-404', 'routes-slug', 'routes-translation']);
 });
 
 // routes-translation

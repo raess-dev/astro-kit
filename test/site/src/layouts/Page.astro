@@ -43,6 +43,15 @@ if (path !== undefined && Astro.url.pathname !== path) {
 }
 
 const canonical = path === undefined ? undefined : absoluteUrl(path);
+
+/** The share image of every page: `public/og.jpg`, at the size that `head-og` asks for. */
+const SHARE_IMAGE = { path: '/og.jpg', width: 1200, height: 630 };
+/** What the share image shows, in each language. */
+const SHARE_ALT: Readonly<Record<Locale, string>> = {
+  de: 'Der Lärchenwald über dem Silsersee im Herbst',
+  fr: 'La forêt de mélèzes au-dessus du lac de Sils en automne',
+  en: 'The larch forest above Lake Sils in autumn',
+};
 const alternates = page === undefined ? [] : alternatesOf(page);
 const fallback = alternates.find((alternate) => alternate.locale === DEFAULT_LOCALE);
 
@@ -92,6 +101,10 @@ const jsonLd = JSON.stringify({ '@context': 'https://schema.org', '@graph': grap
         <meta property="og:description" content={description} />
         <meta property="og:url" content={canonical} />
         <meta property="og:locale" content={tag.replace('-', '_')} />
+        <meta property="og:image" content={absoluteUrl(SHARE_IMAGE.path)} />
+        <meta property="og:image:width" content={String(SHARE_IMAGE.width)} />
+        <meta property="og:image:height" content={String(SHARE_IMAGE.height)} />
+        <meta property="og:image:alt" content={SHARE_ALT[locale]} />
       </>
     )}
     <link rel="icon" href="/favicon.ico" sizes="32x32">

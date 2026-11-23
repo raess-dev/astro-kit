@@ -1,0 +1,39 @@
+---
+/**
+ * A photo of the house in running text, with an optional caption. The kit's image rules want a `picture` with AVIF
+ * sources and a WebP `img`, both with a `sizes` that matches the width of the column.
+ */
+
+import { Picture } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+import '../styles/components/photo.css';
+
+interface Props {
+  /** A photo of `src/assets/`, at least 960 px wide. */
+  src: ImageMetadata;
+  /** What the photo shows, in the language of the page. */
+  alt: string;
+  /** A caption below the photo. */
+  caption?: string;
+}
+
+const { src, alt, caption } = Astro.props;
+
+/** The widths of the photo: the column is at most 46 rem (736 px) wide. */
+const WIDTHS = [640, 960];
+/** The width of the column: 46 rem, or the viewport without the side padding of the page. */
+const SIZES = '(min-width: 50rem) 46rem, calc(100vw - 2.5rem)';
+---
+
+<figure class="photo">
+  <Picture
+    class="photo__image"
+    src={src}
+    alt={alt}
+    formats={['avif']}
+    fallbackFormat="webp"
+    widths={WIDTHS}
+    sizes={SIZES}
+  />
+  {caption !== undefined && <figcaption>{caption}</figcaption>}
+</figure>

@@ -1,15 +1,21 @@
 ---
+import homeHero from '../assets/photos/home-hero.jpg';
 import FeatureCard from '../components/FeatureCard.astro';
 import GuestQuote from '../components/GuestQuote.astro';
 import Hero from '../components/Hero.astro';
 import TextSection from '../components/TextSection.astro';
 import { closures, formatPhone, mailHref, openingHours, price, site, telHref } from '../data/facts.ts';
+import { linkTo } from '../data/routes.ts';
 import { UI } from '../data/ui.ts';
 import Page from '../layouts/Page.astro';
 import '../styles/pages/index.css';
 
 const locale = 'de';
 const text = UI[locale];
+const heroPhoto = {
+  src: homeHero,
+  alt: 'Das Hotel Lärchenwald am Waldrand über dem Silsersee, im ersten Licht des Morgens',
+};
 ---
 
 <Page
@@ -18,12 +24,12 @@ const text = UI[locale];
   title="Hotel Lärchenwald – Ihr Berghotel in Sils im Engadin"
   description="Familienhotel am Lärchenwald über dem Silsersee: ruhige Zimmer mit Arvenholz, Engadiner Küche und Wanderwege ab der Haustür. Fragen Sie Ihr Zimmer direkt an."
 >
-  <Hero eyebrow="Sils im Engadin · 1809 m ü. M." title="Ruhe finden zwischen Lärchen und See">
+  <Hero eyebrow="Sils im Engadin · 1809 m ü. M." photo={heroPhoto} title="Ruhe finden zwischen Lärchen und See">
     <p class="lede">
       Das Hotel Lärchenwald liegt am Eingang zum Fextal, zehn Gehminuten vom Silsersee. Seit drei Generationen empfängt
       Familie Clalüna hier Gäste, die Stille, gutes Essen und weite Wege suchen.
     </p>
-    <p><a class="button" href={mailHref(site.email)}>Zimmer anfragen</a></p>
+    <p><a class="button" href={linkTo('contact', locale)}>Zimmer anfragen</a></p>
     <p>Oder rufen Sie uns an: <a href={telHref(site.phone)}>{formatPhone(site.phone)}</a></p>
   </Hero>
 
@@ -49,6 +55,7 @@ const text = UI[locale];
           Frühstücksbuffet mit Brot aus dem Dorf und Engadiner Bergkäse ist im Preis inbegriffen.
         </p>
         <p><strong>Doppelzimmer ab {price('room-double', locale)} pro Nacht</strong></p>
+        <p><a href={linkTo('rooms', locale)}>Alle Zimmer und ihre Preise</a></p>
       </FeatureCard>
       <FeatureCard title="Engadiner Küche">
         <p>
@@ -56,6 +63,7 @@ const text = UI[locale];
           Nusstorte nach dem Rezept der Grossmutter.
         </p>
         <p><strong>Abendmenü {price('dinner-menu', locale)} pro Person</strong></p>
+        <p><a href={linkTo('restaurant', locale)}>Das Restaurant und die Speisekarte</a></p>
       </FeatureCard>
       <FeatureCard title="Wandern ab der Haustür">
         <p>
@@ -89,6 +97,7 @@ const text = UI[locale];
       Haltestelle «Sils/Segl Maria, Posta» liegt fünf Gehminuten vom Hotel. Auf Wunsch holen wir Sie und Ihr Gepäck dort
       ab.
     </p>
+    <p><a href={linkTo('gettingHere', locale)}>Die Anreise mit Bahn, Bus und Auto</a></p>
     <address>
       {site.name}<br>
       {site.address.street}<br>

@@ -1,0 +1,76 @@
+---
+import restaurant from '../../assets/photos/restaurant.jpg';
+import ContactCard from '../../components/ContactCard.astro';
+import Photo from '../../components/Photo.astro';
+import PriceList from '../../components/PriceList.astro';
+import TextSection from '../../components/TextSection.astro';
+import { closures, contact } from '../../data/facts.ts';
+import { localeInfo } from '../../data/locales.ts';
+import { documentOf } from '../../data/routes.ts';
+import { UI } from '../../data/ui.ts';
+import Page from '../../layouts/Page.astro';
+
+const locale = 'en';
+const text = UI[locale];
+const kitchen = contact('Restaurant');
+// The menu is written in German.
+const menuLanguage = localeInfo('de').tag;
+---
+
+<Page
+  locale={locale}
+  page="restaurant"
+  title="Restaurant – Engadin cooking at Hotel Lärchenwald"
+  description="A four-course evening menu made with produce from the Engadin and the Bregaglia valley, for hotel guests and for guests from the village. Book a table by phone."
+  modified="2026-11-23"
+>
+  <TextSection>
+    <h1>Restaurant</h1>
+    <p class="lede">
+      In the stone pine parlour and on the terrace, our chef Reto Caduff serves simple Engadin dishes made with produce
+      from the region, for our hotel guests and for guests from the village.
+    </p>
+    <Photo
+      src={restaurant}
+      alt="The stone pine parlour in the evening, with laid tables, candles and the old soapstone stove"
+      caption="The stone pine parlour with its soapstone stove from 1926."
+    />
+
+    <h2>The evening menu</h2>
+    <p>
+      Every evening we serve a four-course menu: barley soup, capuns, game from the Fex valley and the nut tart of the
+      Engadin, baked to the grandmother’s recipe. In summer we pick the herbs on the alpine pastures, and the vegetables
+      come from the Bregaglia valley.
+    </p>
+    <PriceList
+      locale={locale}
+      items={[
+        {
+          label: 'Four-course evening menu',
+          price: 'dinner-menu',
+          unit: 'per person',
+          note: 'We will gladly cook it vegetarian. Please tell us when you book.',
+        },
+      ]}
+    />
+
+    <h2>The menu</h2>
+    <p>
+      The four courses of this season’s evening menu and its price are on our menu. Our staff will recommend the wines
+      at your table. The menu is written in German.
+    </p>
+    <p><a href={documentOf('restaurant')} hreflang={menuLanguage}>The menu as a PDF, in German</a></p>
+
+    <h2>Book a table</h2>
+    <p>Guests from the village and the valley are welcome. Please book your table by phone with the restaurant.</p>
+    <ContactCard locale={locale} name="Restaurant Lärchenwald" phone={kitchen.phone} />
+    <dl>
+      {closures(locale).map((range) => (
+        <>
+          <dt>{text.closed}</dt>
+          <dd>{range}</dd>
+        </>
+      ))}
+    </dl>
+  </TextSection>
+</Page>

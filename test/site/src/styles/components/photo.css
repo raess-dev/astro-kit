@@ -1,0 +1,10 @@
+@layer components {
+  /* A photo is as wide as a heading, so it lines up with the text above and below it. */
+  .photo {
+    max-inline-size: var(--size-heading);
+
+    .photo__image {
+      border-radius: var(--radius-l);
+    }
+  }
+}

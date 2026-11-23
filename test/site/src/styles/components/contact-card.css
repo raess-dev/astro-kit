@@ -1,0 +1,20 @@
+@layer components {
+  .contact-card {
+    display: grid;
+    gap: var(--space-2);
+    max-inline-size: var(--size-measure);
+    padding: var(--space-5);
+    background-color: var(--color-surface);
+
+    /* With forced colors the browser removes the background, and it paints this line. */
+    border: var(--line-thin) solid transparent;
+    border-radius: var(--radius-l);
+
+    .contact-card__name {
+      font-family: var(--font-display);
+      font-size: var(--text-l);
+      line-height: var(--leading-snug);
+      color: var(--color-title);
+    }
+  }
+}

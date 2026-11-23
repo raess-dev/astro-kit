@@ -1,13 +1,14 @@
 ---
 /**
- * The header of every page: the brand name as a link to the home page of the locale, the language links and the
- * mode switch. Without a page (the 404 page), every language link leads to the home page of its locale.
+ * The header of every page: the brand name as a link to the home page of the locale, the language links, the
+ * mode switch and, in a row of its own, the main navigation. Without a page (the 404 page), every language link leads to the home page of its locale.
  */
 import '../styles/components/site-header.css';
 import { site } from '../data/facts.ts';
 import type { Locale } from '../data/locales.ts';
 import { languageLinks, linkTo, type PageKey } from '../data/routes.ts';
 import { UI } from '../data/ui.ts';
+import MainNav from './MainNav.astro';
 import ModeSwitch from './ModeSwitch.astro';
 
 interface Props {
@@ -49,5 +50,6 @@ const languages = languageLinks(page, locale);
       </nav>
       <ModeSwitch locale={locale} />
     </div>
+    <MainNav locale={locale} page={page} />
   </div>
 </header>

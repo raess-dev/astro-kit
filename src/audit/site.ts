@@ -6,6 +6,7 @@
  * **Who reports what.**
  *
  * - A missing `/404.html` and a second 404 page are `routes-404`'s alone.
+ * - A page path that is not a clean slug path is `routes-slug`'s; a `404` segment in it stays `routes-404`'s.
  * - `routes-translation` asks that an alternate is listed; `hreflang-reciprocal` that each listed alternate is
  *   valid and points back; `hreflang-x-default` that `x-default` is the default-locale alternate, and it skips a page
  *   without a default-locale alternate (`routes-translation`'s).
@@ -26,7 +27,7 @@ import type { BuildContext, BuiltPage } from '../context.ts';
 import { snippet } from '../css/rules.ts';
 import { fieldPlace, type Locale, OPTIONS_FILE } from '../options.ts';
 import { redirectMatcher } from '../redirects.ts';
-import { localeHome, NOT_FOUND_PATH, pathSegments } from '../routes.ts';
+import { localeHome, NOT_FOUND_PATH, pagePathProblems, pathSegments } from '../routes.ts';
 import {
   type Alternate,
   type AuditRule,
@@ -141,6 +142,18 @@ export function auditRoutes404(ctx: BuildContext): void {
     if (target.kind === 'internal' && target.path.startsWith(FORM_ACTION_PREFIX)) {
       ctx.report.add('routes-404', NOT_FOUND_PATH, `<${tag} ${name}=${shown(action)}> posts to a kit form`);
     }
+  }
+}
+
+/**
+ * `routes-slug`, the build half: every built page path other than `/404.html` is a clean slug path
+ * (`pagePathProblems` of `../routes.ts`). One finding for each page, at its path, that names every problem. The
+ * endpoint clause runs on the resolved routes (`checkResolvedRoutes`).
+ */
+export function auditRoutesSlug(ctx: BuildContext): void {
+  for (const page of ctx.pages) {
+    const problems = pagePathProblems(page.path, ctx.options);
+    if (problems.length > 0) ctx.report.add('routes-slug', page.path, `built as ${page.file}: ${problems.join('; ')}`);
   }
 }
 
@@ -644,6 +657,7 @@ export function auditLegalStatement(ctx: BuildContext): void {
 /** The rules of the site audit, in the order of section 8, the text rules of `./text.ts` included. */
 export const SITE_RULES: readonly AuditRule[] = [
   { id: 'routes-404', run: auditRoutes404 },
+  { id: 'routes-slug', run: auditRoutesSlug },
   { id: 'routes-translation', run: auditRoutesTranslation },
   { id: 'hreflang-reciprocal', run: auditHreflangReciprocal },
   { id: 'hreflang-x-default', run: auditHreflangXDefault },

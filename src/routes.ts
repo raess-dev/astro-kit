@@ -1,8 +1,8 @@
 /**
  * Paths and routes of a site: the reserved segments, the slug pattern, the locale of a path, the locale homes and
- * the 404 path (specification, sections 6.1 and 8, `routes-slug` and `routes-404`), and the checks of
- * `astro:routes:resolved` (`routes-on-demand` and the endpoint clause of `routes-slug`). Pure functions: they read
- * no file and keep no state.
+ * the 404 path (specification, sections 6.1 and 8, `routes-slug` and `routes-404`), the check of a built page path
+ * (the build half of `routes-slug`), and the checks of `astro:routes:resolved` (`routes-on-demand` and the endpoint
+ * clause of `routes-slug`). Pure functions: they read no file and keep no state.
  */
 import type { Report } from './registry.ts';
 
@@ -69,6 +69,41 @@ export function localeHomes(options: LocaleSettings): string[] {
 /** Says whether the path is the home of a locale. The comparison is exact: `/fr` is not `/fr/`. */
 export function isLocaleHome(path: string, options: LocaleSettings): boolean {
   return localeHomes(options).includes(path);
+}
+
+/**
+ * The build half of `routes-slug`: every reason why a built page path is not a clean slug path. An empty list means
+ * that it is one. `/404.html` gives none: it is the one page path without a final `/`.
+ *
+ * - The path ends in `/`. A path without it is a file such as `/a.html` or `/fr/404.html`; then only the folders
+ *   before the file name are checked as segments.
+ * - Each segment matches `SLUG`.
+ * - A default-locale path does not start with a locale code or a reserved segment.
+ * - A non-default path has no reserved segment after `/<code>/`.
+ *
+ * A `404` segment matches `SLUG` and is not reserved, so it gives no problem here: `routes-404` reports it once.
+ */
+export function pagePathProblems(path: string, options: LocaleSettings): string[] {
+  if (path === NOT_FOUND_PATH) return [];
+  const problems: string[] = [];
+  const isFolder = path.endsWith('/');
+  if (!isFolder) problems.push('the path does not end in /');
+  const segments = pathSegments(path);
+  const folders = isFolder ? segments : segments.slice(0, -1);
+  const locale = localeOfPath(path, options);
+  const start = locale === options.defaultLocale ? 0 : 1;
+  const first = folders[start];
+  let reserved = -1;
+  if (first !== undefined && isReservedSegment(first)) {
+    problems.push(`it starts with the reserved segment ${first}`);
+    reserved = start;
+  } else if (start === 0 && first !== undefined && options.locales.some((entry) => entry.code === first)) {
+    problems.push(`a default-locale path starts with the locale code ${first}`);
+  }
+  folders.forEach((segment, index) => {
+    if (index !== reserved && !SLUG.test(segment)) problems.push(`the segment ${segment} is not a slug`);
+  });
+  return problems;
 }
 
 // The resolved routes

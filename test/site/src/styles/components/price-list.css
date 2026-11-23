@@ -1,0 +1,29 @@
+@layer components {
+  /* One row for each price, with a line between the rows. The price stands at the end of the row. */
+  .price-list {
+    display: grid;
+    max-inline-size: var(--size-measure);
+    border-block-start: var(--line-thin) solid var(--color-line);
+
+    .price-list__item {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: var(--space-1) var(--space-4);
+      align-items: baseline;
+      padding-block: var(--space-3);
+      border-block-end: var(--line-thin) solid var(--color-line);
+    }
+
+    .price-list__price {
+      font-weight: var(--weight-strong);
+      color: var(--color-title);
+      text-align: end;
+    }
+
+    .price-list__note {
+      grid-column: 1 / -1;
+      font-size: var(--text-s);
+      color: var(--color-muted);
+    }
+  }
+}

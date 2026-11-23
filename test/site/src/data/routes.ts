@@ -6,10 +6,36 @@
  * at the path of the row. The layout stops the build when the two do not match.
  */
 import settings from '../../astro-kit.json';
+import site from '../../site.json';
 import { DEFAULT_LOCALE, LOCALES, type Locale, SITE } from './locales.ts';
 
-/** The pages of the site. A page has one key in every locale. */
-export type PageKey = 'home' | 'legalNote' | 'privacy';
+/** The pages of the site. A page has one key, and a path in each locale that has it. */
+export type PageKey =
+  | 'home'
+  | 'rooms'
+  | 'restaurant'
+  | 'gettingHere'
+  | 'contact'
+  | 'jobs'
+  | 'legalNote'
+  | 'privacy'
+  | 'sitemap';
+
+/** Every page key, in the order of the sitemap page. */
+export const PAGE_KEYS: readonly PageKey[] = [
+  'home',
+  'rooms',
+  'restaurant',
+  'gettingHere',
+  'contact',
+  'jobs',
+  'legalNote',
+  'privacy',
+  'sitemap',
+];
+
+/** The pages of the main navigation in the header, in its order. A locale shows those that it has. */
+export const NAV_KEYS: readonly PageKey[] = ['home', 'rooms', 'restaurant', 'gettingHere', 'contact', 'jobs'];
 
 /** The path of the home page of a locale: `/` for the default locale, `/<code>/` for the others. */
 const homePath = (locale: Locale): string => (locale === DEFAULT_LOCALE ? '/' : `/${locale}/`);
@@ -17,13 +43,19 @@ const homePath = (locale: Locale): string => (locale === DEFAULT_LOCALE ? '/' : 
 const homes = (): Record<Locale, string> => ({ de: homePath('de'), fr: homePath('fr'), en: homePath('en') });
 
 /**
- * Page key → locale → path. A locale without the page has no entry (the partial locale `en` will have no jobs
- * page). The legal paths are the ones that `astro-kit.json` declares.
+ * Page key → locale → path. A locale without the page has no entry: the partial locale `en` has no jobs page. The
+ * legal paths are the ones that `astro-kit.json` declares.
  */
 const ROUTES: Readonly<Record<PageKey, Readonly<Partial<Record<Locale, string>>>>> = {
   home: homes(),
+  rooms: { de: '/zimmer/', fr: '/fr/chambres/', en: '/en/rooms/' },
+  restaurant: { de: '/restaurant/', fr: '/fr/restaurant/', en: '/en/restaurant/' },
+  gettingHere: { de: '/anreise/', fr: '/fr/acces/', en: '/en/getting-here/' },
+  contact: { de: '/kontakt/', fr: '/fr/contact/', en: '/en/contact/' },
+  jobs: { de: '/jobs/', fr: '/fr/emplois/' },
   legalNote: settings.legal.legalNote,
   privacy: settings.legal.privacy,
+  sitemap: { de: '/sitemap/', fr: '/fr/plan-du-site/', en: '/en/sitemap/' },
 };
 
 /** The path of a page in a locale, or `undefined` when the locale has no such page. */
@@ -36,6 +68,17 @@ export function linkTo(page: PageKey, locale: Locale): string {
   return path;
 }
 
+/**
+ * The path of the PDF that `site.json` `documents` maps to a page (in the default locale): `/speisekarte.pdf` for the
+ * restaurant. The pages of the other locales link the same file.
+ */
+export function documentOf(page: PageKey): string {
+  const path = linkTo(page, DEFAULT_LOCALE);
+  const file = Object.entries(site.documents).find(([, target]) => target === path)?.[0];
+  if (file === undefined) throw new Error(`src/data/routes.ts: site.json documents maps no PDF to ${path}`);
+  return `/${file}`;
+}
+
 /** The absolute URL of a path of the site. */
 export const absoluteUrl = (path: string): string => `${SITE}${path}`;
 
@@ -45,6 +88,10 @@ export interface Alternate {
   tag: string;
   path: string;
 }
+
+/** The keys of `keys` that have a page in the locale, in the same order. */
+export const pagesIn = (keys: readonly PageKey[], locale: Locale): PageKey[] =>
+  keys.filter((key) => pathOf(key, locale) !== undefined);
 
 /** Every locale version of a page, the page itself included, in the order of the locales. */
 export function alternatesOf(page: PageKey): Alternate[] {
