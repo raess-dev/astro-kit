@@ -149,6 +149,16 @@ export function didNotFinish(error: unknown): string {
 
 // The page helpers
 
+/** What `a11y-focus` asks of a focus ring (`focusRing`). */
+export interface RingFloor {
+  /** The least `outline-width`, in CSS pixels. */
+  px: number;
+  /** The least contrast of the ring against the color behind it. */
+  contrast: number;
+  /** Only the color: the other themes measure the width and the style once, in the states of a fresh tab. */
+  colorOnly: boolean;
+}
+
 /** A box in CSS pixels, relative to the viewport. */
 export interface Box {
   left: number;
@@ -189,6 +199,24 @@ export interface PageHelpers {
   boxes(element: Element): Box[];
   /** The four channels of a color painted on a 1×1 canvas, each 0 to 255; `[]` for a text that is no color. */
   pixel(color: string): number[];
+  /** The color `top` composited over `bottom`, both painted colors of four channels (0 to 255). */
+  over(top: readonly number[], bottom: readonly number[]): number[];
+  /** The WCAG contrast ratio of two opaque painted colors, from their relative luminance. */
+  contrast(a: readonly number[], b: readonly number[]): number;
+  /**
+   * The opaque color behind the focus ring of an element (section 8, Measurement details): the walk starts at the
+   * parent when `outline-offset` ≥ 0, else at the element, goes up the flat tree, and composites each
+   * `background-color` until the color is opaque, then over white. `null` when an element of the walk, up to the
+   * first opaque one, has a `background-image`: the ring then has no single color behind it.
+   */
+  behindRing(element: Element): number[] | null;
+  /**
+   * Measures the ring of the focused element (`a11y-focus`): the element and the detail of a failing ring, else
+   * `null`. The focused element inside a shadow root is the one measured. Not measured: the body, `html`, the root of
+   * the state, an `iframe` (its own document draws the ring), and a control that does not match `:focus` while it
+   * holds the focus (the focus is on a part that the browser draws inside it, such as the picker of a date field).
+   */
+  focusRing(least: RingFloor): { element: Element; detail: string } | null;
   /** Says whether an animation of the document runs (`document.getAnimations()`). */
   animating(): boolean;
   /**
@@ -386,6 +414,76 @@ export function installHelpers(): void {
       paint.fillStyle = color;
       paint.fillRect(0, 0, 1, 1);
       return [...paint.getImageData(0, 0, 1, 1).data];
+    },
+    over: (top, bottom) => {
+      const alpha = (top[3] ?? 255) / 255;
+      const base = (bottom[3] ?? 255) / 255;
+      const out = alpha + base * (1 - alpha);
+      if (out === 0) return [0, 0, 0, 0];
+      const channel = (index: number): number =>
+        Math.round(((top[index] ?? 0) * alpha + (bottom[index] ?? 0) * base * (1 - alpha)) / out);
+      return [channel(0), channel(1), channel(2), Math.round(out * 255)];
+    },
+    contrast: (a, b) => {
+      const linear = (value: number): number => {
+        const c = value / 255;
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      };
+      const luminance = (color: readonly number[]): number =>
+        0.2126 * linear(color[0] ?? 0) + 0.7152 * linear(color[1] ?? 0) + 0.0722 * linear(color[2] ?? 0);
+      const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+      return ((high ?? 0) + 0.05) / ((low ?? 0) + 0.05);
+    },
+    behindRing: (element) => {
+      const offset = Number.parseFloat(getComputedStyle(element).outlineOffset) || 0;
+      const up = (from: Element): Element | null => {
+        if (from.assignedSlot) return from.assignedSlot;
+        if (from.parentElement) return from.parentElement;
+        const root = from.getRootNode();
+        return root instanceof ShadowRoot ? root.host : null;
+      };
+      let node: Element | null = offset < 0 ? element : up(element);
+      // The layers from the nearest to the farthest; the walk ends at the first opaque one.
+      const layers: number[][] = [];
+      while (node !== null) {
+        const style = getComputedStyle(node);
+        // A background image paints over the background color, so the ring has no single color behind it.
+        if (style.backgroundImage !== 'none') return null;
+        const color = helpers.pixel(style.backgroundColor);
+        if (color.length === 4 && (color[3] ?? 0) > 0) layers.push(color);
+        if (color[3] === 255) break;
+        node = up(node);
+      }
+      let result = [255, 255, 255, 255];
+      for (const layer of layers.reverse()) result = helpers.over(layer, result);
+      return result;
+    },
+    focusRing: (least) => {
+      let active = document.activeElement;
+      while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+      if (active === null || active === helpers.root()) return null;
+      if (active === document.body || active === document.documentElement || active.localName === 'iframe') return null;
+      if (!active.matches(':focus')) return null;
+      const style = getComputedStyle(active);
+      if (style.outlineStyle === 'none' || Number.parseFloat(style.outlineWidth) < least.px) {
+        if (least.colorOnly) return null;
+        // With `outline-style: none` a newer Chromium still computes the width, so the detail leaves the width out.
+        const shown =
+          style.outlineStyle === 'none' ? 'no outline' : `the outline ${style.outlineWidth} ${style.outlineStyle}`;
+        return { element: active, detail: `${helpers.describe(active)} shows ${shown}` };
+      }
+      // The color: the ring composited over the color behind it, against that color.
+      const ring = helpers.pixel(style.outlineColor);
+      const behind = helpers.behindRing(active);
+      if (ring.length !== 4 || behind === null) return null;
+      const ratio = helpers.contrast(helpers.over(ring, behind), behind);
+      if (ratio >= least.contrast) return null;
+      const [red, green, blue] = behind;
+      const shown = (Math.floor(ratio * 100) / 100).toFixed(2);
+      return {
+        element: active,
+        detail: `${helpers.describe(active)} shows a ring of contrast ${shown}:1 on rgb(${red}, ${green}, ${blue})`,
+      };
     },
     animating: () => document.getAnimations().some((animation) => animation.playState === 'running'),
     calm: () => {

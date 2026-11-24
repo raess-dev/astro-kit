@@ -143,5 +143,8 @@
     each state of the reveal step.
   - A link inside `strong` or another inline element of a sentence is inline for `a11y-targets`. `a11y-reflow`
     skips `.visually-hidden`, and `a11y-spacing` counts only a box that holds text.
+  - `a11y-focus` also measures the color of the ring: at least 3:1 against the color behind it (WCAG 1.4.11), in
+    every state and, at 1280×800, in each other declared theme. Before, a component rule such as
+    `outline-color: transparent` hid the ring and passed `build` and `test`.
   - A page that does not load within 30 s costs one limit for the whole run. `test --outline` on a target that
     answers other than 2xx exits 1. `--shots` joins the segments of a path with `--`.

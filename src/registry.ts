@@ -858,9 +858,9 @@ export const RULES: readonly Rule[] = [
     'a11y-focus',
     'a11y',
     'browser',
-    'The first Tab and every sweep stop show `outline-style` other than `none` and `outline-width` ≥ 2 px. A mouse click on a link, button or summary shows `none` or 0. A sweep is the Tab sequence of `a11y-keyboard`, through its stops, in each state of that rule. A press that leaves the focus on a part that the browser draws inside a control (the picker button of a date field, the volume of a player), where the control does not match `:focus`, is not measured, and neither is an `iframe`.',
-    'An element that the keyboard focuses shows no focus ring of at least 2 px, or a mouse click shows one.',
-    'Give `:focus-visible` an outline of at least 2 px (for example `outline: var(--line-2) solid var(--color-focus)`), and never set an outline on `:focus` alone.',
+    'The first Tab and every sweep stop show `outline-style` other than `none` and `outline-width` ≥ 2 px, and a ring with a contrast of at least 3:1 against the color behind it (WCAG 1.4.11). In each declared theme that a fresh tab does not show, at 1280×800, each stop takes the focus in turn and its ring color is measured again; an element that the fresh 1280×800 tab reported is not reported again in another theme. A mouse click on a link, button or summary shows `none` or 0. A sweep is the Tab sequence of `a11y-keyboard`, through its stops, in each state of that rule. A press that leaves the focus on a part that the browser draws inside a control (the picker button of a date field, the volume of a player), where the control does not match `:focus`, is not measured, and neither is an `iframe`.',
+    'An element that the keyboard focuses shows no focus ring of at least 2 px and 3:1 contrast, or a mouse click shows one.',
+    'Give `:focus-visible` an outline of at least 2 px in the focus color (for example `outline: var(--line-2) solid var(--color-focus)`), never override its color in a component, and never set an outline on `:focus` alone.',
   ),
   r(
     'a11y-targets',

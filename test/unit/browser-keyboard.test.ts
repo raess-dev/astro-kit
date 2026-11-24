@@ -75,6 +75,85 @@ test('a11y-focus: a ring of 1px fails at each sweep stop, once per state', async
   ]);
 });
 
+/** A page with one more link, of class `ring`, and its CSS; `wrap` puts markup around the link. */
+const ringPage = (css: string, wrap: [string, string] = ['<p>', '</p>']): string =>
+  html(BODY.replace('</main>', `${wrap[0]}<a class="ring" href="/zimmer/">Zimmer</a>${wrap[1]}</main>`), {
+    css: `${CSS}${css}`,
+  });
+
+/** The findings of `a11y-focus` on a ring page. */
+const ringPlaces = (css: string, wrap?: [string, string]): Promise<string[]> =>
+  placesOf(browser(), { 'index.html': ringPage(css, wrap) }, [focus]);
+
+/** The three states of a fresh tab, each with the same detail. */
+const inStates = (detail: string): string[] => [
+  `/ 1280×800: ${detail}`,
+  `/ 390×844: ${detail}`,
+  `/ 390×844 after the reveal step: ${detail}`,
+];
+
+test('a11y-focus: a transparent ring fails, and the other theme does not report it again', async () => {
+  assert.deepEqual(
+    await ringPlaces('.ring:focus-visible{outline-color:transparent}'),
+    inStates('a.ring "Zimmer" shows a ring of contrast 1.00:1 on rgb(255, 255, 255)'),
+  );
+});
+
+test('a11y-focus: a ring in the color of the page background fails', async () => {
+  assert.deepEqual(
+    await ringPlaces(
+      'body{background:#204060;color:#fff}a{color:#fff}:focus-visible{outline-color:#fff}.ring:focus-visible{outline-color:#204060}',
+    ),
+    inStates('a.ring "Zimmer" shows a ring of contrast 1.00:1 on rgb(32, 64, 96)'),
+  );
+});
+
+test('a11y-focus: a ring at 30% alpha is composited over the background, and fails', async () => {
+  assert.deepEqual(
+    await ringPlaces('.ring:focus-visible{outline-color:rgb(0 0 0 / 30%)}'),
+    inStates('a.ring "Zimmer" shows a ring of contrast 2.12:1 on rgb(255, 255, 255)'),
+  );
+});
+
+test('a11y-focus: the contrast floor is 3:1 against white: #949494 passes, #959595 fails', async () => {
+  assert.deepEqual(await ringPlaces('.ring:focus-visible{outline-color:#949494}'), []);
+  assert.deepEqual(
+    await ringPlaces('.ring:focus-visible{outline-color:#959595}'),
+    inStates('a.ring "Zimmer" shows a ring of contrast 2.99:1 on rgb(255, 255, 255)'),
+  );
+});
+
+test('a11y-focus: a ring with a negative offset is measured against the element, else against its parent', async () => {
+  const dark = '.ring{background:#1f3a5f;color:#fff}.ring:focus-visible{outline-color:#fff;';
+  assert.deepEqual(await ringPlaces(`${dark}outline-offset:-4px}`), []);
+  assert.deepEqual(
+    await ringPlaces(`${dark}outline-offset:2px}`),
+    inStates('a.ring "Zimmer" shows a ring of contrast 1.00:1 on rgb(255, 255, 255)'),
+  );
+});
+
+test('a11y-focus: a ring over a background image has no single color behind it and is not measured', async () => {
+  const css = '.photo{background-image:linear-gradient(#000,#fff)}.ring:focus-visible{outline-color:transparent}';
+  assert.deepEqual(await ringPlaces(css, ['<p class="photo">', '</p>']), []);
+});
+
+test('a11y-focus: a ring that vanishes only in the dark theme fails there, at 1280×800', async () => {
+  const css =
+    '@media (prefers-color-scheme: dark){body{background:#000;color:#fff}.ring:focus-visible{outline-color:#111}}';
+  assert.deepEqual(await ringPlaces(css), [
+    '/ 1280×800 in the dark theme: a.ring "Zimmer" shows a ring of contrast 1.11:1 on rgb(0, 0, 0)',
+  ]);
+});
+
+test('a11y-focus: an element that fails in the fresh tab is not reported again in another theme', async () => {
+  const css =
+    '.ring:focus-visible{outline-color:rgb(0 0 0 / 30%)}@media (prefers-color-scheme: dark){body{background:#000}}';
+  assert.deepEqual(
+    await ringPlaces(css),
+    inStates('a.ring "Zimmer" shows a ring of contrast 2.12:1 on rgb(255, 255, 255)'),
+  );
+});
+
 test('a11y-focus: the first Tab with outline 0 under the kit floor fails: the style is solid, the width 0', async () => {
   // The floor of 7.6 keeps `outline-style: solid` on `:focus-visible`, and `outline: 0` sets the width to 0 (S5).
   const floor = ':focus-visible:not([tabindex="-1"]){outline-style:solid !important}';

@@ -9,16 +9,20 @@
  * element once in a state, at the first press that fails it.
  */
 import { errors, type Page } from 'playwright-core';
+import { defaultMode, SYSTEM_STATES, themeOf } from '../modes.ts';
 import type { FormField } from '../options.ts';
 import {
+  applyTheme,
   type BrowserRule,
   type Check,
   DESKTOP,
   NARROW,
+  type RingFloor,
   reveal,
   settle,
   sizeText,
   sweep,
+  themeStates,
   type Viewport,
 } from './harness.ts';
 
@@ -69,28 +73,71 @@ async function eachState(check: Check, measure: (tab: Page, label: string) => Pr
 /** The least width of a focus ring, in CSS pixels. */
 export const FOCUS_RING_PX = 2;
 
+/** The least contrast of a focus ring against the color behind it (WCAG 1.4.11, non-text). */
+export const FOCUS_RING_CONTRAST = 3;
+
+const RING: RingFloor = { px: FOCUS_RING_PX, contrast: FOCUS_RING_CONTRAST, colorOnly: false };
+const RING_COLOR: RingFloor = { ...RING, colorOnly: true };
+
 /**
- * Measures the outline of the focused element (`a11y-focus`, page code). A fail is recorded once per element in
- * the state. The focused element inside a shadow root is the one measured. An `iframe` is left out: its own
- * document draws the ring of its focused element. So is a control that does not match `:focus` while it holds the
- * focus: the focus is on a part that the browser draws inside it, such as the picker button of a date field or the
- * volume of a player, and the browser draws the ring of that part.
+ * Measures the ring of the focused element (`a11y-focus`, page code) with `focusRing`: its width, its style and its
+ * contrast. A fail is recorded once per element in the state.
  */
-function measureFocus(least: number): void {
+function measureFocus(least: RingFloor): void {
   const state = window.__astroKitKeyboard;
+  const found = window.__astroKit.focusRing(least);
+  if (state === undefined || found === null || state.reported.has(found.element)) return;
+  state.reported.add(found.element);
+  state.found.push(found.detail);
+}
+
+/**
+ * Focuses each stop in turn as the keyboard would, ends its animations, and measures its ring (page code): the
+ * details of the failing rings, once per element. `focus()` and the computed style are synchronous, so one call
+ * measures every stop.
+ */
+function measureStops(least: RingFloor): string[] {
   const helpers = window.__astroKit;
-  let active = document.activeElement;
-  while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
-  if (state === undefined || active === null || active === helpers.root()) return;
-  if (active === document.body || active === document.documentElement || active.localName === 'iframe') return;
-  if (state.reported.has(active) || !active.matches(':focus')) return;
-  const style = getComputedStyle(active);
-  if (style.outlineStyle !== 'none' && Number.parseFloat(style.outlineWidth) >= least) return;
-  state.reported.add(active);
-  // With `outline-style: none` a newer Chromium still computes the width, so the detail leaves the width out.
-  const shown =
-    style.outlineStyle === 'none' ? 'no outline' : `the outline ${style.outlineWidth} ${style.outlineStyle}`;
-  state.found.push(`${helpers.describe(active)} shows ${shown}`);
+  const reported = new Set<Element>();
+  const found: string[] = [];
+  for (const stop of helpers.stops()) {
+    if (!(stop instanceof HTMLElement || stop instanceof SVGElement)) continue;
+    stop.focus({ focusVisible: true } as FocusOptions);
+    helpers.finish();
+    const ring = helpers.focusRing(least);
+    if (ring === null || reported.has(ring.element)) continue;
+    reported.add(ring.element);
+    found.push(ring.detail);
+  }
+  return found;
+}
+
+/** The element that a detail of `a11y-focus` names: the text before ` shows `. */
+export const ringOwner = (detail: string): string => detail.slice(0, Math.max(0, detail.indexOf(' shows ')));
+
+/**
+ * The other themes of `a11y-focus`: in each declared theme that a fresh tab does not show, reached as Themes says,
+ * at 1280×800, each stop takes the focus in turn and is measured. A ring can pass in one theme and vanish in
+ * another. No Tab press is needed beyond the first, which makes the focus come from the keyboard. An element that
+ * the fresh 1280×800 tab already reported (`known`, by `ringOwner`) is not reported again.
+ */
+async function themeState(check: Check, known: ReadonlySet<string>): Promise<void> {
+  const themes = check.run.design?.themes ?? [];
+  // A fresh tab has the default mode and the first system state: light, with no contrast preference.
+  const fresh = SYSTEM_STATES[0];
+  if (fresh === undefined) return;
+  const shown = themeOf(defaultMode(check.run.options), fresh, themes);
+  const others = themeStates(check.run.options, themes).filter((state) => state.theme !== shown);
+  if (others.length === 0) return;
+  // One tab for every theme: a theme state only sets `data-mode` and the emulated media, so no reload is needed.
+  const tab = await check.open({ viewport: DESKTOP });
+  await tab.keyboard.press('Tab');
+  for (const state of others) {
+    await applyTheme(tab, state);
+    for (const detail of await tab.evaluate(measureStops, RING_COLOR)) {
+      if (!known.has(ringOwner(detail))) check.report(`${sizeText(DESKTOP)} in the ${state.theme} theme: ${detail}`);
+    }
+  }
 }
 
 /** The kinds of element that `a11y-focus` clicks with the mouse, in order. */
@@ -152,12 +199,16 @@ async function clickState(check: Check): Promise<void> {
   }
 }
 
-/** `a11y-focus`: the first Tab and every sweep stop show a focus ring of at least 2 px; a mouse click shows none. */
+/**
+ * `a11y-focus`: the first Tab and every sweep stop show a focus ring of at least 2 px with a contrast of at least 3:1
+ * against the color behind it, also in the other themes; a mouse click shows none.
+ */
 export const focus: BrowserRule = {
   id: 'a11y-focus',
   pages: 'tested',
   check: async (check) => {
     let firstTab = true;
+    const known = new Set<string>();
     await eachState(check, async (tab, label) => {
       await tab.evaluate(beginState);
       // The first Tab of the fresh 1280×800 tab belongs to that state, so an element that fails there reports once.
@@ -165,11 +216,15 @@ export const focus: BrowserRule = {
         firstTab = false;
         await tab.keyboard.press('Tab');
         await settle(tab);
-        await tab.evaluate(measureFocus, FOCUS_RING_PX);
+        await tab.evaluate(measureFocus, RING);
       }
-      await sweep(tab, () => tab.evaluate(measureFocus, FOCUS_RING_PX));
-      for (const detail of await tab.evaluate(endState)) check.report(`${label}: ${detail}`);
+      await sweep(tab, () => tab.evaluate(measureFocus, RING));
+      for (const detail of await tab.evaluate(endState)) {
+        if (label === sizeText(DESKTOP)) known.add(ringOwner(detail));
+        check.report(`${label}: ${detail}`);
+      }
     });
+    await themeState(check, known);
     await clickState(check);
   },
 };
