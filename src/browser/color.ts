@@ -89,6 +89,19 @@ function statesOf(check: Check): (ThemeState | undefined)[] {
 const modeWrites = (tab: Page): Promise<number> => tab.evaluate(() => window.__astroKit.modeWrites());
 
 /**
+ * How long the watch of `data-mode` runs at least before a check gives its verdict, from the `load` event: a page
+ * script that writes `data-mode` at least once in this time is always seen, however fast the check measures.
+ */
+export const MODE_WATCH_MS = 1_000;
+
+/** The writes since the last look, after the watch has run for `MODE_WATCH_MS` (the last look of a check). */
+async function finalModeWrites(tab: Page): Promise<number> {
+  const age = await tab.evaluate(() => window.__astroKit.modeAge());
+  if (age < MODE_WATCH_MS) await tab.waitForTimeout(MODE_WATCH_MS - age);
+  return modeWrites(tab);
+}
+
+/**
  * Groups equal details of one rule on one page, in the order of their first one: a detail that comes `n` times
  * reads `<detail> (and <n - 1> more nodes)`, or `(and 1 more node)`.
  */
@@ -221,16 +234,36 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
     parts.push(text.slice(start));
     return parts.map((part) => part.trim()).filter((part) => part !== '');
   };
-  const stopsOf = (image: string): string[] => {
-    const stops: string[] = [];
+  // The color stops of each gradient layer of a `background-image`, from the top layer down. An image layer
+  // (`url()`) has no stops that the kit can read, so it is left out.
+  const layersOf = (image: string): string[][] => {
+    const layers: string[][] = [];
     for (const layer of split(image, (char) => char === ',')) {
       const inner = /^(?:repeating-)?(?:linear|radial|conic)-gradient\((.*)\)$/s.exec(layer)?.[1];
       if (inner === undefined) continue;
+      const stops: string[] = [];
       for (const part of split(inner, (char) => char === ',')) {
         for (const word of split(part, (char) => /\s/.test(char))) if (CSS.supports('color', word)) stops.push(word);
       }
+      if (stops.length > 0) layers.push(stops);
     }
-    return stops;
+    return layers;
+  };
+  // The colors that the layers can paint over `under`. An opaque stop hides the layers below it; a stop with alpha
+  // is composited over each color that the layers below can paint. At most `PAINT_LIMIT` colors are kept.
+  const PAINT_LIMIT = 256;
+  const paintedBy = (layers: readonly string[][], under: number[]): number[][] => {
+    const [top, ...rest] = layers;
+    if (top === undefined) return [under];
+    const below = paintedBy(rest, under);
+    const colors: number[][] = [];
+    for (const stop of top) {
+      const color = kit.pixel(stop);
+      if (color[3] === 255) colors.push(color);
+      else for (const back of below) colors.push(kit.over(color, back));
+      if (colors.length >= PAINT_LIMIT) break;
+    }
+    return colors.slice(0, PAINT_LIMIT);
   };
   const dataOf = (node: NodeResult): { reason: string; expected: number } => {
     for (const result of [...node.any, ...node.all, ...node.none]) {
@@ -259,8 +292,8 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
     const holder = stack[at];
     if (holder === undefined) return null;
     const style = getComputedStyle(holder);
-    const stops = stopsOf(style.backgroundImage);
-    if (stops.length === 0) return null;
+    const layers = layersOf(style.backgroundImage);
+    if (layers.length === 0) return null;
     // The color behind the gradient: the layers below the holder in the stack, then white.
     const below = flatten(stack.slice(at + 1));
     // With `background-clip: text` the gradient paints the text itself, and its background color too is clipped.
@@ -268,8 +301,7 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
     const under = clipText ? below : kit.over(kit.pixel(style.backgroundColor), below);
     const text = kit.pixel(getComputedStyle(element).color);
     let worst: { ratio: number; behind: number[] } | null = null;
-    for (const stop of stops) {
-      const painted = kit.over(kit.pixel(stop), under);
+    for (const painted of paintedBy(layers, under)) {
       const behind = clipText ? below : painted;
       const ratio = kit.contrast(kit.over(text, painted), behind);
       if (worst === null || ratio < worst.ratio) worst = { ratio, behind: painted };
@@ -329,8 +361,14 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
   const inlineElements = new Set(arg.inlineNames);
   const word = /[\p{L}\p{N}]/u;
   // The ancestor that holds the text around a link: from its parent through the inline elements (a11y-targets).
+  // The parent of a node, across the top of a shadow tree to its host.
+  const parentOf = (node: Element): Element | null => {
+    if (node.parentElement) return node.parentElement;
+    const root = node.getRootNode();
+    return root instanceof ShadowRoot ? root.host : null;
+  };
   const textAround = (link: Element): Element | null => {
-    for (let node = link.parentElement; node !== null; node = node.parentElement) {
+    for (let node = parentOf(link); node !== null; node = parentOf(node)) {
       for (const child of node.childNodes) {
         if (child.nodeType === Node.TEXT_NODE && word.test(child.textContent ?? '')) return node;
       }
@@ -339,7 +377,16 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
     return null;
   };
   if (inlineElements.size > 0) {
-    for (const [index, link] of [...document.querySelectorAll('a[href]')].entries()) {
+    // The links of the document and of every open shadow root in it.
+    const links: Element[] = [];
+    const collect = (root: Document | ShadowRoot): void => {
+      for (const element of root.querySelectorAll('*')) {
+        if (element.matches('a[href]')) links.push(element);
+        if (element.shadowRoot) collect(element.shadowRoot);
+      }
+    };
+    collect(document);
+    for (const [index, link] of links.entries()) {
       if (getComputedStyle(link).textDecorationLine !== 'none' || !kit.visible(link)) continue;
       const around = textAround(link);
       if (around === null) continue;
@@ -439,18 +486,20 @@ export const axeRule: BrowserRule = {
     };
     const wide = await check.open({ viewport: DESKTOP });
     await wide.evaluate(axeScript());
-    await modeWrites(wide);
     let going = true;
     for (const state of statesOf(check)) {
       if (state !== undefined) await applyTheme(wide, state);
       going = await measure(wide, DESKTOP, themeLabel(DESKTOP, state), true);
       if (!going) break;
     }
+    if (going && (await finalModeWrites(wide)) > 0) {
+      written ??= sizeText(DESKTOP);
+      going = false;
+    }
     if (going) {
       await animations(wide, DESKTOP);
       const narrow = await check.open({ viewport: NARROW });
       await narrow.evaluate(axeScript());
-      await modeWrites(narrow);
       await reveal(narrow, async (state) => {
         if (going) going = await measure(narrow, NARROW, state.label, false);
       });
@@ -524,7 +573,6 @@ export const contrastPairs: BrowserRule = {
     const pairs: ContrastPair[] = all.filter((pair) => ROLE_RATIOS.has(pair.role));
     if (pairs.length === 0) return;
     const tab = await check.open({ viewport: DESKTOP });
-    await modeWrites(tab);
     const read: PairRead = {
       pairs: pairs.map((pair) => ({ foreground: pair.foreground, background: pair.background })),
       page: all.find((pair) => pair.for === 'body')?.background,
@@ -547,6 +595,10 @@ export const contrastPairs: BrowserRule = {
             `needs ${least}:1 (docs/design.md, line ${pair.line})`,
         );
       }
+    }
+    if ((await finalModeWrites(tab)) > 0) {
+      check.report(`${sizeText(DESKTOP)}: ${MODE_WRITE}`);
+      return;
     }
     for (const detail of details) check.report(detail);
   },
@@ -851,8 +903,7 @@ async function withScripts(check: Check, viewport: Viewport, design: Design): Pr
   const context: BrowserContext = await check.context();
   await context.addInitScript(watchMode);
   const tab = await check.open({ viewport, context });
-  await modeWrites(tab);
-  // A write of `data-mode` since the last look that no click of the rule made.
+  // A write of `data-mode` since the last look that no click of the rule made. The watch runs from the load.
   const watch = async (): Promise<boolean> => (await modeWrites(tab)) > 0;
   const seen = await tab.evaluate(() => window.__astroKitMode ?? { appeared: false, body: false });
   if (!seen.appeared) report(`${label}: html gets no data-mode`);
@@ -890,7 +941,7 @@ async function withScripts(check: Check, viewport: Viewport, design: Design): Pr
     const themeFor = (state: SystemState): Theme => themeOf(option, state, design.themes);
     await compareColors(report, tab, design, `${label}, ${option} chosen`, themeFor, scheme);
   }
-  if (await watch()) return fixed();
+  if ((await finalModeWrites(tab)) > 0) return fixed();
   const last = order.at(-1);
   if (last === undefined) return details;
   const other = otherPage(check);

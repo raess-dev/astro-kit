@@ -169,6 +169,20 @@ test('a11y-axe: text on a gradient is decided with the color stops of the gradie
   assert.deepEqual(await placesOf(on('#ffffff, #00000040'), axeRule), []);
 });
 
+test('a11y-axe: a lower gradient layer that an opaque upper layer hides does not count', async () => {
+  // Black on #ffffff to #eeeeee is at least 18:1. The black layer below is hidden behind the opaque upper one.
+  const css = '.hero{color:#000;background-image:linear-gradient(#ffffff, #eeeeee), linear-gradient(#000000, #000000)}';
+  assert.deepEqual(await placesOf(axePage('<p class="hero">Text auf zwei Verlaeufen.</p>', css), axeRule), []);
+  // A see-through upper stop shows the layer below: #00000000 over black is black, and black text on it is 1:1.
+  const seeThrough =
+    '.hero{color:#000;background-image:linear-gradient(#ffffff, #00000000), linear-gradient(#000000, #000000)}';
+  const found = await placesOf(axePage('<p class="hero">Text auf zwei Verlaeufen.</p>', seeThrough), axeRule);
+  assert.ok(
+    found.some((line) => line.includes('1.00:1 on the gradient stop rgb(0, 0, 0)')),
+    JSON.stringify(found),
+  );
+});
+
 test('a11y-axe: running text on a gradient must meet the AAA floor too, as on a flat color', async () => {
   // Black on #777777 is 4.68:1: AA passes, AAA fails on running text. A heading is no running text.
   const css = '.hero{color:#000;background-image:linear-gradient(#ffffff, #777777)}';
@@ -270,6 +284,18 @@ test('a11y-axe: a link without underline in running text needs 3:1 against the t
   assert.deepEqual(await placesOf(axePage(sentence, css.replace('none', 'underline')), axeRule), []);
   const alone = '<p class="t"><a class="l" href="tel:+41815550110">081 555 01 10</a></p>';
   assert.deepEqual(await placesOf(axePage(alone, css), axeRule), []);
+});
+
+test('a11y-axe: the link check also reads a link inside an open shadow root', async () => {
+  const shadow =
+    '<div class="card"><template shadowrootmode="open"><style>p{color:#2b2521}a{color:#7d340d;text-decoration-line:none;text-decoration-thickness:1px}</style>' +
+    '<p>Rufen Sie uns an: <a href="tel:+41815550110">081 555 01 10</a>, jeden Tag.</p></template></div>';
+  const found = await placesOf(axePage(shadow, ''), axeRule);
+  assert.equal(
+    found.filter((line) => line.includes('link-in-text-block on a "081 555 01 10" without underline')).length,
+    1,
+    JSON.stringify(found),
+  );
 });
 
 test('a11y-axe: an animation that never ends fails once, also inside a shadow root', async () => {

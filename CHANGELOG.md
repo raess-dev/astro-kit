@@ -177,6 +177,10 @@
     gives it, in each system state. The last choice must survive a navigation and a reload. With JavaScript off, no
     mode control shows and the page shows the default mode. A `dialog` with the `popover` attribute opens as a
     popover, and a close button is no invoker.
+  - The watch of `data-mode` writes runs from the `load` event for at least 1 s before a color rule gives its
+    verdict, so a page script on a timer is always seen. Before, `contrast-pairs` missed it in about 1 run of 5.
+  - The kit's link check also reads links in open shadow roots, and a gradient layer that an opaque upper layer
+    hides no longer counts (from the Codex review of #18).
   - Running text for `color-contrast-enhanced` is found through the flat tree, so a paragraph in an open shadow
     root of a component in `main` counts (from the Codex review of #18).
   - The three rules measure colors only through the Colors probe of the harness: the one luminance formula of the
