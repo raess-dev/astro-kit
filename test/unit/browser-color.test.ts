@@ -193,6 +193,16 @@ test('a11y-axe: a translucent background between the text and the gradient count
   );
 });
 
+test('a11y-axe: a transparent gradient over a lower element with a gradient is read over that gradient', async () => {
+  // White text on a transparent gradient over a black gradient: the text sits on black, 21:1.
+  const css =
+    '.p{background-image:linear-gradient(#000000, #000000)}.t{color:#fff;background-image:linear-gradient(transparent, transparent)}';
+  assert.deepEqual(
+    await placesOf(axePage('<div class="p"><p class="t">Weiss auf Schwarz.</p></div>', css), axeRule),
+    [],
+  );
+});
+
 test('a11y-axe: running text on a gradient must meet the AAA floor too, as on a flat color', async () => {
   // Black on #777777 is 4.68:1: AA passes, AAA fails on running text. A heading is no running text.
   const css = '.hero{color:#000;background-image:linear-gradient(#ffffff, #777777)}';
@@ -329,6 +339,18 @@ test('a11y-axe: hidden text inside a link does not count for the link check', as
     '<p class="t">Rufen Sie uns an: <a class="l" href="tel:+41815550110">081 555 01 10<span hidden class="h">Versteckt</span></a>, jeden Tag.</p>';
   const css = '.t{color:#000000}.l{color:#666666;text-decoration-line:none}.h{color:#000000}';
   const found = await placesOf(axePage(sentence, css), axeRule);
+  assert.equal(found.filter((line) => line.includes('without underline')).length, 0, JSON.stringify(found));
+});
+
+test('a11y-axe: a link that holds only an image is no text link for the link check', async () => {
+  const sentence =
+    '<p class="t">Besuchen Sie <a class="l" href="/next/"><img src="/logo.svg" alt="Weiter" width="20" height="20"></a> heute.</p>';
+  const css = '.t{color:#222222}.l{color:#222222;text-decoration-line:none}';
+  const files = {
+    ...axePage(sentence, css),
+    'logo.svg': '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20"/></svg>',
+  };
+  const found = await placesOf(files, axeRule);
   assert.equal(found.filter((line) => line.includes('without underline')).length, 0, JSON.stringify(found));
 });
 

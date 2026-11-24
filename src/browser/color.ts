@@ -265,6 +265,20 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
     }
     return colors.slice(0, PAINT_LIMIT);
   };
+  // The colors that a stack of elements can paint, from the top element down, over white: each element paints its
+  // background color, then its gradient layers, over the colors below it. The walk ends at the first element that
+  // paints an opaque color with no gradient over it.
+  const backdrops = (elements: readonly Element[]): number[][] => {
+    const [top, ...rest] = elements;
+    if (top === undefined) return [white];
+    const style = getComputedStyle(top);
+    const color = kit.pixel(style.backgroundColor);
+    const layers = style.backgroundImage === 'none' ? [] : layersOf(style.backgroundImage);
+    const opaque = color.length === 4 && color[3] === 255;
+    const lower = opaque ? [white] : backdrops(rest);
+    const based = lower.map((back) => (color.length === 4 && (color[3] ?? 0) > 0 ? kit.over(color, back) : back));
+    return (layers.length === 0 ? based : based.flatMap((back) => paintedBy(layers, back))).slice(0, PAINT_LIMIT);
+  };
   const dataOf = (node: NodeResult): { reason: string; expected: number } => {
     for (const result of [...node.any, ...node.all, ...node.none]) {
       const data: unknown = result.data;
@@ -294,16 +308,18 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
     const style = getComputedStyle(holder);
     const layers = layersOf(style.backgroundImage);
     if (layers.length === 0) return null;
-    // The color behind the gradient: the layers below the holder in the stack, then white.
-    const below = flatten(stack.slice(at + 1));
+    // The colors behind the gradient: the elements below the holder in the stack, their gradients included, then
+    // white. Each lower element paints its background color, then its gradient layers, over what lies below it.
+    const belowAll = backdrops(stack.slice(at + 1));
+    const below = belowAll[0] ?? white;
     // With `background-clip: text` the gradient paints the text itself, and its background color too is clipped.
     const clipText = style.backgroundClip === 'text';
-    const under = clipText ? below : kit.over(kit.pixel(style.backgroundColor), below);
+    const unders = belowAll.map((back) => (clipText ? back : kit.over(kit.pixel(style.backgroundColor), back)));
     const text = kit.pixel(getComputedStyle(element).color);
     // The background colors between the holder and the text lie over the gradient: from the holder up to the text.
     const above = clipText ? [] : stack.slice(0, at).reverse();
     let worst: { ratio: number; behind: number[] } | null = null;
-    for (const painted of paintedBy(layers, under)) {
+    for (const painted of unders.flatMap((under) => paintedBy(layers, under)).slice(0, PAINT_LIMIT)) {
       let seen = painted;
       for (const layer of above) {
         const color = kit.pixel(getComputedStyle(layer).backgroundColor);
@@ -426,7 +442,8 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
       for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
         if (rendered(node) && node.parentElement !== null) holders.add(node.parentElement);
       }
-      if (holders.size === 0) holders.add(link);
+      // A link that renders no text (an image alone) has no text color to tell it apart: axe judges its image.
+      if (holders.size === 0) continue;
       let own = text;
       let ratio = Number.POSITIVE_INFINITY;
       for (const holder of holders) {
@@ -833,9 +850,16 @@ function nextInvoker(): InvokerStep {
   const name = kit.describe(outer);
   const first = opening[0];
   if (first === undefined) return { invoker: null, problem: `no native invoker opens ${name}`, closed: closed.length };
-  const invoker = opening.find((candidate) => kit.visible(candidate));
+  // A disabled control (also one in a disabled fieldset) opens nothing, so the first visible enabled one counts.
+  const shown = opening.filter((candidate) => kit.visible(candidate));
+  const invoker = shown.find((candidate) => !candidate.matches(':disabled'));
   if (invoker === undefined) {
-    return { invoker: null, problem: `${kit.describe(first)}, the invoker of ${name}, is not visible`, closed: 0 };
+    const which = shown[0];
+    const problem =
+      which === undefined
+        ? `${kit.describe(first)}, the invoker of ${name}, is not visible`
+        : `${kit.describe(which)}, the invoker of ${name}, is disabled`;
+    return { invoker: null, problem, closed: 0 };
   }
   return { invoker, problem: null, closed: closed.length };
 }

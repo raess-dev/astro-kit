@@ -262,6 +262,10 @@ test('modes-behavior: the invoker is the first visible one that opens; a close b
   const hidden = '<button type="button" popovertarget="p" hidden>Versteckt</button>';
   const both = `${hidden}${panel}<button type="button" popovertarget="p">Darstellung</button>`;
   assert.deepEqual(await modePlaces(modeSite({ switch: both })), []);
+  // Two open buttons, the first one disabled: the second one opens the switch.
+  const disabled = '<button type="button" popovertarget="p" disabled>Gesperrt</button>';
+  const enabled = `${disabled}${panel}<button type="button" popovertarget="p">Darstellung</button>`;
+  assert.deepEqual(await modePlaces(modeSite({ switch: enabled })), []);
   // Only a close button: no native invoker opens the switch.
   assert.deepEqual(await modePlaces(modeSite({ switch: panel })), [
     '/ 1280×800: no native invoker opens div#p',

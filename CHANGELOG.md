@@ -187,6 +187,8 @@
     of the element that holds the link text. The phone pass of `a11y-axe` waits for the 1 s watch too. An alias
     chain of any length resolves; a circle still ends (from the Codex review of #18).
   - Hidden text inside a link counts neither for its color nor for its underline (from the Codex review of #18).
+  - A gradient over another element's gradient is read over it; a link that holds only an image is no text link
+    for the link check; `modes-behavior` skips a disabled invoker (from the Codex review of #18).
   - Running text for `color-contrast-enhanced` is found through the flat tree, so a paragraph in an open shadow
     root of a component in `main` counts (from the Codex review of #18).
   - The three rules measure colors only through the Colors probe of the harness: the one luminance formula of the
