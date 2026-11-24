@@ -65,9 +65,13 @@ One spike alone: `node --test test/acceptance/spikes/s05.ts`.
 ## The acceptance suite
 
 - `harness.ts`: the packed kit, the base copy, the case folders, and the runners for the kit CLI, Astro, Chromium and
-  the measured values. `serve.ts` is the static server of the suite. `wrangler.ts` runs `wrangler dev`, with no login
-  and no network. `photos.ts` makes deterministic photos. `site-assets.ts` made the binary files of the test site
-  (see "The photos and the PDF of the site").
+  the measured values. Its `serve` runs `serveDist` of the packed kit and keeps every request with its method and
+  headers. `wrangler.ts` runs `wrangler dev`, with no login and no network. `photos.ts` makes deterministic photos.
+  `site-assets.ts` made the binary files of the test site (see "The photos and the PDF of the site").
+- `serve-parity.test.ts`: the server case of M6. It builds the site, sends one request table to `serveDist` of the
+  packed kit and to `wrangler dev`, and asserts that each pair of answers has the same status, `location`,
+  `cache-control` and the seven kit headers of 6.3. A second table plants files, `_headers` rules, `_redirects` and
+  `.assetsignore` in the build and also compares the content type, the test headers, the etag and the body.
 - `site.test.ts`: the site cases. A case copies the site into `<base>/cases/<name>/` with `siteCase(name, change)`,
   applies one change, and runs a command of the kit CLI there with `run(case, command)`. A passing case asserts
   status 0 and, with `passedLine(result)`, that the passed line is the last line of stdout and stands once in the

@@ -2,8 +2,17 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { browse, build, type ConsoleMessage, cspMeta, read, record, type StandIn, standIn } from '../harness.ts';
-import type { Served } from '../serve.ts';
+import {
+  browse,
+  build,
+  type ConsoleMessage,
+  cspMeta,
+  read,
+  record,
+  type Served,
+  type StandIn,
+  standIn,
+} from '../harness.ts';
 import { PERMISSIONS_POLICY, PNG, page, project } from './project.ts';
 
 interface Seen {

@@ -105,3 +105,15 @@
 - A failing build no longer gets Astro's false hint "Browser APIs are not available on the server". Astro picks
   that hint when the error text holds `document` or `window`, and the id `budget-document` did. `FindingError`
   now gives Astro a one-line `toString()` that only counts the failing findings. The printed findings are the same.
+- Milestone M6, part 6a: `serveDist` in `src/serve.ts`, the local static server of the browser checks. It emulates
+  Workers static assets on 127.0.0.1 and a free port, step by step as the asset worker of `wrangler dev`: a
+  traversal guard, `_redirects`, the redirects and `.html` names of `auto-trailing-slash` with the query kept,
+  `/404` with the 404 page, the nearest `404.html` with status 404, the canonical form of a path, content types
+  with `; charset=utf-8` for text, `public, max-age=0, must-revalidate`, an `etag` with 304, the rules of
+  `_headers` on an answer of any status with placeholders replaced in the values, `.assetsignore` read as a
+  `.gitignore`, zstd, br or gzip for text, HEAD without a body and 405 for other methods. It serves
+  `dist/client` of an adapter build, else `dist`, and a caller can observe each request. The form stub of 9.1 moves
+  to M7. The suite case `serve-parity.test.ts` sends one request table to `serveDist` and to `wrangler dev` and
+  compares the status, `location`, `cache-control` and the seven kit headers, and a second table on planted files.
+  `_headers`: a detach needs `! ` with a space, as on Cloudflare, so `!<TAB>Name` is no detach. The suite and the spikes now serve
+  pages with `serveDist` of the packed kit, and `test/acceptance/serve.ts` is gone.
