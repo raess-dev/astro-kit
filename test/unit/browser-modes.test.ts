@@ -215,3 +215,66 @@ test('modes-behavior: with JS off a visible mode control fails, and so do colors
   assert.equal(colors.length, 8);
   assert.ok(colors.every((finding) => / with JS off, system .*: --color-text paints \[255, 0, 0, 255\]/.test(finding)));
 });
+
+/** The radios of `RADIOS` without their `details`. */
+const RADIO_SET = RADIOS.replace('<details class="switch" data-mode-switch><summary>Darstellung</summary>', '').replace(
+  '</details>',
+  '',
+);
+
+test('modes-behavior: a dialog that is a popover opens through its popover invokers', async () => {
+  const panel = `<dialog id="p" popover data-mode-switch>${RADIO_SET}</dialog>`;
+  const target = `<button type="button" popovertarget="p">Darstellung</button>${panel}`;
+  assert.deepEqual(await modePlaces(modeSite({ switch: target })), []);
+  const command = `<button type="button" commandfor="p" command="toggle-popover">Darstellung</button>${panel}`;
+  assert.deepEqual(await modePlaces(modeSite({ switch: command })), []);
+});
+
+test('modes-behavior: the invoker is the first visible one that opens; a close button is none', async () => {
+  const close = '<button type="button" popovertarget="p" popovertargetaction="hide">Schliessen</button>';
+  const panel = `<div id="p" popover data-mode-switch>${close}${RADIO_SET}</div>`;
+  assert.deepEqual(
+    await modePlaces(modeSite({ switch: `${panel}<button type="button" popovertarget="p">Darstellung</button>` })),
+    [],
+  );
+  // Two open buttons, the first one hidden: the second one opens the switch.
+  const hidden = '<button type="button" popovertarget="p" hidden>Versteckt</button>';
+  const both = `${hidden}${panel}<button type="button" popovertarget="p">Darstellung</button>`;
+  assert.deepEqual(await modePlaces(modeSite({ switch: both })), []);
+  // Only a close button: no native invoker opens the switch.
+  assert.deepEqual(await modePlaces(modeSite({ switch: panel })), [
+    '/ 1280×800: no native invoker opens div#p',
+    '/ 390×844: no native invoker opens div#p',
+  ]);
+});
+
+test('modes-behavior: a transition of the page never reaches the probes', async () => {
+  const wrong = ':root[data-mode="dark"]{--color-shadow:#ff000099}';
+  const shown = '--color-shadow paints [255, 0, 0, 153], the dark value of docs/design.md paints [0, 0, 0, 153]';
+  for (const transition of ['', '*{transition:color 1s,background-color 1s}']) {
+    const findings = await modePlaces(modeSite({ css: `${wrong}${transition}` }));
+    assert.equal(findings.length, 8, findings.join('\n'));
+    assert.ok(findings.every((finding) => finding.includes(`, dark chosen, system `) && finding.endsWith(shown)));
+  }
+  // A wrong first token blames that token only.
+  const first = await modePlaces(
+    modeSite({ css: ':root[data-mode="dark"]{--color-page:#ff0000}*{transition:background-color 1s}' }),
+  );
+  assert.equal(first.length, 8);
+  assert.ok(first.every((finding) => finding.includes(': --color-page paints [255, 0, 0, 255]')));
+});
+
+test('modes-behavior: a page that writes data-mode by itself gives one fixed finding for each viewport', async () => {
+  const writer = "setInterval(() => { document.documentElement.dataset.mode = 'light'; }, 25);";
+  const page = html(`${RADIOS}${BODY}`, {
+    css: MODE_CSS,
+    head: `<script>${modeScript(MODES)}</script><script src="/writer.js"></script>`,
+  });
+  const files = { 'index.html': page, 'a/index.html': page, 'writer.js': writer };
+  for (let run = 0; run < 2; run += 1) {
+    assert.deepEqual(await modePlaces(files), [
+      '/ 1280×800: the page changes data-mode by itself',
+      '/ 390×844: the page changes data-mode by itself',
+    ]);
+  }
+});

@@ -6,7 +6,9 @@
  * of a color.
  *
  * - `a11y-axe` runs axe-core from the kit's own dependency, injected into the page with `evaluate`: the page CSP
- *   does not apply to it (13.1 item 30), and axe works under the kit's CSP with Trusted Types on.
+ *   does not apply to it, and axe works under the kit's CSP with Trusted Types on (13.1 item 67). It reads 1280×800
+ *   in every theme and 390×844 after the reveal step, checks links without underline in running text, and reports
+ *   each animation that never ends.
  * - `contrast-pairs` reads each pair of `docs/design.md` from a probe element on the default home.
  * - `modes-behavior` clicks through the mode switch of the default home and compares every color token with its
  *   design value in each emulated system state.
@@ -27,12 +29,15 @@ import {
   themeOf,
 } from '../modes.ts';
 import {
+  ACTION_LIMIT_MS,
   applyTheme,
   type BrowserRule,
   type Check,
   DESKTOP,
+  finishNow,
   NARROW,
   type Pixel,
+  reveal,
   samePixel,
   settle,
   sizeText,
@@ -40,11 +45,17 @@ import {
   themeStates,
   type Viewport,
 } from './harness.ts';
+import { INLINE_ELEMENTS } from './layout.ts';
 
 declare global {
   interface Window {
-    /** axe-core, once `a11y-axe` injected it. */
-    axe?: { run(context: Document, options: RunOptions): Promise<AxeResults> };
+    /** axe-core, once `a11y-axe` injected it. `setup` and `teardown` let the kit call `commons` after a run. */
+    axe?: {
+      run(context: Document, options: RunOptions): Promise<AxeResults>;
+      setup(context: Document): unknown;
+      teardown(): void;
+      commons: { color: { getBackgroundStack(element: Element): Element[] | null } };
+    };
     /** What the init script of `modes-behavior` saw when `data-mode` appeared on `html`. */
     __astroKitMode?: ModeWatch;
   }
@@ -62,6 +73,9 @@ export const ratioText = (ratio: number): string => (Math.floor(ratio * 100) / 1
 /** The four channels of a painted color in a finding: `[43, 37, 33, 255]`; `no color` for a text that is none. */
 export const pixelText = (pixel: Pixel): string => (pixel.length === 4 ? `[${pixel.join(', ')}]` : 'no color');
 
+/** The fixed detail of a page that writes `data-mode` while a rule measures it. */
+export const MODE_WRITE = 'the page changes data-mode by itself';
+
 /**
  * The theme states of a check: the Themes walk (section 8, the harness) over the declared themes. Without a
  * design (a unit test that gives none) the check runs once, in the state of a fresh tab.
@@ -69,6 +83,20 @@ export const pixelText = (pixel: Pixel): string => (pixel.length === 4 ? `[${pix
 function statesOf(check: Check): (ThemeState | undefined)[] {
   const states = themeStates(check.run.options, check.run.design?.themes ?? []);
   return states.length > 0 ? states : [undefined];
+}
+
+/** The writes of `data-mode` that the page made by itself since the last look (`modeWrites` of the harness). */
+const modeWrites = (tab: Page): Promise<number> => tab.evaluate(() => window.__astroKit.modeWrites());
+
+/**
+ * Groups equal details of one rule on one page, in the order of their first one: a detail that comes `n` times
+ * reads `<detail> (and <n - 1> more nodes)`, or `(and 1 more node)`.
+ */
+export function grouped(details: readonly string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const detail of details) counts.set(detail, (counts.get(detail) ?? 0) + 1);
+  const more = (count: number): string => (count === 2 ? ' (and 1 more node)' : ` (and ${count - 1} more nodes)`);
+  return [...counts].map(([detail, count]) => (count > 1 ? `${detail}${more(count)}` : detail));
 }
 
 // a11y-axe
@@ -89,6 +117,9 @@ export const AXE_GRADIENT = 'bgGradient';
 export const RUNNING_TEXT = 'p, li, dd, td, th, blockquote, figcaption';
 export const NOT_RUNNING_TEXT = 'a, button, label, summary';
 
+/** The least contrast of a link without underline in running text against the text around it (WCAG 1.4.1). */
+export const LINK_CONTRAST = 3;
+
 /** What the page code of `a11y-axe` gets. */
 interface AxeArgument {
   options: RunOptions;
@@ -97,9 +128,12 @@ interface AxeArgument {
   gradient: string;
   running: string;
   notRunning: string;
+  /** The inline elements of `a11y-targets`; empty: no link check in this state. */
+  inlineNames: readonly string[];
+  linkContrast: number;
 }
 
-/** One failing node of axe: a key for the node and the rule, and the text of the finding. */
+/** One failing node of axe or of the link check: a key for the node and the rule, and the text of the finding. */
 interface AxeHit {
   key: string;
   text: string;
@@ -124,27 +158,49 @@ export const AXE_OPTIONS: RunOptions = {
 /**
  * Page code: runs axe on the document and gives the failing nodes. A violation fails, except one of
  * `color-contrast-enhanced` outside running text. A "needs review" result fails for `video-caption`, and for
- * `color-contrast` with a reason of `reviewFails`. For `color-contrast` with the reason `bgGradient` the kit
- * decides: it reads the color stops of the first computed `background-image` behind the text (the element and then
- * its ancestors in the flat tree), composites each stop over white and the text color over the stop, and the node
- * fails when a stop gives less than the ratio that axe expects for the text.
+ * `color-contrast` with a reason of `reviewFails`. For `color-contrast` with the reason `bgGradient` the kit decides
+ * with the color stops of the gradient (section 8, `a11y-axe`). With `inlineNames`, it also checks each link without
+ * underline in running text against the color of that text.
  */
 async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
   const kit = window.__astroKit;
-  if (window.axe === undefined) throw new Error('axe-core is not in the page');
-  const results = await window.axe.run(document, arg.options);
+  const axe = window.axe;
+  if (axe === undefined) throw new Error('axe-core is not in the page');
+  const results = await axe.run(document, arg.options);
   const hits: AxeHit[] = [];
+  const white = [255, 255, 255, 255];
   const nameOf = (node: NodeResult): string =>
     node.element ? kit.describe(node.element) : node.target.flat(2).join(' ');
   const add = (rule: string, node: NodeResult, text: string): void => {
     hits.push({ key: `${rule} ${JSON.stringify(node.target)}`, text });
   };
+  const rgb = (color: readonly number[]): string => `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
+  const shown = (ratio: number): string => (Math.floor(ratio * 100) / 100).toFixed(2);
   const up = (from: Element): Element | null => {
     if (from.assignedSlot) return from.assignedSlot;
     if (from.parentElement) return from.parentElement;
     const root = from.getRootNode();
     return root instanceof ShadowRoot ? root.host : null;
   };
+  const running = (element: Element): boolean =>
+    element.closest('main') !== null &&
+    element.closest(arg.running) !== null &&
+    element.closest(arg.notRunning) === null;
+  // The layers composited from the nearest to the farthest, until one is opaque, then over white.
+  const flatten = (elements: Iterable<Element>): number[] => {
+    const layers: number[][] = [];
+    for (const element of elements) {
+      const color = kit.pixel(getComputedStyle(element).backgroundColor);
+      if (color.length === 4 && (color[3] ?? 0) > 0) layers.push(color);
+      if (color[3] === 255) break;
+    }
+    let result = white;
+    for (const layer of layers.reverse()) result = kit.over(layer, result);
+    return result;
+  };
+  function* ancestors(from: Element): Generator<Element> {
+    for (let node = up(from); node !== null; node = up(node)) yield node;
+  }
   // The parts of a text at the top level of its brackets, cut at each character that `cut` accepts.
   const split = (text: string, cut: (char: string) => boolean): string[] => {
     const parts: string[] = [];
@@ -183,64 +239,159 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
     }
     return { reason: '', expected: Number.NaN };
   };
-  const gradient = (element: Element, expected: number): string | null => {
-    let holder: Element | null = element;
-    while (holder !== null && getComputedStyle(holder).backgroundImage === 'none') holder = up(holder);
-    const stops = holder === null ? [] : stopsOf(getComputedStyle(holder).backgroundImage);
-    if (stops.length === 0) return 'no color stop of a gradient lies behind it';
-    const text = kit.pixel(getComputedStyle(element).color);
-    let worst: { ratio: number; stop: number[] } | undefined;
-    for (const stop of stops) {
-      const behind = kit.over(kit.pixel(stop), [255, 255, 255, 255]);
-      const ratio = kit.contrast(kit.over(text, behind), behind);
-      if (worst === undefined || ratio < worst.ratio) worst = { ratio, stop: behind };
+  // The visual stack behind a text as axe reads it, from the top; the flat-tree ancestors when axe gives none.
+  const stackOf = (element: Element): Element[] => {
+    let stack: Element[] | null = null;
+    try {
+      stack = axe.commons.color.getBackgroundStack(element);
+    } catch {
+      stack = null;
     }
-    if (worst === undefined || worst.ratio >= expected) return null;
-    const shown = (Math.floor(worst.ratio * 100) / 100).toFixed(2);
-    const [red, green, blue] = worst.stop;
-    return `${shown}:1 on the gradient stop rgb(${red}, ${green}, ${blue}), ${expected}:1 expected`;
+    return stack !== null && stack.length > 0 ? stack : [element, ...ancestors(element)];
+  };
+  // The worst stop of the gradient behind a text: its ratio and the color behind the text there. `null`: no stop.
+  const worstStop = (element: Element): { ratio: number; behind: number[] } | null => {
+    const stack = stackOf(element);
+    const at = stack.findIndex((layer) => getComputedStyle(layer).backgroundImage !== 'none');
+    const holder = stack[at];
+    if (holder === undefined) return null;
+    const style = getComputedStyle(holder);
+    const stops = stopsOf(style.backgroundImage);
+    if (stops.length === 0) return null;
+    // The color behind the gradient: the layers below the holder in the stack, then white.
+    const below = flatten(stack.slice(at + 1));
+    // With `background-clip: text` the gradient paints the text itself, and its background color too is clipped.
+    const clipText = style.backgroundClip === 'text';
+    const under = clipText ? below : kit.over(kit.pixel(style.backgroundColor), below);
+    const text = kit.pixel(getComputedStyle(element).color);
+    let worst: { ratio: number; behind: number[] } | null = null;
+    for (const stop of stops) {
+      const painted = kit.over(kit.pixel(stop), under);
+      const behind = clipText ? below : painted;
+      const ratio = kit.contrast(kit.over(text, painted), behind);
+      if (worst === null || ratio < worst.ratio) worst = { ratio, behind: painted };
+    }
+    return worst;
   };
   for (const rule of results.violations) {
     for (const node of rule.nodes) {
-      if (rule.id === arg.enhanced) {
-        const element = node.element;
-        const running =
-          element !== undefined &&
-          element.closest('main') !== null &&
-          element.closest(arg.running) !== null &&
-          element.closest(arg.notRunning) === null;
-        if (!running) continue;
-      }
+      if (rule.id === arg.enhanced && (node.element === undefined || !running(node.element))) continue;
       add(rule.id, node, `${rule.id} on ${nameOf(node)}`);
     }
   }
-  for (const rule of results.incomplete) {
-    for (const node of rule.nodes) {
-      if (rule.id === 'video-caption') add(rule.id, node, `video-caption needs review on ${nameOf(node)}`);
-      if (rule.id !== 'color-contrast') continue;
-      const { reason, expected } = dataOf(node);
-      if (arg.reviewFails.includes(reason)) {
-        add(rule.id, node, `color-contrast needs review (${reason}) on ${nameOf(node)}`);
-      } else if (reason === arg.gradient && node.element) {
-        const problem = gradient(node.element, Number.isFinite(expected) ? expected : 4.5);
-        if (problem !== null) add(rule.id, node, `color-contrast on ${nameOf(node)}: ${problem}`);
+  const gradients = results.incomplete
+    .filter((rule) => rule.id === 'color-contrast')
+    .flatMap((rule) => rule.nodes)
+    .filter((node) => dataOf(node).reason === arg.gradient);
+  // `commons` needs the tree of axe, which `axe.run` removes when it ends.
+  let ready = false;
+  if (gradients.length > 0) {
+    try {
+      axe.setup(document);
+      ready = true;
+    } catch {
+      ready = false;
+    }
+  }
+  try {
+    for (const rule of results.incomplete) {
+      for (const node of rule.nodes) {
+        if (rule.id === 'video-caption') add(rule.id, node, `video-caption needs review on ${nameOf(node)}`);
+        if (rule.id !== 'color-contrast') continue;
+        const { reason, expected } = dataOf(node);
+        if (arg.reviewFails.includes(reason)) {
+          add(rule.id, node, `color-contrast needs review (${reason}) on ${nameOf(node)}`);
+          continue;
+        }
+        if (reason !== arg.gradient || !node.element) continue;
+        const worst = worstStop(node.element);
+        if (worst === null) {
+          add(rule.id, node, `color-contrast on ${nameOf(node)}: no color stop of a gradient lies behind it`);
+          continue;
+        }
+        const least = Number.isFinite(expected) ? expected : 4.5;
+        const where = `${shown(worst.ratio)}:1 on the gradient stop ${rgb(worst.behind)}`;
+        if (worst.ratio < least) add(rule.id, node, `color-contrast on ${nameOf(node)}: ${where}, ${least}:1 expected`);
+        // The AAA floor on running text, as on a flat color: 7:1, and 4.5:1 for large text (AA 3:1).
+        const enhanced = least <= 3 ? 4.5 : 7;
+        if (running(node.element) && worst.ratio < enhanced) {
+          add(arg.enhanced, node, `${arg.enhanced} on ${nameOf(node)}: ${where}, ${enhanced}:1 expected`);
+        }
       }
+    }
+  } finally {
+    if (ready) axe.teardown();
+  }
+  // A link without underline in running text: its color against the color of the text it stands in.
+  const inlineElements = new Set(arg.inlineNames);
+  const word = /[\p{L}\p{N}]/u;
+  // The ancestor that holds the text around a link: from its parent through the inline elements (a11y-targets).
+  const textAround = (link: Element): Element | null => {
+    for (let node = link.parentElement; node !== null; node = node.parentElement) {
+      for (const child of node.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE && word.test(child.textContent ?? '')) return node;
+      }
+      if (!inlineElements.has(node.localName)) return null;
+    }
+    return null;
+  };
+  if (inlineElements.size > 0) {
+    for (const [index, link] of [...document.querySelectorAll('a[href]')].entries()) {
+      if (getComputedStyle(link).textDecorationLine !== 'none' || !kit.visible(link)) continue;
+      const around = textAround(link);
+      if (around === null) continue;
+      const behind = flatten([link, ...ancestors(link)]);
+      const own = kit.over(kit.pixel(getComputedStyle(link).color), behind);
+      const text = kit.over(kit.pixel(getComputedStyle(around).color), behind);
+      const ratio = kit.contrast(own, text);
+      if (ratio >= arg.linkContrast) continue;
+      hits.push({
+        key: `link-in-text-block ${index}`,
+        text:
+          `link-in-text-block on ${kit.describe(link)} without underline: ${rgb(own)} against the text ${rgb(text)} ` +
+          `is ${shown(ratio)}:1, ${arg.linkContrast}:1 expected`,
+      });
     }
   }
   return hits;
 }
 
 /**
- * `a11y-axe`: no axe violation with the tags of section 8, in every declared theme. One tab at 1280×800, with axe
- * injected once; each theme state of the Themes walk in turn. A rule reports a node once, in the first theme that
- * fails it.
+ * One axe run in a state, bounded by `ACTION_LIMIT_MS`: a page that runs no timer (a `sandbox` CSP without
+ * `allow-scripts`) never lets `axe.run` end. `null` when the run did not end; axe is then injected again, so the next
+ * run does not meet the one that still waits.
+ */
+async function axeOnce(tab: Page, argument: AxeArgument): Promise<AxeHit[] | null> {
+  const run = tab.evaluate(runAxe, argument);
+  // The run that loses the race ends when the tab closes; its rejection is no error of the check.
+  run.catch(() => undefined);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limit = new Promise<null>((done) => {
+    timer = setTimeout(() => done(null), ACTION_LIMIT_MS);
+  });
+  try {
+    const hits = await Promise.race([run, limit]);
+    if (hits === null) await tab.evaluate(axeScript());
+    return hits;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The text of `ACTION_LIMIT_MS` in a finding: `15 s`. */
+const limitText = `${ACTION_LIMIT_MS / 1000} s`;
+
+/**
+ * `a11y-axe`: no axe violation with the tags of section 8. The first pass reads a fresh tab at 1280×800 in every
+ * declared theme, with the link check. The second pass reads a fresh tab at 390×844 in its own theme, after the
+ * reveal step and with each of its dialogs open. A node fails once for each axe rule, in the first state that shows
+ * it; equal details are grouped. Then each animation that never ends fails once (WCAG 2.2.2). A page that writes
+ * `data-mode` by itself gives one fixed finding instead, so its result cannot change from run to run.
  */
 export const axeRule: BrowserRule = {
   id: 'a11y-axe',
   pages: 'tested',
   check: async (check) => {
-    const tab = await check.open({ viewport: DESKTOP });
-    await tab.evaluate(axeScript());
     const argument: AxeArgument = {
       options: AXE_OPTIONS,
       enhanced: AXE_ENHANCED,
@@ -248,16 +399,65 @@ export const axeRule: BrowserRule = {
       gradient: AXE_GRADIENT,
       running: RUNNING_TEXT,
       notRunning: NOT_RUNNING_TEXT,
+      inlineNames: INLINE_ELEMENTS,
+      linkContrast: LINK_CONTRAST,
     };
     const seen = new Set<string>();
-    for (const state of statesOf(check)) {
-      if (state !== undefined) await applyTheme(tab, state);
-      for (const hit of await tab.evaluate(runAxe, argument)) {
+    const details: string[] = [];
+    const endless = new Set<string>();
+    let written: string | undefined;
+    // One axe run in a state; `false` when the page wrote `data-mode` by itself, so the check stops.
+    const measure = async (tab: Page, viewport: Viewport, label: string, links: boolean): Promise<boolean> => {
+      if ((await modeWrites(tab)) > 0) written ??= sizeText(viewport);
+      const hits = await axeOnce(tab, links ? argument : { ...argument, inlineNames: [] });
+      if ((await modeWrites(tab)) > 0) written ??= sizeText(viewport);
+      if (written !== undefined) return false;
+      if (hits === null) details.push(`${label}: axe did not finish within ${limitText}`);
+      for (const hit of hits ?? []) {
         if (seen.has(hit.key)) continue;
         seen.add(hit.key);
-        check.report(`${themeLabel(DESKTOP, state)}: ${hit.text}`);
+        details.push(`${label}: ${hit.text}`);
       }
+      return true;
+    };
+    const animations = async (tab: Page, viewport: Viewport): Promise<void> => {
+      const found = await tab.evaluate(() =>
+        window.__astroKit.endless.map(({ element, name }) => ({
+          element: element === null ? 'the document' : window.__astroKit.describe(element),
+          name,
+        })),
+      );
+      for (const { element, name } of found) {
+        const text = `the animation ${JSON.stringify(name)} on ${element} never ends`;
+        if (endless.has(text)) continue;
+        endless.add(text);
+        details.push(`${sizeText(viewport)}: ${text} (WCAG 2.2.2)`);
+      }
+    };
+    const wide = await check.open({ viewport: DESKTOP });
+    await wide.evaluate(axeScript());
+    await modeWrites(wide);
+    let going = true;
+    for (const state of statesOf(check)) {
+      if (state !== undefined) await applyTheme(wide, state);
+      going = await measure(wide, DESKTOP, themeLabel(DESKTOP, state), true);
+      if (!going) break;
     }
+    if (going) {
+      await animations(wide, DESKTOP);
+      const narrow = await check.open({ viewport: NARROW });
+      await narrow.evaluate(axeScript());
+      await modeWrites(narrow);
+      await reveal(narrow, async (state) => {
+        if (going) going = await measure(narrow, NARROW, state.label, false);
+      });
+      if (going) await animations(narrow, NARROW);
+    }
+    if (written !== undefined) {
+      check.report(`${written}: ${MODE_WRITE}`);
+      return;
+    }
+    for (const detail of grouped(details)) check.report(detail);
   },
 };
 
@@ -270,26 +470,46 @@ export const ROLE_RATIOS: ReadonlyMap<string, number> = new Map([
   ['non-text', 3],
 ]);
 
+/** What `pairRatios` reads: the tokens of each pair, and the page background (the background of the `body` pair). */
+interface PairRead {
+  pairs: readonly { foreground: string; background: string }[];
+  page: string | undefined;
+}
+
 /**
- * Page code: the contrast of each pair. A probe element takes the foreground as `color` and the background as
- * `background-color`; both computed colors are painted, the background is composited over white and the
- * foreground over that.
+ * Page code: the contrast of each pair. A fresh probe takes the foreground as `color` and the background as
+ * `background-color`; both computed colors are painted. A background with alpha is composited over the page
+ * background of the theme, and that over white; the foreground over the result.
  */
-function pairRatios(pairs: readonly { foreground: string; background: string }[]): number[] {
+function pairRatios(read: PairRead): number[] {
   const kit = window.__astroKit;
-  const probe = document.createElement('span');
-  document.body.append(probe);
-  try {
-    return pairs.map((pair) => {
-      probe.style.setProperty('color', `var(${pair.foreground})`);
-      probe.style.setProperty('background-color', `var(${pair.background})`);
+  // A fresh probe for each read, which no transition or animation of the page reaches, each property `!important`.
+  const paint = (properties: readonly (readonly [string, string])[]): { color: string; background: string } => {
+    const probe = document.createElement('span');
+    probe.style.setProperty('transition', 'none', 'important');
+    probe.style.setProperty('animation', 'none', 'important');
+    for (const [name, value] of properties) probe.style.setProperty(name, value, 'important');
+    document.body.append(probe);
+    try {
       const style = getComputedStyle(probe);
-      const behind = kit.over(kit.pixel(style.backgroundColor), [255, 255, 255, 255]);
-      return kit.contrast(kit.over(kit.pixel(style.color), behind), behind);
-    });
-  } finally {
-    probe.remove();
-  }
+      return { color: style.color, background: style.backgroundColor };
+    } finally {
+      probe.remove();
+    }
+  };
+  const white = [255, 255, 255, 255];
+  const page =
+    read.page === undefined
+      ? white
+      : kit.over(kit.pixel(paint([['background-color', `var(${read.page})`]]).background), white);
+  return read.pairs.map((pair) => {
+    const style = paint([
+      ['color', `var(${pair.foreground})`],
+      ['background-color', `var(${pair.background})`],
+    ]);
+    const behind = kit.over(kit.pixel(style.background), pair.background === read.page ? white : page);
+    return kit.contrast(kit.over(kit.pixel(style.color), behind), behind);
+  });
 }
 
 /** `contrast-pairs`: on the default home, in every declared theme, each pair of `docs/design.md` meets its role. */
@@ -297,24 +517,35 @@ export const contrastPairs: BrowserRule = {
   id: 'contrast-pairs',
   pages: 'home',
   check: async (check) => {
-    const pairs: ContrastPair[] = (check.run.design?.pairs ?? []).filter((pair) => ROLE_RATIOS.has(pair.role));
+    const all = check.run.design?.pairs ?? [];
+    const pairs: ContrastPair[] = all.filter((pair) => ROLE_RATIOS.has(pair.role));
     if (pairs.length === 0) return;
     const tab = await check.open({ viewport: DESKTOP });
-    const tokens = pairs.map((pair) => ({ foreground: pair.foreground, background: pair.background }));
+    await modeWrites(tab);
+    const read: PairRead = {
+      pairs: pairs.map((pair) => ({ foreground: pair.foreground, background: pair.background })),
+      page: all.find((pair) => pair.for === 'body')?.background,
+    };
+    const details: string[] = [];
     for (const state of statesOf(check)) {
       if (state !== undefined) await applyTheme(tab, state);
-      const ratios = await tab.evaluate(pairRatios, tokens);
+      const ratios = await tab.evaluate(pairRatios, read);
+      if ((await modeWrites(tab)) > 0) {
+        check.report(`${sizeText(DESKTOP)}: ${MODE_WRITE}`);
+        return;
+      }
       for (const [index, pair] of pairs.entries()) {
         const ratio = ratios[index] ?? 0;
         const least = ROLE_RATIOS.get(pair.role) ?? 0;
         if (ratio >= least) continue;
         const where = state === undefined ? 'the page' : `the ${state.theme} theme`;
-        check.report(
+        details.push(
           `${where}: ${pair.foreground} on ${pair.background} has ${ratioText(ratio)}:1; the role ${pair.role} ` +
             `needs ${least}:1 (docs/design.md, line ${pair.line})`,
         );
       }
     }
+    for (const detail of details) check.report(detail);
   },
 };
 
@@ -380,31 +611,31 @@ export function designColor(design: Pick<Design, 'colors'>, name: string, theme:
 
 /**
  * Page code: the computed `color-scheme` of `html`, and for each token the computed `background-color` of a probe
- * (`var(<token>)`) and of a reference painted with the design value, both painted on the canvas. A design value
- * that is no color gives an empty reference.
+ * (`var(<token>)`) and of a reference painted with the design value, both painted on the canvas. Each read uses a
+ * fresh element, which no transition or animation of the page reaches, with its color set as `!important`. A design
+ * value that is no color gives an empty reference.
  */
 function readColors(expected: readonly ExpectedColor[]): ColorReading {
   const kit = window.__astroKit;
-  const probe = document.createElement('span');
-  const reference = document.createElement('span');
-  document.body.append(probe, reference);
-  try {
-    const colors = expected.map((color) => {
-      probe.style.setProperty('background-color', `var(${color.name})`);
-      reference.style.removeProperty('background-color');
-      reference.style.setProperty('background-color', color.value);
-      const set = reference.style.getPropertyValue('background-color') !== '';
-      return {
-        name: color.name,
-        probe: kit.pixel(getComputedStyle(probe).backgroundColor),
-        reference: set ? kit.pixel(getComputedStyle(reference).backgroundColor) : [],
-      };
-    });
-    return { scheme: getComputedStyle(document.documentElement).colorScheme, colors };
-  } finally {
-    probe.remove();
-    reference.remove();
-  }
+  const paint = (value: string): number[] => {
+    const probe = document.createElement('span');
+    probe.style.setProperty('transition', 'none', 'important');
+    probe.style.setProperty('animation', 'none', 'important');
+    probe.style.setProperty('background-color', value, 'important');
+    if (probe.style.getPropertyValue('background-color') === '') return [];
+    document.body.append(probe);
+    try {
+      return kit.pixel(getComputedStyle(probe).backgroundColor);
+    } finally {
+      probe.remove();
+    }
+  };
+  const colors = expected.map((color) => ({
+    name: color.name,
+    probe: paint(`var(${color.name})`),
+    reference: paint(color.value),
+  }));
+  return { scheme: getComputedStyle(document.documentElement).colorScheme, colors };
 }
 
 /** The text of a system state in a finding: `system dark, contrast more`. */
@@ -415,7 +646,7 @@ const systemText = (state: SystemState): string => `system ${state.scheme}, cont
  * `themeFor` gives, and, when `scheme` is given, the computed `color-scheme` of `html` with it.
  */
 async function compareColors(
-  check: Check,
+  report: (detail: string) => void,
   tab: Page,
   design: Design,
   label: string,
@@ -424,7 +655,7 @@ async function compareColors(
 ): Promise<void> {
   for (const state of SYSTEM_STATES) {
     await tab.emulateMedia({ colorScheme: state.scheme, contrast: state.contrast });
-    await settle(tab);
+    await finishNow(tab);
     const theme = themeFor(state);
     const expected: ExpectedColor[] = design.colors.map((color) => ({
       name: color.name,
@@ -434,11 +665,11 @@ async function compareColors(
     const where = `${label}, ${systemText(state)}`;
     const shown = reading.scheme.replace(/\s+/g, ' ').trim();
     if (scheme !== undefined && shown !== scheme) {
-      check.report(`${where}: html has color-scheme "${shown}", 7.7 expects "${scheme}"`);
+      report(`${where}: html has color-scheme "${shown}", 7.7 expects "${scheme}"`);
     }
     for (const color of reading.colors) {
       if (samePixel(color.probe, color.reference)) continue;
-      check.report(
+      report(
         `${where}: ${color.name} paints ${pixelText(color.probe)}, the ${theme} value of docs/design.md ` +
           `paints ${pixelText(color.reference)}`,
       );
@@ -456,49 +687,52 @@ interface InvokerStep {
 
 /**
  * Page code: the closed `details`, `dialog` and popover elements that hold the mode switch (or are it), outermost
- * first, and the native invoker of the outermost one: the first `summary` of a `details`, a `[popovertarget]` or a
- * `[commandfor]` with `show-popover` or `toggle-popover` for a popover, a `[commandfor]` with `show-modal` for a
- * dialog.
+ * first, and the native invoker of the outermost one. An element with the `popover` attribute is a popover, a
+ * `dialog` too: it is closed when it does not match `:popover-open`, and a `[popovertarget]` whose action is not
+ * `hide`, or a `[commandfor]` with `show-popover` or `toggle-popover`, opens it. Another `dialog` is closed when it
+ * is not open, and a `[commandfor]` with `show-modal` opens it. A `details` opens through its first `summary`. Of the
+ * invokers that open the element, the first visible one in document order is taken.
  */
 function nextInvoker(): InvokerStep {
   const kit = window.__astroKit;
   const control = document.querySelector('[data-mode-switch]');
   if (control === null) return { invoker: null, problem: 'the page has no [data-mode-switch] element', closed: 0 };
+  const isPopover = (node: Element): boolean => node instanceof HTMLElement && node.hasAttribute('popover');
   const closed: Element[] = [];
   for (let node: Element | null = control; node !== null; node = node.parentElement) {
     const shut =
       (node instanceof HTMLDetailsElement && !node.open) ||
-      (node instanceof HTMLDialogElement && !node.open) ||
-      (node instanceof HTMLElement &&
-        !(node instanceof HTMLDialogElement) &&
-        node.hasAttribute('popover') &&
-        !node.matches(':popover-open'));
+      (isPopover(node) && !node.matches(':popover-open')) ||
+      (!isPopover(node) && node instanceof HTMLDialogElement && !node.open);
     if (shut) closed.unshift(node);
   }
   const outer = closed[0];
   if (outer === undefined) return { invoker: null, problem: null, closed: 0 };
-  let invoker: Element | null = null;
-  if (outer instanceof HTMLDetailsElement) invoker = outer.querySelector(':scope > summary');
-  else {
+  const opening: Element[] = [];
+  if (outer instanceof HTMLDetailsElement) {
+    const summary = outer.querySelector(':scope > summary');
+    if (summary !== null) opening.push(summary);
+  } else {
+    const popover = isPopover(outer);
     for (const candidate of document.querySelectorAll('[popovertarget], [commandfor]')) {
-      if (candidate instanceof HTMLButtonElement || candidate instanceof HTMLInputElement) {
-        if (candidate.hasAttribute('popovertarget') && candidate.popoverTargetElement === outer) invoker = candidate;
-        if (candidate instanceof HTMLButtonElement && candidate.commandForElement === outer) {
-          const command = (candidate.getAttribute('command') ?? '').toLowerCase();
-          const opens =
-            outer instanceof HTMLDialogElement
-              ? command === 'show-modal'
-              : command === 'show-popover' || command === 'toggle-popover';
-          if (opens) invoker = candidate;
-        }
-      }
-      if (invoker !== null) break;
+      if (!(candidate instanceof HTMLButtonElement || candidate instanceof HTMLInputElement)) continue;
+      const command = (candidate.getAttribute('command') ?? '').toLowerCase();
+      const target = candidate.hasAttribute('popovertarget') ? candidate.popoverTargetElement : null;
+      const opens = popover
+        ? (target === outer && candidate.popoverTargetAction !== 'hide') ||
+          (candidate instanceof HTMLButtonElement &&
+            candidate.commandForElement === outer &&
+            (command === 'show-popover' || command === 'toggle-popover'))
+        : candidate instanceof HTMLButtonElement && candidate.commandForElement === outer && command === 'show-modal';
+      if (opens) opening.push(candidate);
     }
   }
   const name = kit.describe(outer);
-  if (invoker === null) return { invoker: null, problem: `no native invoker opens ${name}`, closed: closed.length };
-  if (!kit.visible(invoker)) {
-    return { invoker: null, problem: `${kit.describe(invoker)}, the invoker of ${name}, is not visible`, closed: 0 };
+  const first = opening[0];
+  if (first === undefined) return { invoker: null, problem: `no native invoker opens ${name}`, closed: closed.length };
+  const invoker = opening.find((candidate) => kit.visible(candidate));
+  if (invoker === undefined) {
+    return { invoker: null, problem: `${kit.describe(first)}, the invoker of ${name}, is not visible`, closed: 0 };
   }
   return { invoker, problem: null, closed: closed.length };
 }
@@ -531,7 +765,7 @@ async function openSwitch(tab: Page): Promise<string | null> {
       before = data.closed;
       clicked = data.name;
       await invoker.click();
-      await settle(tab);
+      await finishNow(tab);
     } finally {
       await step.dispose();
     }
@@ -575,7 +809,7 @@ async function choose(tab: Page, option: ModeOption): Promise<string | null> {
     if (kind === 'none' || element === null) return `the switch has no labeled radio for ${option}`;
     if (kind === 'select') await element.selectOption(option);
     else await element.click();
-    await settle(tab);
+    await finishNow(tab);
     return null;
   } finally {
     await found.dispose();
@@ -600,46 +834,62 @@ function otherPage(check: Check): string | undefined {
   return (others.find((page) => !page.is404) ?? others[0])?.path;
 }
 
-/** The JavaScript part of `modes-behavior` at one viewport, in a context of its own (a fresh stored mode). */
-async function withScripts(check: Check, viewport: Viewport, design: Design): Promise<void> {
+/**
+ * The JavaScript part of `modes-behavior` at one viewport, in a context of its own (a fresh stored mode). It gives
+ * its details; `MODE_WRITE` alone when the page wrote `data-mode` by itself, outside the clicks of the rule.
+ */
+async function withScripts(check: Check, viewport: Viewport, design: Design): Promise<string[]> {
   const options = check.run.options;
   const label = sizeText(viewport);
+  const details: string[] = [];
+  const report = (detail: string): void => {
+    details.push(detail);
+  };
   const context: BrowserContext = await check.context();
   await context.addInitScript(watchMode);
   const tab = await check.open({ viewport, context });
-  const watch = await tab.evaluate(() => window.__astroKitMode ?? { appeared: false, body: false });
-  if (!watch.appeared) check.report(`${label}: html gets no data-mode`);
-  else if (watch.body) check.report(`${label}: data-mode appears on html only after body exists`);
+  await modeWrites(tab);
+  // A write of `data-mode` since the last look that no click of the rule made.
+  const watch = async (): Promise<boolean> => (await modeWrites(tab)) > 0;
+  const seen = await tab.evaluate(() => window.__astroKitMode ?? { appeared: false, body: false });
+  if (!seen.appeared) report(`${label}: html gets no data-mode`);
+  else if (seen.body) report(`${label}: data-mode appears on html only after body exists`);
+  const fixed = (): string[] => [`${label}: ${MODE_WRITE}`];
+  if (await watch()) return fixed();
   const closed = await openSwitch(tab);
+  // The clicks on the invokers may write `data-mode`; the look after them starts a new count.
+  await modeWrites(tab);
   if (closed !== null) {
-    check.report(`${label}: ${closed}`);
-    return;
+    report(`${label}: ${closed}`);
+    return details;
   }
   const visible = await tab.evaluate(() => {
     const control = document.querySelector('[data-mode-switch]');
     return control !== null && window.__astroKit.visible(control);
   });
   if (!visible) {
-    check.report(`${label}: the mode switch is not visible`);
-    return;
+    report(`${label}: the mode switch is not visible`);
+    return details;
   }
   const order = chooseOrder(enabledModes(options), defaultMode(options));
   for (const option of order) {
+    if (await watch()) return fixed();
     const problem = await choose(tab, option);
+    // The writes of the choice are the rule's own.
+    await modeWrites(tab);
     if (problem !== null) {
-      check.report(`${label}: ${problem}`);
+      report(`${label}: ${problem}`);
       continue;
     }
     const { mode } = await tab.evaluate(shownMode, option);
-    if (mode !== option) {
-      check.report(`${label}: after the choice of ${option}, html has data-mode ${JSON.stringify(mode)}`);
-    }
+    if (mode !== option) report(`${label}: after the choice of ${option}, html has data-mode ${JSON.stringify(mode)}`);
     const scheme = modeScheme(design, option);
     const themeFor = (state: SystemState): Theme => themeOf(option, state, design.themes);
-    await compareColors(check, tab, design, `${label}, ${option} chosen`, themeFor, scheme);
+    await compareColors(report, tab, design, `${label}, ${option} chosen`, themeFor, scheme);
   }
+  if (await watch()) return fixed();
   const last = order.at(-1);
-  if (last === undefined) return;
+  if (last === undefined) return details;
   const other = otherPage(check);
   const visits: { name: string; go: () => Promise<unknown> }[] = [
     ...(other === undefined
@@ -655,12 +905,15 @@ async function withScripts(check: Check, viewport: Viewport, design: Design): Pr
   for (const visit of visits) {
     await visit.go();
     await settle(tab);
+    // A new document: the watch starts again after its own mode script ran.
+    await modeWrites(tab);
     const shown: { mode: string | null; shows: boolean } = await tab.evaluate(shownMode, last);
+    if (await watch()) return fixed();
     const { mode, shows } = shown;
-    if (mode !== last)
-      check.report(`${label}: after ${visit.name}, html has data-mode ${JSON.stringify(mode)}, not ${last}`);
-    if (!shows) check.report(`${label}: after ${visit.name}, the switch does not show ${last}`);
+    if (mode !== last) report(`${label}: after ${visit.name}, html has data-mode ${JSON.stringify(mode)}, not ${last}`);
+    if (!shows) report(`${label}: after ${visit.name}, the switch does not show ${last}`);
   }
+  return details;
 }
 
 /** The JavaScript-off part of `modes-behavior` at one viewport. */
@@ -675,7 +928,7 @@ async function withoutScripts(check: Check, viewport: Viewport, design: Design):
   for (const name of shown) check.report(`${label}: the control ${name} is visible`);
   const fallback = defaultMode(check.run.options);
   const themeFor = (state: SystemState): Theme => themeOf(fallback, state, design.themes);
-  await compareColors(check, tab, design, label, themeFor, undefined);
+  await compareColors((detail) => check.report(detail), tab, design, label, themeFor, undefined);
 }
 
 /** The viewports of `modes-behavior`, in order. */
@@ -693,7 +946,7 @@ export const modesBehavior: BrowserRule = {
     const design = check.run.design;
     if (enabledModes(check.run.options).length < 2 || design === undefined) return;
     for (const viewport of MODES_VIEWPORTS) {
-      await withScripts(check, viewport, design);
+      for (const detail of await withScripts(check, viewport, design)) check.report(detail);
       await withoutScripts(check, viewport, design);
     }
   },
