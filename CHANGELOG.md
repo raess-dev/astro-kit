@@ -156,4 +156,5 @@
     the form. Before, such a form failed although a visitor can use it without JavaScript.
   - `--shots` names the home `_index` and the 404 page `_404`, so `/index/` and `/404/` keep their own images.
   - `a11y-no-js` clicks a dialog's invoker before it closes the popovers, so an invoker inside a popover works.
-    Before, the popover closed first, and the click timed out on a hidden button.
+    Before, the popover closed first, and the click timed out on a hidden button. The popovers that do not hold
+    the invoker close before the click, so a full-screen menu cannot cover it.

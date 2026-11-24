@@ -534,8 +534,12 @@ async function submitForm(check: Check, fields: readonly FormField[], index: num
   await settle(tab);
   // A form inside a closed dialog: a click on the dialog's visible native invoker opens it, as a visitor does.
   if (await tab.evaluate(markDialogInvoker, index)) {
-    // The click comes first: the invoker may sit in a popover. Then the popovers close as a modal dialog closes
-    // them for a visitor (`restorePopovers`).
+    // Before the click, the popovers that do not hold the invoker close, so none of them covers it. The ones that
+    // hold it stay open for the click, and close after it, as a modal dialog closes them for a visitor.
+    await tab.evaluate(
+      (marker) => window.__astroKit.restorePopovers(document.querySelector(`[${marker}]`)),
+      DIALOG_INVOKER,
+    );
     await tab.locator(`[${DIALOG_INVOKER}]`).first().click();
     await tab.evaluate(() => window.__astroKit.restorePopovers());
     await settle(tab);

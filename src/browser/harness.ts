@@ -239,10 +239,12 @@ export interface PageHelpers {
   revealed: Element[];
   /**
    * Gives each popover that `openAll` made `manual` its own `popover` value again, and hides the ones a modal dialog
-   * would hide (`auto` and `hint`), except one that holds the open modal dialog. The reveal step calls it before a
-   * dialog opens, and the form check of `a11y-no-js` after it opens, so the dialog's state is the one a visitor sees.
+   * would hide (`auto` and `hint`), except one that holds the open modal dialog. With `keep`, a popover that holds
+   * `keep` stays as it is, for a later call. The reveal step calls it before a dialog opens. The form check of
+   * `a11y-no-js` calls it with the dialog's invoker before the click, so no other popover covers the invoker, and
+   * again after the dialog opens. So the dialog's state is the one a visitor sees.
    */
-  restorePopovers(): void;
+  restorePopovers(keep?: Element | null): void;
   /** The dialogs of the reveal step: the targets of visible `[commandfor][command=show-modal]`, once each. */
   dialogs(): HTMLDialogElement[];
   /** The dialogs that the reveal step opens, one at a time: `dialogs()` as it was after `openAll`. */
@@ -559,13 +561,14 @@ export function installHelpers(): void {
         if (shown === 0) break;
       }
     },
-    restorePopovers: () => {
-      for (const [target, kind] of kinds) {
+    restorePopovers: (keep) => {
+      for (const [target, kind] of [...kinds]) {
+        if (keep && target.contains(keep)) continue;
         // A popover that holds the open modal dialog stays open: hiding it would hide the dialog too.
         if (target.matches(':popover-open') && target.querySelector('dialog:modal') === null) target.hidePopover();
         target.setAttribute('popover', kind);
+        kinds.delete(target);
       }
-      kinds.clear();
     },
     dialogs: () => {
       const dialogs: HTMLDialogElement[] = [];

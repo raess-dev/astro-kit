@@ -539,6 +539,18 @@ test('a11y-no-js: a declared form inside a dialog whose invoker sits in an auto 
   assert.deepEqual(await idsOf(browser(), files, [noJs], { settings: FORMS }), []);
 });
 
+test('a11y-no-js: a full-screen popover does not keep the click from a dialog invoker outside it', async () => {
+  const page = bookingPage()
+    .replace(
+      '<form method="post"',
+      '<button type="button" popovertarget="nav">Menü</button><div popover id="nav" class="cover"><a href="/">Start</a></div><button type="button" commandfor="book" command="show-modal">Buchen</button><dialog id="book"><form method="post"',
+    )
+    .replace('</form>', '</form></dialog>')
+    .replace('</style>', '.cover{position:fixed;inset:0;inline-size:auto;block-size:auto;margin:0}</style>');
+  const files = { 'index.html': page, _redirects: '/api/forms/booking/ /#sent 303\n' };
+  assert.deepEqual(await idsOf(browser(), files, [noJs], { settings: FORMS }), []);
+});
+
 test('a11y-no-js: a declared form inside a dialog that no native invoker opens fails', async () => {
   const page = bookingPage()
     .replace('<form method="post"', '<dialog id="book"><form method="post"')
