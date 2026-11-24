@@ -142,6 +142,15 @@ test('a11y-axe: color-contrast-enhanced counts on running text in main only', as
   assert.deepEqual(await placesOf({ 'index.html': outside }, axeRule), []);
 });
 
+test('a11y-axe: running text inside an open shadow root in main counts, through the flat tree', async () => {
+  // #767676 on white is 4.54:1: AA passes, AAA (7:1) fails. closest() stops at the shadow root; the flat tree does not.
+  const shadow =
+    '<div class="card"><template shadowrootmode="open"><style>p{color:#767676}</style><p>Ein grauer Absatz.</p></template></div>';
+  const found = await placesOf(axePage(shadow, ''), axeRule);
+  assert.equal(found.length, 1, JSON.stringify(found));
+  assert.match(found[0] ?? '', /^\/ 1280×800 in the light theme: color-contrast-enhanced on /);
+});
+
 test('a11y-axe: text on a gradient is decided with the color stops of the gradient', async () => {
   const on = (stops: string): Record<string, string> =>
     axePage(
@@ -158,6 +167,40 @@ test('a11y-axe: text on a gradient is decided with the color stops of the gradie
   // A stop with alpha is composited over the color behind the gradient: here the white of the page. #00000040 gives
   // rgb(191, 191, 191), and black on it is 11.7:1.
   assert.deepEqual(await placesOf(on('#ffffff, #00000040'), axeRule), []);
+});
+
+test('a11y-axe: a lower gradient layer that an opaque upper layer hides does not count', async () => {
+  // Black on #ffffff to #eeeeee is at least 18:1. The black layer below is hidden behind the opaque upper one.
+  const css = '.hero{color:#000;background-image:linear-gradient(#ffffff, #eeeeee), linear-gradient(#000000, #000000)}';
+  assert.deepEqual(await placesOf(axePage('<p class="hero">Text auf zwei Verlaeufen.</p>', css), axeRule), []);
+  // A see-through upper stop shows the layer below: #00000000 over black is black, and black text on it is 1:1.
+  const seeThrough =
+    '.hero{color:#000;background-image:linear-gradient(#ffffff, #00000000), linear-gradient(#000000, #000000)}';
+  const found = await placesOf(axePage('<p class="hero">Text auf zwei Verlaeufen.</p>', seeThrough), axeRule);
+  assert.ok(
+    found.some((line) => line.includes('1.00:1 on the gradient stop rgb(0, 0, 0)')),
+    JSON.stringify(found),
+  );
+});
+
+test('a11y-axe: a translucent background between the text and the gradient counts', async () => {
+  // Black text on a 95% white paragraph over a black gradient: the text sits on about #f2f2f2, far above 7:1.
+  const css =
+    '.g{background-image:linear-gradient(#000000, #000000)}.t{color:#000;background-color:rgb(255 255 255 / 95%)}';
+  assert.deepEqual(
+    await placesOf(axePage('<div class="g"><p class="t">Text auf einem hellen Feld.</p></div>', css), axeRule),
+    [],
+  );
+});
+
+test('a11y-axe: a transparent gradient over a lower element with a gradient is read over that gradient', async () => {
+  // White text on a transparent gradient over a black gradient: the text sits on black, 21:1.
+  const css =
+    '.p{background-image:linear-gradient(#000000, #000000)}.t{color:#fff;background-image:linear-gradient(transparent, transparent)}';
+  assert.deepEqual(
+    await placesOf(axePage('<div class="p"><p class="t">Weiss auf Schwarz.</p></div>', css), axeRule),
+    [],
+  );
 });
 
 test('a11y-axe: running text on a gradient must meet the AAA floor too, as on a flat color', async () => {
@@ -263,6 +306,66 @@ test('a11y-axe: a link without underline in running text needs 3:1 against the t
   assert.deepEqual(await placesOf(axePage(alone, css), axeRule), []);
 });
 
+test('a11y-axe: a link whose text is underlined by an element inside it counts as underlined', async () => {
+  const sentence =
+    '<p class="t">Rufen Sie uns an: <a class="l" href="tel:+41815550110"><span class="u">081 555 01 10</span></a>, jeden Tag.</p>';
+  const css = '.t{color:#2b2521}.l{color:#2b2521;text-decoration-line:none}.u{text-decoration-line:underline}';
+  assert.deepEqual(await placesOf(axePage(sentence, css), axeRule), []);
+  // Without the underline on the span, the same link fails at 1:1.
+  const bare = css.replace('.u{text-decoration-line:underline}', '');
+  const found = await placesOf(axePage(sentence, bare), axeRule);
+  assert.ok(
+    found.some((line) => line.includes('without underline') && line.includes('1.00:1')),
+    JSON.stringify(found),
+  );
+});
+
+test('a11y-axe: the link check reads the color of the element that holds the link text', async () => {
+  const sentence =
+    '<p class="t">Rufen Sie uns an: <a class="l" href="tel:+41815550110"><span class="s">081 555 01 10</span></a>, jeden Tag.</p>';
+  // The anchor is #aaaaaa, but its text sits in a span in the text color #222222: 1:1 against the text.
+  const css =
+    '.t{color:#222222}.l{color:#aaaaaa;text-decoration-line:none;text-decoration-thickness:1px}.s{color:#222222}';
+  const found = await placesOf(axePage(sentence, css), axeRule);
+  assert.ok(
+    found.some((line) => line.includes('without underline') && line.includes('1.00:1')),
+    JSON.stringify(found),
+  );
+});
+
+test('a11y-axe: hidden text inside a link does not count for the link check', async () => {
+  // #666666 next to black text is 3.66:1, so the link passes; a hidden black span inside it must not change that.
+  const sentence =
+    '<p class="t">Rufen Sie uns an: <a class="l" href="tel:+41815550110">081 555 01 10<span hidden class="h">Versteckt</span></a>, jeden Tag.</p>';
+  const css = '.t{color:#000000}.l{color:#666666;text-decoration-line:none}.h{color:#000000}';
+  const found = await placesOf(axePage(sentence, css), axeRule);
+  assert.equal(found.filter((line) => line.includes('without underline')).length, 0, JSON.stringify(found));
+});
+
+test('a11y-axe: a link that holds only an image is no text link for the link check', async () => {
+  const sentence =
+    '<p class="t">Besuchen Sie <a class="l" href="/next/"><img src="/logo.svg" alt="Weiter" width="20" height="20"></a> heute.</p>';
+  const css = '.t{color:#222222}.l{color:#222222;text-decoration-line:none}';
+  const files = {
+    ...axePage(sentence, css),
+    'logo.svg': '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20"/></svg>',
+  };
+  const found = await placesOf(files, axeRule);
+  assert.equal(found.filter((line) => line.includes('without underline')).length, 0, JSON.stringify(found));
+});
+
+test('a11y-axe: the link check also reads a link inside an open shadow root', async () => {
+  const shadow =
+    '<div class="card"><template shadowrootmode="open"><style>p{color:#2b2521}a{color:#7d340d;text-decoration-line:none;text-decoration-thickness:1px}</style>' +
+    '<p>Rufen Sie uns an: <a href="tel:+41815550110">081 555 01 10</a>, jeden Tag.</p></template></div>';
+  const found = await placesOf(axePage(shadow, ''), axeRule);
+  assert.equal(
+    found.filter((line) => line.includes('link-in-text-block on a "081 555 01 10" without underline')).length,
+    1,
+    JSON.stringify(found),
+  );
+});
+
 test('a11y-axe: an animation that never ends fails once, also inside a shadow root', async () => {
   const css = '@keyframes blink{50%{opacity:0}}.blink{animation:blink 1s infinite}';
   assert.deepEqual(await placesOf(axePage('<p class="blink">Neu!</p>', css), axeRule), [
@@ -310,6 +413,19 @@ test('a11y-axe and contrast-pairs: a page that writes data-mode by itself gives 
       '/ 1280×800: the page changes data-mode by itself',
     ]);
   }
+});
+
+test('a11y-axe: a page that writes data-mode only at the narrow viewport gives the fixed finding there', async () => {
+  const design = designOf(DESIGN_TEXT);
+  const writer = "if (innerWidth < 500) setTimeout(() => { document.documentElement.dataset.mode = 'light'; }, 500);";
+  const page = html(BODY, {
+    css: `${renderTokens(design, MODES)}${CSS}body{color:var(--color-text);background:var(--color-page)}`,
+    head: '<script src="/writer.js"></script>',
+  });
+  const files = { 'index.html': page, 'writer.js': writer };
+  assert.deepEqual(await placesOf(files, axeRule, { settings: MODES }), [
+    '/ 390×844: the page changes data-mode by itself',
+  ]);
 });
 
 test('a11y-axe: the needs-review results bgImage, pseudoContent and video-caption fail', async () => {

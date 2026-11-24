@@ -236,10 +236,13 @@ export interface PageHelpers {
    */
   endless: { element: Element | null; name: string }[];
   /**
-   * The writes of `data-mode` on `html` since the last call that a check did not make itself (`setMode`). The first
-   * call starts the watch and gives 0. A `MutationObserver` records each write, also one of the same value.
+   * The writes of `data-mode` on `html` since the last call that a check did not make itself (`setMode`). The watch
+   * starts at the `load` event of the page, or at the first call if that comes first. A `MutationObserver` records
+   * each write, also one of the same value.
    */
   modeWrites(): number;
+  /** How long the watch of `modeWrites` has run, in milliseconds; 0 before it starts. */
+  modeAge(): number;
   /** Sets `data-mode` on `html` (`null` removes it). The watch of `modeWrites` does not count this write. */
   setMode(mode: string | null): void;
   /**
@@ -362,9 +365,20 @@ export function installHelpers(): void {
     const name = animation instanceof CSSAnimation ? animation.animationName : animation.id;
     helpers.endless.push({ element, name });
   };
-  // The watch of `modeWrites`: the observer, and the writes that its callback took.
+  // The watch of `modeWrites`: the observer, the writes that its callback took, and when it started. It starts at
+  // the `load` event, so a page script that writes `data-mode` after the load is seen however short a check is.
   let modeWatch: MutationObserver | null = null;
   let modeCount = 0;
+  let modeStart = 0;
+  const startModeWatch = (): void => {
+    if (modeWatch !== null) return;
+    modeWatch = new MutationObserver((records) => {
+      modeCount += records.length;
+    });
+    modeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-mode'] });
+    modeStart = performance.now();
+  };
+  window.addEventListener('load', startModeWatch, { once: true });
   const helpers: PageHelpers = {
     scope: null,
     focused: [],
@@ -569,16 +583,14 @@ export function installHelpers(): void {
     },
     modeWrites: () => {
       if (modeWatch === null) {
-        modeWatch = new MutationObserver((records) => {
-          modeCount += records.length;
-        });
-        modeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-mode'] });
+        startModeWatch();
         return 0;
       }
       const writes = modeCount + modeWatch.takeRecords().length;
       modeCount = 0;
       return writes;
     },
+    modeAge: () => (modeWatch === null ? 0 : performance.now() - modeStart),
     setMode: (mode) => {
       // The records before this write stay counted; the record of this write is taken at once.
       const before = modeWatch === null ? 0 : modeCount + modeWatch.takeRecords().length;

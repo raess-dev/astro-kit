@@ -94,6 +94,18 @@ test('modes-behavior: a design value takes the fallback of its theme and resolve
     ],
   };
   assert.equal(designColor(circle, '--color-a', 'light'), undefined);
+  // A valid chain longer than 32 aliases resolves: the parser accepts any length.
+  const chain: Pick<Design, 'colors'> = {
+    colors: [
+      ...Array.from({ length: 40 }, (_, at) => ({
+        name: `--color-c${at}`,
+        values: { light: `var(--color-c${at + 1})` },
+        line: at + 1,
+      })),
+      { name: '--color-c40', values: { light: '#123456' }, line: 41 },
+    ],
+  };
+  assert.equal(designColor(chain, '--color-c0', 'light'), '#123456');
   assert.equal(modeScheme(DESIGN, 'auto'), 'light dark');
   assert.equal(modeScheme(DESIGN, 'dark'), 'dark');
 });
@@ -149,6 +161,15 @@ test('modes-behavior: a choice lost on the next page fails', async () => {
     '/ 390×844: after a navigation to /a/, the switch does not show dark',
     '/ 390×844: after a reload, html has data-mode null, not dark',
     '/ 390×844: after a reload, the switch does not show dark',
+  ]);
+});
+
+test('modes-behavior: a next page that resets the mode on a timer after its load gives the fixed finding', async () => {
+  // The next page restores the choice at once, then sets it back to light 500 ms later.
+  const reset = `${modeScript(MODES)};setTimeout(() => { document.documentElement.dataset.mode = 'light'; }, 500);`;
+  assert.deepEqual(await modePlaces(modeSite({}, modePage({ script: reset }))), [
+    '/ 1280×800: the page changes data-mode by itself',
+    '/ 390×844: the page changes data-mode by itself',
   ]);
 });
 
@@ -241,6 +262,10 @@ test('modes-behavior: the invoker is the first visible one that opens; a close b
   const hidden = '<button type="button" popovertarget="p" hidden>Versteckt</button>';
   const both = `${hidden}${panel}<button type="button" popovertarget="p">Darstellung</button>`;
   assert.deepEqual(await modePlaces(modeSite({ switch: both })), []);
+  // Two open buttons, the first one disabled: the second one opens the switch.
+  const disabled = '<button type="button" popovertarget="p" disabled>Gesperrt</button>';
+  const enabled = `${disabled}${panel}<button type="button" popovertarget="p">Darstellung</button>`;
+  assert.deepEqual(await modePlaces(modeSite({ switch: enabled })), []);
   // Only a close button: no native invoker opens the switch.
   assert.deepEqual(await modePlaces(modeSite({ switch: panel })), [
     '/ 1280×800: no native invoker opens div#p',
