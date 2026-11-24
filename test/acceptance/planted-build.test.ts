@@ -494,7 +494,7 @@ const PLANTS: readonly Plant[] = [
       after(
         dir,
         'src/pages/index.astro',
-        "<p><a href={linkTo('gettingHere', locale)}>Die Anreise mit Bahn, Bus und Auto</a></p>",
+        '<p><a class="standalone" href={linkTo(\'gettingHere\', locale)}>Die Anreise mit Bahn, Bus und Auto</a></p>',
         '<p><a href="/veranstaltungen/">Konzerte und Lesungen im Winter</a></p>',
       );
     },

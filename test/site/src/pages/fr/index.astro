@@ -62,7 +62,7 @@ const heroPhoto = {
           dans le prix.
         </p>
         <p><strong>Chambre double dès {price('room-double', locale)} par nuit</strong></p>
-        <p><a href={linkTo('rooms', locale)}>Toutes les chambres et leurs prix</a></p>
+        <p><a class="standalone" href={linkTo('rooms', locale)}>Toutes les chambres et leurs prix</a></p>
       </FeatureCard>
       <FeatureCard title="La cuisine de l’Engadine">
         <p>
@@ -70,7 +70,7 @@ const heroPhoto = {
           vallée et tourte aux noix selon la recette de sa grand-mère.
         </p>
         <p><strong>Menu du soir {price('dinner-menu', locale)} par personne</strong></p>
-        <p><a href={linkTo('restaurant', locale)}>Le restaurant et la carte</a></p>
+        <p><a class="standalone" href={linkTo('restaurant', locale)}>Le restaurant et la carte</a></p>
       </FeatureCard>
       <FeatureCard title="La randonnée dès le pas de la porte">
         <p>
@@ -105,7 +105,7 @@ const heroPhoto = {
       vingt minutes. L’arrêt «&#8239;Sils/Segl Maria, Posta&#8239;» est à cinq minutes à pied de l’hôtel. Si vous le
       souhaitez, nous venons vous y chercher avec vos bagages.
     </p>
-    <p><a href={linkTo('gettingHere', locale)}>Venir en train, en bus et en voiture</a></p>
+    <p><a class="standalone" href={linkTo('gettingHere', locale)}>Venir en train, en bus et en voiture</a></p>
     <address>
       {site.name}<br>
       {site.address.street}<br>
