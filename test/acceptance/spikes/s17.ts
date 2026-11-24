@@ -41,17 +41,22 @@ const RULES = '{"prerender":[{"urls":["/auto/b/"]}]}';
  * is the path of a visitor. When B says that it saw the change, A follows its link to B.
  */
 const DRIVER = `
+  // Each step sends a trace request, so a failed run shows the last step that happened.
+  const trace = (step) => fetch('/trace/?a-' + step).catch(() => undefined);
+  trace('loaded');
   let changed = false;
   let gone = false;
   window.addEventListener('storage', (event) => {
     if (event.key === 's17:ready' && !changed) {
       changed = true;
+      trace('ready');
       const radio = document.querySelector('input[value="dark"]');
       radio.checked = true;
       radio.dispatchEvent(new Event('change', { bubbles: true }));
     }
     if (event.key === 's17:stale' && !gone) {
       gone = true;
+      trace('click');
       document.querySelector('#to-b').click();
     }
   });`;
@@ -65,6 +70,8 @@ const DRIVER = `
  * localStorage keys of its own.
  */
 const REPORTER = `
+  // Each step sends a trace request, so a failed run shows the last step that happened.
+  const trace = (step) => fetch('/trace/?b-' + step).catch(() => undefined);
   const root = document.documentElement;
   const log = [];
   const pixel = ${PIXEL_SOURCE};
@@ -87,15 +94,20 @@ const REPORTER = `
   })));
   document.addEventListener('DOMContentLoaded', () => {
     note('loaded');
+    trace('loaded-prerendering-' + document.prerendering);
     if (!document.prerendering) {
       report();
       return;
     }
     let count = 0;
-    const ready = setInterval(() => localStorage.setItem('s17:ready', String(++count)), 50);
+    const ready = setInterval(() => {
+      if (count === 0) trace('ready');
+      localStorage.setItem('s17:ready', String(++count));
+    }, 50);
     window.addEventListener('storage', (event) => {
       if (event.key !== '${KEY}') return;
       clearInterval(ready);
+      trace('storage');
       note('storage');
       // Back to the old mode, as on a page that the storage event did not reach. The activation must repair it.
       root.dataset.mode = 'light';
@@ -103,6 +115,7 @@ const REPORTER = `
       localStorage.setItem('s17:stale', '1');
     });
     document.addEventListener('prerenderingchange', () => {
+      trace('activated');
       note('prerenderingchange');
       report();
     });
@@ -268,7 +281,16 @@ test('S17: a prerendered page shows the changed mode when it activates, with no 
   const binary = chromePath();
   assert.ok(binary, 'the spike needs the file of a Chromium: set CHROME_PATH, or install the one of playwright-core');
   // The server is the only thing open before the `try`. An open server would keep the test process alive.
-  const server = await serve(dist, { headers: { 'content-security-policy': header } });
+  // The time of each request since the start, and its Sec-Purpose header, for the message of a failed run.
+  const start = Date.now();
+  const timeline: string[] = [];
+  const server = await serve(dist, {
+    headers: { 'content-security-policy': header },
+    onRequest: (request) => {
+      const purpose = request.headers['sec-purpose'];
+      timeline.push(`${Date.now() - start}ms ${request.path}${typeof purpose === 'string' ? ` [${purpose}]` : ''}`);
+    },
+  });
   let chrome: ChildProcess | undefined;
   let exited: Promise<void> | undefined;
   let forget: (() => void) | undefined;
@@ -313,7 +335,7 @@ test('S17: a prerendered page shows the changed mode when it activates, with no 
     // The request list is the only trace of this browser, so the message reads it right after the wait.
     assert.ok(
       reported.done,
-      `page B sent no report; the requests were ${server.requests.join(' ')}: ${JSON.stringify(reported.value)}`,
+      `page B sent no report; the requests were: ${timeline.join(', ')}: ${JSON.stringify(reported.value)}`,
     );
     const sent = reported.value;
     assert.equal(failed, undefined, `Chromium did not start: ${String(failed)}`);
