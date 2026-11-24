@@ -79,6 +79,15 @@ function termsOf(design: Pick<Design, 'themes'>): Terms {
   };
 }
 
+/**
+ * `scheme(m)` of 7.7: the `color-scheme` of the mode option `m` for the declared themes. `light` and `dark` fix the
+ * scheme; `auto` and `contrast` give `light dark` with both base themes, else the one declared base theme.
+ * `modes-behavior` compares the computed `color-scheme` of `html` with it.
+ */
+export function modeScheme(design: Pick<Design, 'themes'>, mode: ModeOption): string {
+  return termsOf(design).scheme(mode);
+}
+
 /** `level(m)` of 7.7. */
 const levelOf = (mode: ModeOption): Level => (mode === 'contrast' ? 'more' : 'std');
 

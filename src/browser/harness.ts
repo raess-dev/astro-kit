@@ -217,13 +217,34 @@ export interface PageHelpers {
    * holds the focus (the focus is on a part that the browser draws inside it, such as the picker of a date field).
    */
   focusRing(least: RingFloor): { element: Element; detail: string } | null;
-  /** Says whether an animation of the document runs (`document.getAnimations()`). */
+  /**
+   * The animations of the document and of every open shadow root in it. `document.getAnimations()` alone holds no
+   * animation of a shadow tree (Chromium 153).
+   */
+  animations(): Animation[];
+  /** Says whether an animation of the document or of an open shadow root runs (`animations()`). */
   animating(): boolean;
   /**
    * Pauses each running animation that never ends (its end time is infinite) at time 0, and says whether an
-   * animation still runs. `settle` calls it until nothing runs.
+   * animation still runs. `settle` calls it until nothing runs. Each animation that it pauses goes into `endless`
+   * first.
    */
   calm(): boolean;
+  /**
+   * The animations that never end, as `calm` and `finish` found them running, once each, in order: the element and
+   * the name (`animationName`, else the `id`). `a11y-axe` reports them (WCAG 2.2.2).
+   */
+  endless: { element: Element | null; name: string }[];
+  /**
+   * The writes of `data-mode` on `html` since the last call that a check did not make itself (`setMode`). The watch
+   * starts at the `load` event of the page, or at the first call if that comes first. A `MutationObserver` records
+   * each write, also one of the same value.
+   */
+  modeWrites(): number;
+  /** How long the watch of `modeWrites` has run, in milliseconds; 0 before it starts. */
+  modeAge(): number;
+  /** Sets `data-mode` on `html` (`null` removes it). The watch of `modeWrites` does not count this write. */
+  setMode(mode: string | null): void;
   /**
    * Finishes each animation that runs, and pauses at time 0 one that cannot finish (it never ends). `settle` calls
    * it at the end of its wait, and a sweep after each press.
@@ -334,11 +355,36 @@ export function installHelpers(): void {
   };
   // The `popover` value of each popover that `openAll` made `manual` (`restorePopovers`).
   const kinds = new Map<HTMLElement, string>();
+  // The animations already in `endless`.
+  const recorded = new Set<Animation>();
+  const record = (animation: Animation): void => {
+    if (recorded.has(animation)) return;
+    recorded.add(animation);
+    const effect = animation.effect;
+    const element = effect instanceof KeyframeEffect ? effect.target : null;
+    const name = animation instanceof CSSAnimation ? animation.animationName : animation.id;
+    helpers.endless.push({ element, name });
+  };
+  // The watch of `modeWrites`: the observer, the writes that its callback took, and when it started. It starts at
+  // the `load` event, so a page script that writes `data-mode` after the load is seen however short a check is.
+  let modeWatch: MutationObserver | null = null;
+  let modeCount = 0;
+  let modeStart = 0;
+  const startModeWatch = (): void => {
+    if (modeWatch !== null) return;
+    modeWatch = new MutationObserver((records) => {
+      modeCount += records.length;
+    });
+    modeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-mode'] });
+    modeStart = performance.now();
+  };
+  window.addEventListener('load', startModeWatch, { once: true });
   const helpers: PageHelpers = {
     scope: null,
     focused: [],
     revealed: [],
     revealDialogs: [],
+    endless: [],
     root: () => helpers.scope ?? document.body ?? document.documentElement,
     visible: (element) => {
       // The layout first: `checkVisibility` reads a skipped `content-visibility` subtree, such as the content of a
@@ -496,12 +542,27 @@ export function installHelpers(): void {
         detail: `${helpers.describe(active)} shows a ring of contrast ${shown}:1 on rgb(${red}, ${green}, ${blue})`,
       };
     },
-    animating: () => document.getAnimations().some((animation) => animation.playState === 'running'),
+    animations: () => {
+      const found = document.getAnimations();
+      // Each open shadow root, also one inside another: its `getAnimations()` holds the animations of its tree.
+      const roots: (Document | ShadowRoot)[] = [document];
+      for (let at = 0; at < roots.length; at += 1) {
+        for (const element of roots[at]?.querySelectorAll('*') ?? []) {
+          const shadow = element.shadowRoot;
+          if (shadow === null) continue;
+          roots.push(shadow);
+          for (const animation of shadow.getAnimations()) if (!found.includes(animation)) found.push(animation);
+        }
+      }
+      return found;
+    },
+    animating: () => helpers.animations().some((animation) => animation.playState === 'running'),
     calm: () => {
       let running = false;
-      for (const animation of document.getAnimations()) {
+      for (const animation of helpers.animations()) {
         if (animation.playState !== 'running') continue;
         if (animation.effect?.getComputedTiming().endTime === Number.POSITIVE_INFINITY) {
+          record(animation);
           animation.pause();
           animation.currentTime = 0;
         } else running = true;
@@ -509,15 +570,34 @@ export function installHelpers(): void {
       return running;
     },
     finish: () => {
-      for (const animation of document.getAnimations()) {
+      for (const animation of helpers.animations()) {
         if (animation.playState !== 'running') continue;
         try {
           animation.finish();
         } catch {
+          record(animation);
           animation.pause();
           animation.currentTime = 0;
         }
       }
+    },
+    modeWrites: () => {
+      if (modeWatch === null) {
+        startModeWatch();
+        return 0;
+      }
+      const writes = modeCount + modeWatch.takeRecords().length;
+      modeCount = 0;
+      return writes;
+    },
+    modeAge: () => (modeWatch === null ? 0 : performance.now() - modeStart),
+    setMode: (mode) => {
+      // The records before this write stay counted; the record of this write is taken at once.
+      const before = modeWatch === null ? 0 : modeCount + modeWatch.takeRecords().length;
+      if (mode === null) document.documentElement.removeAttribute('data-mode');
+      else document.documentElement.setAttribute('data-mode', mode);
+      modeWatch?.takeRecords();
+      modeCount = before;
     },
     openAll: () => {
       // In document order, so a `details` inside an outer one is visible when its turn comes. A `name` makes an
@@ -642,6 +722,17 @@ export async function settle(page: Page): Promise<void> {
     }
     await pause(FRAME_MS);
   }
+}
+
+/**
+ * Waits until the fonts are ready, then ends every running animation at once (`finish`): for a check that reads only
+ * values that no animation changes, such as the probes of `modes-behavior`, so it needs no wait of up to 2 s.
+ */
+export async function finishNow(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    window.__astroKit.finish();
+  });
 }
 
 // The reveal step
@@ -815,10 +906,7 @@ export function themeStates(options: Pick<Options, 'modes'>, themes: readonly Th
  * then the wait for the animations.
  */
 export async function applyTheme(page: Page, state: ThemeState): Promise<void> {
-  await page.evaluate((mode) => {
-    if (mode === null) document.documentElement.removeAttribute('data-mode');
-    else document.documentElement.setAttribute('data-mode', mode);
-  }, state.mode ?? null);
+  await page.evaluate((mode) => window.__astroKit.setMode(mode), state.mode ?? null);
   await page.emulateMedia({ colorScheme: state.system.scheme, contrast: state.system.contrast });
   await settle(page);
 }
