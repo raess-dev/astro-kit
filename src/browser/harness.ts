@@ -231,11 +231,20 @@ export interface PageHelpers {
   finish(): void;
   /**
    * The first two parts of the reveal step: every visible `details` open, every popover of a visible invoker shown.
-   * Each popover that it shows goes into `revealed`.
+   * An exclusive group (`details[name]`, `auto` and `hint` popovers) is opened as a whole: the step removes the
+   * `name` and shows each popover as `manual`. Each popover that it shows goes into `revealed`.
    */
   openAll(): void;
   /** The popovers that `openAll` showed. A sample of `a11y-keyboard` that hits one of them is no cover. */
   revealed: Element[];
+  /**
+   * Gives each popover that `openAll` made `manual` its own `popover` value again, and hides the ones a modal dialog
+   * would hide (`auto` and `hint`), except one that holds the open modal dialog. With `keep`, a popover that holds
+   * `keep` stays as it is, for a later call. The reveal step calls it before a dialog opens. The form check of
+   * `a11y-no-js` calls it with the dialog's invoker before the click, so no other popover covers the invoker, and
+   * again after the dialog opens. So the dialog's state is the one a visitor sees.
+   */
+  restorePopovers(keep?: Element | null): void;
   /** The dialogs of the reveal step: the targets of visible `[commandfor][command=show-modal]`, once each. */
   dialogs(): HTMLDialogElement[];
   /** The dialogs that the reveal step opens, one at a time: `dialogs()` as it was after `openAll`. */
@@ -323,6 +332,8 @@ export function installHelpers(): void {
     if ((!across && !down) || element.closest('[inert]') !== null || !helpers.visible(element)) return false;
     return ![...element.querySelectorAll(FOCUSABLE)].some((inner) => helpers.tabbable(inner));
   };
+  // The `popover` value of each popover that `openAll` made `manual` (`restorePopovers`).
+  const kinds = new Map<HTMLElement, string>();
   const helpers: PageHelpers = {
     scope: null,
     focused: [],
@@ -509,9 +520,12 @@ export function installHelpers(): void {
       }
     },
     openAll: () => {
-      // In document order, so a `details` inside an outer one is visible when its turn comes.
+      // In document order, so a `details` inside an outer one is visible when its turn comes. A `name` makes an
+      // exclusive group, in which opening one closes the others; without it, every one stays open and is measured.
       for (const details of document.querySelectorAll('details')) {
-        if (helpers.visible(details)) details.open = true;
+        if (!helpers.visible(details)) continue;
+        details.removeAttribute('name');
+        details.open = true;
       }
       // A shown popover can hold the invoker of another one, so the passes go on until one shows nothing new.
       const invokers = [...document.querySelectorAll('[popovertarget], [commandfor]')];
@@ -530,6 +544,13 @@ export function installHelpers(): void {
             continue;
           }
           try {
+            // An `auto` or `hint` popover closes the others of its kind when it shows. As `manual`, each one stays
+            // open, so the content of every popover is measured, as a visitor sees each of them in turn.
+            const kind = target.getAttribute('popover') ?? '';
+            if (kind !== 'manual') {
+              if (!kinds.has(target)) kinds.set(target, kind);
+              target.setAttribute('popover', 'manual');
+            }
             target.showPopover();
             if (!helpers.revealed.includes(target)) helpers.revealed.push(target);
             shown += 1;
@@ -538,6 +559,15 @@ export function installHelpers(): void {
           }
         }
         if (shown === 0) break;
+      }
+    },
+    restorePopovers: (keep) => {
+      for (const [target, kind] of [...kinds]) {
+        if (keep && target.contains(keep)) continue;
+        // A popover that holds the open modal dialog stays open: hiding it would hide the dialog too.
+        if (target.matches(':popover-open') && target.querySelector('dialog:modal') === null) target.hidePopover();
+        target.setAttribute('popover', kind);
+        kinds.delete(target);
       }
     },
     dialogs: () => {
@@ -649,6 +679,8 @@ export async function reveal(page: Page, visit: (state: RevealState) => Promise<
     const opened = await page.evaluate((at) => {
       const dialog = window.__astroKit.revealDialogs[at];
       if (dialog === undefined || dialog.open || !dialog.isConnected) return false;
+      // A modal dialog hides the `auto` popovers; the reveal step made them `manual`, so it hides them itself.
+      window.__astroKit.restorePopovers();
       try {
         dialog.showModal();
       } catch {

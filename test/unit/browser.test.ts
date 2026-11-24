@@ -190,8 +190,11 @@ test('the component names are the files of src/styles/components, sorted', () =>
 });
 
 test('a shot is named after the page and the viewport', () => {
-  assert.equal(shotName('/', 1280, 800), 'index-1280x800.png');
-  assert.equal(shotName('/404.html', 390, 844), '404-390x844.png');
+  // `_` is in no slug: the home and the 404 page never share a name with `/index/` or `/404/`.
+  assert.equal(shotName('/', 1280, 800), '_index-1280x800.png');
+  assert.equal(shotName('/index/', 1280, 800), 'index-1280x800.png');
+  assert.equal(shotName('/404.html', 390, 844), '_404-390x844.png');
+  assert.equal(shotName('/404/', 390, 844), '404-390x844.png');
   // The segments join with `--`, which no slug holds: `fr-kontakt` would also be the name of `/fr-kontakt/`.
   assert.equal(shotName('/fr/kontakt/', 390, 844), 'fr--kontakt-390x844.png');
   assert.equal(shotName('/zimmer-suite/', 1280, 800), 'zimmer-suite-1280x800.png');
@@ -744,12 +747,12 @@ test('--shots writes one full-page PNG for each tested page and viewport', async
     });
     const files = readdirSync(shots).sort();
     assert.deepEqual(files, [
-      '404-1280x800.png',
-      '404-390x844.png',
+      '_404-1280x800.png',
+      '_404-390x844.png',
+      '_index-1280x800.png',
+      '_index-390x844.png',
       'fr-1280x800.png',
       'fr-390x844.png',
-      'index-1280x800.png',
-      'index-390x844.png',
     ]);
     // Device scale 1: the width in the PNG header (bytes 16 to 19, big-endian) is the width of the viewport.
     const widths = files.map((file) => readFileSync(join(shots, file)).readUInt32BE(16));

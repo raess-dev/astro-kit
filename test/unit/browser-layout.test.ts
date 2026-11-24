@@ -207,6 +207,30 @@ test('a11y-targets: the reveal step measures inside details and popovers, and ea
   ]);
 });
 
+test('a11y-targets: the reveal step measures inside each of two auto popovers, although one closes the other', async () => {
+  const body = [
+    BODY,
+    '<button popovertarget="one">Zimmer</button><div popover id="one"><p><a class="small" href="/a/">Im ersten</a></p></div>',
+    '<button popovertarget="two">Preise</button><div popover id="two"><p><a class="small" href="/b/">Im zweiten</a></p></div>',
+  ].join('');
+  assert.deepEqual(await detailsOf(page(body, SMALL), targets), [
+    '390×844 after the reveal step: a.small "Im ersten" is 40×20',
+    '390×844 after the reveal step: a.small "Im zweiten" is 40×20',
+  ]);
+});
+
+test('a11y-targets: the reveal step opens every details of an exclusive group', async () => {
+  const body = [
+    BODY,
+    '<details name="faq"><summary class="big">Zimmer</summary><p><a class="small" href="/a/">Im ersten</a></p></details>',
+    '<details name="faq"><summary class="big">Preise</summary><p><a class="small" href="/b/">Im zweiten</a></p></details>',
+  ].join('');
+  assert.deepEqual(await detailsOf(page(body, `${SMALL}.big{min-block-size:44px}`), targets), [
+    '390×844 after the reveal step: a.small "Im ersten" is 40×20',
+    '390×844 after the reveal step: a.small "Im zweiten" is 40×20',
+  ]);
+});
+
 // a11y-reflow
 
 test('a11y-reflow: the smallest page passes', async () => {

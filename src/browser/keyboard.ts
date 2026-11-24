@@ -501,16 +501,49 @@ function invalidField(index: number): string | null {
   return null;
 }
 
+/** The attribute that marks the native invoker of the dialog that holds a form (`markDialogInvoker`). */
+const DIALOG_INVOKER = 'data-astro-kit-invoker';
+
+/**
+ * Marks the visible native invoker (`[commandfor][command=show-modal]`) of the closed dialog that holds a form, and
+ * says whether it marked one (page code). A form in no dialog, or in an open one, needs none.
+ */
+function markDialogInvoker(index: number): boolean {
+  const dialog = document.querySelectorAll('form')[index]?.closest('dialog');
+  if (!dialog || dialog.open || dialog.id === '') return false;
+  for (const invoker of document.querySelectorAll('[commandfor]')) {
+    if (!(invoker instanceof HTMLButtonElement) || invoker.commandForElement !== dialog) continue;
+    if ((invoker.getAttribute('command') ?? '').toLowerCase() !== 'show-modal') continue;
+    if (!window.__astroKit.visible(invoker)) continue;
+    invoker.setAttribute('data-astro-kit-invoker', '');
+    return true;
+  }
+  return false;
+}
+
 /**
  * Fills and submits one declared form with JS off and gives the detail of a fail, or `null`. Each form gets a
  * fresh tab: after a submission that the CSP stops, Playwright takes no further click on that document (13.1
  * item 56). The tab first opens every `details` and popover, as the reveal step does, so a form inside one can be
- * filled. The fields are filled in their declared order.
+ * filled, and then the dialog that holds the form through its native invoker. The fields are filled in their
+ * declared order.
  */
 async function submitForm(check: Check, fields: readonly FormField[], index: number): Promise<string | null> {
   const tab = await check.open({ viewport: NARROW, javaScript: false });
   await tab.evaluate(() => window.__astroKit.openAll());
   await settle(tab);
+  // A form inside a closed dialog: a click on the dialog's visible native invoker opens it, as a visitor does.
+  if (await tab.evaluate(markDialogInvoker, index)) {
+    // Before the click, the popovers that do not hold the invoker close, so none of them covers it. The ones that
+    // hold it stay open for the click, and close after it, as a modal dialog closes them for a visitor.
+    await tab.evaluate(
+      (marker) => window.__astroKit.restorePopovers(document.querySelector(`[${marker}]`)),
+      DIALOG_INVOKER,
+    );
+    await tab.locator(`[${DIALOG_INVOKER}]`).first().click();
+    await tab.evaluate(() => window.__astroKit.restorePopovers());
+    await settle(tab);
+  }
   for (const field of fields) {
     const problem = await tab.evaluate(fieldProblem, { index, name: field.name });
     if (problem !== null) return problem;
