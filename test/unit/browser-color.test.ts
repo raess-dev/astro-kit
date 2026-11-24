@@ -142,6 +142,15 @@ test('a11y-axe: color-contrast-enhanced counts on running text in main only', as
   assert.deepEqual(await placesOf({ 'index.html': outside }, axeRule), []);
 });
 
+test('a11y-axe: running text inside an open shadow root in main counts, through the flat tree', async () => {
+  // #767676 on white is 4.54:1: AA passes, AAA (7:1) fails. closest() stops at the shadow root; the flat tree does not.
+  const shadow =
+    '<div class="card"><template shadowrootmode="open"><style>p{color:#767676}</style><p>Ein grauer Absatz.</p></template></div>';
+  const found = await placesOf(axePage(shadow, ''), axeRule);
+  assert.equal(found.length, 1, JSON.stringify(found));
+  assert.match(found[0] ?? '', /^\/ 1280×800 in the light theme: color-contrast-enhanced on /);
+});
+
 test('a11y-axe: text on a gradient is decided with the color stops of the gradient', async () => {
   const on = (stops: string): Record<string, string> =>
     axePage(

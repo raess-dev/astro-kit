@@ -182,10 +182,13 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
     const root = from.getRootNode();
     return root instanceof ShadowRoot ? root.host : null;
   };
+  // `closest` stops at a shadow root, so running text inside a component in `main` is found through the flat tree.
+  const within = (element: Element, selector: string): boolean => {
+    for (let node: Element | null = element; node !== null; node = up(node)) if (node.matches(selector)) return true;
+    return false;
+  };
   const running = (element: Element): boolean =>
-    element.closest('main') !== null &&
-    element.closest(arg.running) !== null &&
-    element.closest(arg.notRunning) === null;
+    within(element, 'main') && within(element, arg.running) && !within(element, arg.notRunning);
   // The layers composited from the nearest to the farthest, until one is opaque, then over white.
   const flatten = (elements: Iterable<Element>): number[] => {
     const layers: number[][] = [];
