@@ -298,7 +298,7 @@ astro-kit/
 | `src/facts.ts` | Schemas and loaders for `site.json`, `schedule.json` and `glossary.json`. |
 | `src/redirects.ts` | The `redirects.json` schema and validation, and the `_redirects` lines. It holds the checks on one `from` and on one `to`, which `routes-redirects` and `edge-redirects` share. |
 | `src/routes.ts` | `RESERVED_SEGMENTS`, the locale of a path, locale homes, the 404 path, the slug pattern, the check of a built page path (the build half of `routes-slug`, which `src/audit/site.ts` runs), and the checks of `astro:routes:resolved`: `routes-on-demand` and the endpoint clause of `routes-slug`, with `FORM_ROUTE` and `FORM_SHIM`. |
-| `src/registry.ts` | `RULES` with levels and the waivable mark, `Report`, `Finding`, `FindingError`, waivers, `formatFindings`. |
+| `src/registry.ts` | `RULES` with levels and the waivable mark, `Report`, `Finding`, `FindingError` (its `message` is the `formatFindings` text; its `toString()` only counts the failing findings, 13.1 item 65), waivers, `formatFindings`. |
 | `src/preflight.ts` | Runs every config-stage check, in a fixed order. |
 | `src/project.ts` | Checks on `package.json`, dependencies, sources, `public/` and image originals. |
 | `src/shims.ts` | The shim texts, the feature shims and the normalized comparison. |
@@ -2986,6 +2986,7 @@ These facts were checked on the versions of 2.1, against the published package s
 62. Astro writes the CSS of a page into its `<style>` element as it is: it does not escape `</style`. The minifier writes a CSS escape in a string as its character, so `"\3c /style>"` becomes `"</style>"`. Such a string ends the element in the page: the rest of the CSS is markup, and the CSP then refuses both parts of the style, because no hash fits. `design-format` refuses `<` and the backslash in a value for this reason (7.4). A `content: "</style>"` in project CSS has the same effect; no rule checks it at M3.
 63. With `@astrojs/cloudflare` 14.4.7 and no on-demand route in the project, the build writes the Worker config to `dist/client/wrangler.json` and leaves `dist/server` empty. `dist/client/.assetsignore` then names `wrangler.json` and `.dev.vars`, so the config is no public file. With an on-demand route the output is the one of item 16. A forms site always has the form route (9.1), so only a forms site in work shows this layout (measured with the packed kit).
 64. Without a terminal, `astro dev` of Astro 7.4.11 starts the server as a background process, prints `Dev server running at <url> (pid <n>)` and returns with exit 0. `astro dev stop` ends that server, and `astro dev status` and `astro dev logs` read it. A script that starts `astro dev` must stop it in this way (measured in the scratch site; the `dev` variant of the acceptance suite of M9 depends on it).
+65. Astro 7.4.11 prints a build error's `message`, and picks its hint in `generateHint` (`core/errors/dev/utils.js`): when `err.toString()` holds `document` or `window`, the hint is "Browser APIs are not available on the server". A `FindingError` whose text named `budget-document` got that false hint. So `FindingError.toString()` is one line that counts the failing findings, `AstroKitError: astro-kit: <n> findings fail the build`, and holds no rule text.
 
 ### 13.2 To prove in the acceptance suite (milestone M1)
 

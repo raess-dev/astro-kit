@@ -946,6 +946,16 @@ export class FindingError extends Error {
     this.name = 'AstroKitError';
     this.findings = findings;
   }
+
+  /**
+   * One line that counts the failing findings, without their text. Astro prints `message`, but it picks its hint from
+   * `toString()`: a text with `document` or `window` gets "Browser APIs are not available on the server" (13.1). A
+   * rule id such as `budget-document` would set that false hint off.
+   */
+  override toString(): string {
+    const count = failures(this.findings).length;
+    return `${this.name}: astro-kit: ${count} ${count === 1 ? 'finding fails' : 'findings fail'} the build`;
+  }
 }
 
 /** Collects findings; throws once with all of them, so one run reports everything. */
