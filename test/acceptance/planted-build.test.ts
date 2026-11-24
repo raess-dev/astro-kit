@@ -19,13 +19,14 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { edit, passedLine, read, run, siteCase, write } from './harness.ts';
 
-/** The ids of the set at M5, sorted. */
+/** The ids of the set at M5, with `edge-private` of M6, sorted. */
 const BUILD_IDS = [
   'content-copied',
   'content-glossary',
   'content-language',
   'content-nfc',
   'content-stale',
+  'edge-private',
   'facts-value',
   'head-canonical',
   'head-description',
@@ -164,6 +165,12 @@ const PLANTS: readonly Plant[] = [
         '<h2>En voiture</h2>',
         '<h2>À vélo</h2>\n    <p>Le col de la Maloja se monte aussi à vélo.</p>\n\n    <h2>En voiture</h2>',
       ),
+  },
+  {
+    // A negation in `.assetsignore` undoes the platform lines, so Cloudflare would serve `_headers`, `_redirects`
+    // and `.assetsignore` (13.1 item 66).
+    id: 'edge-private',
+    plant: (dir) => write(dir, { 'public/.assetsignore': '!*\n' }),
   },
   {
     // A phone number that is not in `site.json`, on the 404 page, which has no translation to compare.
