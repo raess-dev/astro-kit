@@ -370,11 +370,15 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
   // The ancestor that holds the text around a link: from its parent through the inline elements (a11y-targets).
   // A link is underlined when each of its text nodes has an element with a text decoration line between it and
   // the link, the link included: an underline on a `span` inside the link counts.
+  // A text node that the page renders: it holds a letter or a digit, and its element is visible. Hidden text
+  // (`hidden`, `display: none`, `visibility: hidden`) does not count, as for axe.
+  const rendered = (node: Node): boolean =>
+    word.test(node.textContent ?? '') && node.parentElement?.checkVisibility({ visibilityProperty: true }) === true;
   const underlined = (link: Element): boolean => {
     const walker = document.createTreeWalker(link, NodeFilter.SHOW_TEXT);
     let texts = 0;
     for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-      if (!word.test(node.textContent ?? '')) continue;
+      if (!rendered(node)) continue;
       texts += 1;
       let marked = false;
       for (let element = node.parentElement; element !== null; element = element.parentElement) {
@@ -420,7 +424,7 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
       const holders = new Set<Element>();
       const walker = document.createTreeWalker(link, NodeFilter.SHOW_TEXT);
       for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-        if (word.test(node.textContent ?? '') && node.parentElement !== null) holders.add(node.parentElement);
+        if (rendered(node) && node.parentElement !== null) holders.add(node.parentElement);
       }
       if (holders.size === 0) holders.add(link);
       let own = text;
