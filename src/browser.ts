@@ -302,8 +302,9 @@ function pagesOf(rule: BrowserRule, run: TestRun): readonly TestPage[] {
  * the path are joined with `--`, which no slug holds (`routes-slug`), so two pages never share a name.
  */
 export function shotName(where: string, width: number, height: number): string {
-  const slug = where === '/' ? 'index' : isNotFoundPath(where) ? '404' : where.split('/').filter(Boolean).join('--');
-  const safe = [...slug].map((char) => (/[a-z0-9-]/.test(char) ? char : '_')).join('');
+  // `_` is in no slug, so the names of the home and the 404 page are never the names of a page.
+  const slug = where === '/' ? '_index' : isNotFoundPath(where) ? '_404' : where.split('/').filter(Boolean).join('--');
+  const safe = slug.startsWith('_') ? slug : [...slug].map((char) => (/[a-z0-9-]/.test(char) ? char : '_')).join('');
   return `${safe}-${width}x${height}.png`;
 }
 

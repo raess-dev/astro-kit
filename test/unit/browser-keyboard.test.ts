@@ -517,6 +517,25 @@ test('a11y-no-js: a declared form that lands on #sent passes', async () => {
   assert.deepEqual(await idsOf(browser(), files, [noJs], { settings: FORMS }), []);
 });
 
+test('a11y-no-js: a declared form inside a dialog that a native invoker opens passes', async () => {
+  const page = bookingPage()
+    .replace(
+      '<form method="post"',
+      '<button type="button" commandfor="book" command="show-modal">Buchen</button><dialog id="book"><form method="post"',
+    )
+    .replace('</form>', '</form></dialog>');
+  const files = { 'index.html': page, _redirects: '/api/forms/booking/ /#sent 303\n' };
+  assert.deepEqual(await idsOf(browser(), files, [noJs], { settings: FORMS }), []);
+});
+
+test('a11y-no-js: a declared form inside a dialog that no native invoker opens fails', async () => {
+  const page = bookingPage()
+    .replace('<form method="post"', '<dialog id="book"><form method="post"')
+    .replace('</form>', '</form></dialog>');
+  const files = { 'index.html': page, _redirects: '/api/forms/booking/ /#sent 303\n' };
+  assert.deepEqual(await idsOf(browser(), files, [noJs], { settings: FORMS }), ['a11y-no-js']);
+});
+
 test('a11y-no-js: a declared form that the server refuses fails', async () => {
   assert.deepEqual(await placesOf(browser(), { 'index.html': bookingPage() }, [noJs], { settings: FORMS }), [
     '/ 390×844 with JS off: the form booking lands on /api/forms/booking/, not on /#sent',
