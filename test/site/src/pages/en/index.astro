@@ -60,7 +60,7 @@ const heroPhoto = {
           price.
         </p>
         <p><strong>Double room from {price('room-double', locale)} per night</strong></p>
-        <p><a href={linkTo('rooms', locale)}>All rooms and their prices</a></p>
+        <p><a class="standalone" href={linkTo('rooms', locale)}>All rooms and their prices</a></p>
       </FeatureCard>
       <FeatureCard title="Engadin cooking">
         <p>
@@ -68,7 +68,7 @@ const heroPhoto = {
           chard leaves), game from the valley and the nut tart of the Engadin, baked to his grandmother’s recipe.
         </p>
         <p><strong>Evening menu {price('dinner-menu', locale)} per person</strong></p>
-        <p><a href={linkTo('restaurant', locale)}>The restaurant and the menu</a></p>
+        <p><a class="standalone" href={linkTo('restaurant', locale)}>The restaurant and the menu</a></p>
       </FeatureCard>
       <FeatureCard title="Walks from the front door">
         <p>
@@ -102,7 +102,7 @@ const heroPhoto = {
       “Sils/Segl Maria, Posta” is five minutes on foot from the hotel. If you wish, we will meet you there and carry
       your luggage.
     </p>
-    <p><a href={linkTo('gettingHere', locale)}>Getting here by train, bus and car</a></p>
+    <p><a class="standalone" href={linkTo('gettingHere', locale)}>Getting here by train, bus and car</a></p>
     <address>
       {site.name}<br>
       {site.address.street}<br>

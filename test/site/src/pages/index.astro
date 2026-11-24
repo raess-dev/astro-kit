@@ -55,7 +55,7 @@ const heroPhoto = {
           Frühstücksbuffet mit Brot aus dem Dorf und Engadiner Bergkäse ist im Preis inbegriffen.
         </p>
         <p><strong>Doppelzimmer ab {price('room-double', locale)} pro Nacht</strong></p>
-        <p><a href={linkTo('rooms', locale)}>Alle Zimmer und ihre Preise</a></p>
+        <p><a class="standalone" href={linkTo('rooms', locale)}>Alle Zimmer und ihre Preise</a></p>
       </FeatureCard>
       <FeatureCard title="Engadiner Küche">
         <p>
@@ -63,7 +63,7 @@ const heroPhoto = {
           Nusstorte nach dem Rezept der Grossmutter.
         </p>
         <p><strong>Abendmenü {price('dinner-menu', locale)} pro Person</strong></p>
-        <p><a href={linkTo('restaurant', locale)}>Das Restaurant und die Speisekarte</a></p>
+        <p><a class="standalone" href={linkTo('restaurant', locale)}>Das Restaurant und die Speisekarte</a></p>
       </FeatureCard>
       <FeatureCard title="Wandern ab der Haustür">
         <p>
@@ -97,7 +97,7 @@ const heroPhoto = {
       Haltestelle «Sils/Segl Maria, Posta» liegt fünf Gehminuten vom Hotel. Auf Wunsch holen wir Sie und Ihr Gepäck dort
       ab.
     </p>
-    <p><a href={linkTo('gettingHere', locale)}>Die Anreise mit Bahn, Bus und Auto</a></p>
+    <p><a class="standalone" href={linkTo('gettingHere', locale)}>Die Anreise mit Bahn, Bus und Auto</a></p>
     <address>
       {site.name}<br>
       {site.address.street}<br>

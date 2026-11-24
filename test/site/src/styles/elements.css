@@ -97,6 +97,13 @@
     text-decoration-thickness: var(--line-thick);
   }
 
+  /* A link that stands alone in its paragraph, not inside a sentence: a target of 44 px. */
+  a.standalone {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: var(--size-target);
+  }
+
   /* A link that looks like a button: the main action of a section. */
   a.button {
     display: inline-flex;

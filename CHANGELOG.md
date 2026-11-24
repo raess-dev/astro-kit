@@ -123,3 +123,25 @@
   Worker config that no line hides. It reads `.assetsignore` with the code of `serveDist`, which now lives in
   `src/hosts/cloudflare.ts`. The `build` planted set gets the plant `!*` in `public/.assetsignore`. The kit has 94
   rules.
+- Milestone M6, part 6b: the command `test` (`--all`, `--outline`, `--shots`) and the browser harness of
+  `src/browser.ts` and `src/browser/`. It launches the browser of 2.1 once, serves `dist` with `serveDist`, tests
+  one page per locale and layout key (every page with `--all`), and gives each check browser contexts of its own.
+  The page helpers come through an init script, so they also work with JavaScript off. The harness holds the
+  viewports, the reveal step, the sweep, the Themes walk and the Colors probe. The 8 rules `a11y-focus`,
+  `a11y-targets`, `a11y-reflow`, `a11y-spacing`, `a11y-forced-colors`, `a11y-keyboard`, `a11y-no-js` and
+  `a11y-reveal` join the registry, so it has 102 rules. A sweep is the Tab sequence of `a11y-keyboard`, through
+  its stops. The test site gives a link that stands alone in its paragraph the class `standalone`, a target of
+  44 px, and a page-index link a width of at least 44 px.
+  - Measurements that depend on time are deterministic: a sweep turns smooth scrolling off, runs one timer turn and
+    finishes the running animations after each press, and the Themes wait pauses an animation that never ends at
+    time 0 and finishes one that still runs after 2 s.
+  - A sweep: a press that keeps the focus on the same element (a date field, a media player, an `iframe`) does not
+    count, up to 50. The stops also hold a control with a negative `tabindex` (a roving group once) and a scroll
+    container that Chromium focuses. `a11y-focus` does not measure a part that the browser draws inside a control.
+  - The reveal step takes its dialogs once and opens the popovers again after each dialog; a popover that it
+    showed is no cover for `a11y-keyboard`. `a11y-forced-colors` reads the buttons at 1280×800, at 390×844 and in
+    each state of the reveal step.
+  - A link inside `strong` or another inline element of a sentence is inline for `a11y-targets`. `a11y-reflow`
+    skips `.visually-hidden`, and `a11y-spacing` counts only a box that holds text.
+  - A page that does not load within 30 s costs one limit for the whole run. `test --outline` on a target that
+    answers other than 2xx exits 1. `--shots` joins the segments of a path with `--`.

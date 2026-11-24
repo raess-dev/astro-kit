@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { BAD_OUTLINE, NO_BUILD, outlineAnswered } from '../../src/browser.ts';
 import { findBin } from '../../src/ci.ts';
 import { type Io, main, outcome, PASSED_LINE, USAGE } from '../../src/cli.ts';
 import { type Finding, formatFindings, getRule } from '../../src/registry.ts';
+import { BODY, CSS, html } from './browser-fixtures.ts';
 import { type Files, inTemp, inTempAsync, json, SMALLEST } from './fixtures.ts';
 import { SPEC, specBlock } from './spec.ts';
 
@@ -40,14 +42,14 @@ function recorder(env: Io['env'] = {}): { io: Io; out: () => string; err: () => 
 
 // The usage
 
-/** The commands of 6.4 that a later milestone adds (M6 and M9). */
-const LATER = ['init', 'check', 'test', 'ci', 'smoke', 'routes', 'provision', 'feedback', 'settings', 'legal'] as const;
+/** The commands of 6.4 that a later milestone adds (M9). */
+const LATER = ['init', 'check', 'ci', 'smoke', 'routes', 'provision', 'feedback', 'settings', 'legal'] as const;
 
 test('the usage names the commands of this milestone and no later one', () => {
   assert.equal(USAGE.includes('npx --no astro-kit <command>'), true);
   assert.equal(SPEC.includes('In the project root: `npx --no astro-kit <command>`.'), true);
   const commands = [...USAGE.matchAll(/^ {2}(\S+(?: \[--[a-z]+\])?) {2,}\S/gm)].map((match) => match[1]);
-  assert.deepEqual(commands, ['build', 'tokens [--check]', 'help']);
+  assert.deepEqual(commands, ['build', 'test [--all]', 'tokens [--check]', 'help']);
   assert.equal(USAGE.endsWith('\n'), false);
 });
 
@@ -651,4 +653,141 @@ test('the process: a design document that is not valid gives the status 1 and no
     return { status: exit.status, stdout: exit.stdout, ids: idsIn(exit.stderr), css: textOf(join(root, TOKENS_FILE)) };
   });
   assert.deepEqual(seen, { status: 1, stdout: '', ids: ['design-format'], css: undefined });
+});
+
+// astro-kit test
+
+/** A project with a build: the settings, the design document and one page in `dist/`. */
+const BUILT: Files = {
+  ...PROJECT,
+  'dist/index.html': html(BODY, { css: CSS }),
+  'dist/404.html': html(BODY, { css: CSS }),
+};
+
+/** Runs `astro-kit test` as a process, with the browser of the machine or the one that `chrome` names. */
+function spawnTest(root: string, args: readonly string[], chrome?: string): Exit {
+  const done = spawnSync(process.execPath, [CLI, 'test', ...args], {
+    cwd: root,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_TEST_CONTEXT: undefined,
+      [SUMMARY_VARIABLE]: '',
+      ...(chrome === undefined ? {} : { CHROME_PATH: chrome }),
+    },
+    timeout: 120_000,
+  });
+  return { status: done.status, stdout: done.stdout, stderr: done.stderr };
+}
+
+test('the flags of test: a bad flag, a flag twice, a flag without its value, or --outline with another flag is a usage error', async () => {
+  const bad = [
+    ['test', 'extra'],
+    ['test', '--check'],
+    ['test', '--all', '--all'],
+    ['test', '--shots'],
+    ['test', '--shots', ''],
+    ['test', '--shots', '--all'],
+    ['test', '--outline'],
+    ['test', '--outline', '/', '--all'],
+    ['test', '--outline', '/', '--shots', 'shots'],
+    ['test', '--shots', 'a', '--shots', 'b'],
+  ];
+  for (const argv of bad) {
+    const seen = recorder();
+    const code = await main(argv, '/no/such/folder', seen.io);
+    assert.deepEqual(
+      { code, out: seen.out(), err: seen.err() },
+      { code: 2, out: '', err: `${USAGE}\n` },
+      argv.join(' '),
+    );
+  }
+});
+
+test('astro-kit test without a build: the message, 1 and no passed line', async () => {
+  for (const files of [PROJECT, { ...PROJECT, 'dist/zimmer/index.html': html(BODY) }]) {
+    const seen = recorder();
+    const code = await inTempAsync(files, (root) => main(['test'], root, seen.io));
+    assert.deepEqual({ code, out: seen.out(), err: seen.err() }, { code: 1, out: '', err: `${NO_BUILD}\n` });
+  }
+  assert.equal(SPEC.includes('Needs `dist/index.html` (or `dist/client/index.html`).'), true);
+});
+
+test('astro-kit test with settings that are not valid: config-options, 1, and the browser does not start', async () => {
+  const seen = recorder({ CHROME_PATH: '/no/such/chrome' });
+  const code = await inTempAsync({ ...BUILT, 'astro-kit.json': '{}' }, (root) => main(['test'], root, seen.io));
+  assert.deepEqual({ code, ids: idsIn(seen.err()), out: seen.out() }, { code: 1, ids: ['config-options'], out: '' });
+});
+
+test('astro-kit test --outline takes a page path or an https URL', async () => {
+  const seen = recorder();
+  const code = await inTempAsync(BUILT, (root) => main(['test', '--outline', 'zimmer/'], root, seen.io));
+  assert.deepEqual({ code, out: seen.out(), err: seen.err() }, { code: 1, out: '', err: `${BAD_OUTLINE}\n` });
+});
+
+test('the process: test runs the checks on dist and ends with the passed line; --all and the client directory too', () => {
+  const seen = inTemp(BUILT, (root) => [spawnTest(root, []), spawnTest(root, ['--all'])]);
+  const client = inTemp(
+    { ...PROJECT, 'dist/client/index.html': html(BODY, { css: CSS }), 'dist/server/entry.mjs': '' },
+    (root) => spawnTest(root, []),
+  );
+  const pass: Exit = { status: 0, stdout: PASSED, stderr: '' };
+  assert.deepEqual([...seen, client], [pass, pass, pass]);
+});
+
+test('the process: test --shots writes the images into the folder, relative to the root', () => {
+  const seen = inTemp(BUILT, (root) => {
+    const exit = spawnTest(root, ['--shots', 'shots']);
+    const files = readdirSync(join(root, 'shots')).sort();
+    // Device scale 1: the width in the PNG header (bytes 16 to 19, big-endian) is the width of the viewport.
+    const widths = files.map((file) => readFileSync(join(root, 'shots', file)).readUInt32BE(16));
+    return { exit, files, widths };
+  });
+  assert.deepEqual(seen, {
+    exit: { status: 0, stdout: PASSED, stderr: '' },
+    files: ['404-1280x800.png', '404-390x844.png', 'index-1280x800.png', 'index-390x844.png'],
+    widths: [1280, 390, 1280, 390],
+  });
+});
+
+test('the process: test --outline prints the outline of a served page, and no passed line', () => {
+  const seen = inTemp(BUILT, (root) => spawnTest(root, ['--outline', '/']));
+  assert.deepEqual(seen, {
+    status: 0,
+    stdout: [
+      '- link "Zum Inhalt":',
+      '  - /url: "#main"',
+      '- main:',
+      '  - heading "Willkommen" [level=1]',
+      '  - paragraph: Ein Absatz mit Text.',
+      '',
+    ].join('\n'),
+    stderr: '',
+  });
+});
+
+test('the process: test --outline on a path that answers other than 2xx prints why and gives 1; /404 answers 200', () => {
+  const seen = inTemp(BUILT, (root) => [
+    spawnTest(root, ['--outline', '/nope/']),
+    spawnTest(root, ['--outline', '/404']),
+  ]);
+  assert.deepEqual(seen[0], { status: 1, stdout: '', stderr: `${outlineAnswered('/nope/', 404)}\n` });
+  assert.equal(outlineAnswered('/nope/', 404), 'astro-kit test: --outline /nope/ answered 404');
+  assert.equal(seen[1]?.status, 0, seen[1]?.stderr);
+  assert.match(seen[1]?.stdout ?? '', /heading "Willkommen"/);
+  assert.equal(
+    SPEC.includes('A target that answers other than 2xx prints `astro-kit test: --outline <target> answered <status>`'),
+    true,
+  );
+});
+
+test('the process: a browser that does not start gives its error and 1, and the server closes (13.1 item 34)', () => {
+  const seen = inTemp(BUILT, (root) => spawnTest(root, [], '/no/such/chrome'));
+  assert.equal(seen.status, 1, seen.stderr);
+  assert.equal(seen.stdout, '');
+  assert.match(seen.stderr, /^astro-kit test: the browser \/no\/such\/chrome did not start: /);
+  assert.equal(
+    SPEC.includes('When the browser does not start, the command prints the error of the launch and exits 1 (6.4).'),
+    true,
+  );
 });

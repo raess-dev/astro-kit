@@ -12,6 +12,7 @@
     .page-index__link {
       display: inline-flex;
       align-items: center;
+      min-inline-size: var(--size-target);
       min-block-size: var(--size-target);
     }
 

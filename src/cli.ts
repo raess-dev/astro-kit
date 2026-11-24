@@ -5,8 +5,8 @@
  * This file loads no other module of the kit until a command needs it. So `help` and a usage error start fast, and
  * a command loads only what it uses.
  *
- * This milestone has the commands `build` and `tokens`. Every other command of 6.4 is an unknown command until
- * its milestone adds it (M6 and M9).
+ * This milestone has the commands `build`, `test` and `tokens`. Every other command of 6.4 is an unknown command
+ * until its milestone adds it (M9).
  */
 import type { ToolIo } from './ci.ts';
 import type { Finding } from './registry.ts';
@@ -16,6 +16,9 @@ export const USAGE = `Usage: npx --no astro-kit <command>
 Run it in the project root.
 
   build             Runs astro build. The kit checks the project and the built site inside it.
+  test [--all]      Runs the browser checks on dist: one page for each locale and layout, or every page
+                    with --all. --shots <dir> also writes a full-page image of each page and viewport.
+                    --outline <path|https URL> prints the accessibility outline of one page instead.
   tokens [--check]  Writes src/styles/tokens.css from docs/design.md and the mode options.
                     With --check it writes nothing and compares the file.
   help              Prints this text.`;
@@ -99,6 +102,38 @@ function flagsOf(args: readonly string[], known: readonly string[]): ReadonlySet
   return args.every((arg) => known.includes(arg)) ? new Set(args) : undefined;
 }
 
+/**
+ * The flags of a command with flags that take a value (`--shots <dir>`). `undefined` when an argument is not a known
+ * flag, a flag comes twice, or a flag that takes a value has none. A value never starts with `--`.
+ */
+function valuedFlagsOf(
+  args: readonly string[],
+  known: readonly string[],
+  valued: readonly string[],
+): ReadonlyMap<string, string | true> | undefined {
+  const flags = new Map<string, string | true>();
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? '';
+    if (flags.has(arg)) return undefined;
+    if (known.includes(arg)) {
+      flags.set(arg, true);
+      continue;
+    }
+    if (!valued.includes(arg)) return undefined;
+    const value = args[index + 1];
+    if (value === undefined || value === '' || value.startsWith('--')) return undefined;
+    flags.set(arg, value);
+    index += 1;
+  }
+  return flags;
+}
+
+/** The value of a flag that takes one, else `undefined`. */
+const flagValue = (flags: ReadonlyMap<string, string | true>, name: string): string | undefined => {
+  const value = flags.get(name);
+  return typeof value === 'string' ? value : undefined;
+};
+
 /** Runs one command. `undefined` means a usage error: an unknown command, flag or argument. */
 async function dispatch(argv: readonly string[], root: string, io: Io): Promise<number | undefined> {
   const [command, ...rest] = argv;
@@ -112,6 +147,20 @@ async function dispatch(argv: readonly string[], root: string, io: Io): Promise<
     const { build } = await import('./ci.ts');
     // `build` gives the status of `astro build`. The integration ran every check inside that process.
     return passed(await outcome(await build(root, io), io), io);
+  }
+  if (command === 'test') {
+    const flags = valuedFlagsOf(rest, ['--all'], ['--outline', '--shots']);
+    if (flags === undefined) return undefined;
+    const target = flagValue(flags, '--outline');
+    if (target !== undefined) {
+      // `--outline` prints one page and runs no check, so it takes no other flag and prints no passed line.
+      if (flags.size > 1) return undefined;
+      const { outline } = await import('./browser.ts');
+      return outline(root, target, io);
+    }
+    const { test } = await import('./browser.ts');
+    const findings = await test(root, { all: flags.has('--all'), shots: flagValue(flags, '--shots') }, io);
+    return passed(await outcome(findings, io), io);
   }
   if (command === 'tokens') {
     const flags = flagsOf(rest, ['--check']);

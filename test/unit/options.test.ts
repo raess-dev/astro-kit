@@ -159,7 +159,7 @@ function outcomes(cases: readonly Case[]): Outcome[] {
 
 const text = (length: number): string => 'x'.repeat(length);
 
-test('the registry holds the rules of milestones M2, M3 and parts 5a to 5c of M5 in the order of section 8', () => {
+test('the registry holds the rules of milestones M2, M3, M5 and part 6b of M6 in the order of section 8', () => {
   assert.deepEqual(
     RULES.map((rule) => [rule.id, rule.group, rule.stage]),
     [
@@ -257,6 +257,14 @@ test('the registry holds the rules of milestones M2, M3 and parts 5a to 5c of M5
       ['media-captions', 'media', 'build'],
       ['media-pdf', 'media', 'build'],
       ['svg-name', 'svg', 'build'],
+      ['a11y-focus', 'a11y', 'browser'],
+      ['a11y-targets', 'a11y', 'browser'],
+      ['a11y-reflow', 'a11y', 'browser'],
+      ['a11y-spacing', 'a11y', 'browser'],
+      ['a11y-forced-colors', 'a11y', 'browser'],
+      ['a11y-keyboard', 'a11y', 'browser'],
+      ['a11y-no-js', 'a11y', 'browser'],
+      ['a11y-reveal', 'a11y', 'browser'],
     ],
   );
   // Section 8, Waivers: of these rules, only these are waivable.
@@ -292,6 +300,14 @@ test('the registry holds the rules of milestones M2, M3 and parts 5a to 5c of M5
     'media-captions',
     'media-pdf',
     'svg-name',
+    'a11y-focus',
+    'a11y-targets',
+    'a11y-reflow',
+    'a11y-spacing',
+    'a11y-forced-colors',
+    'a11y-keyboard',
+    'a11y-no-js',
+    'a11y-reveal',
   ];
   for (const rule of RULES) {
     assert.equal(rule.level, 'error', rule.id);
