@@ -259,6 +259,8 @@ test('M5 planted set css: exactly the ids of its list', async () => {
   );
   assert.equal(result.status, 1, tail(result));
   assert.deepEqual(passedLine(result), NOT_PASSED, tail(result));
+  // `budget-document` holds the word that sets off Astro's false browser hint (13.1); the kit keeps it off.
+  assert.equal(result.output.includes('Browser APIs are not available'), false, tail(result));
 });
 
 // The design set
