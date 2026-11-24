@@ -346,12 +346,20 @@ const FIELDS: ReadonlyMap<string, string> = new Map([
 ]);
 
 /**
+ * A `(0)` right after the country code of an international number: the trunk zero of `+41 (0)81 555 01 10`. It is
+ * no digit of the number. The pattern is anchored, and each part has a bound, so it cannot backtrack.
+ */
+const TRUNK_ZERO = /^(\s*(?:\+|00)\d{1,3})\s*\(0\)/;
+
+/**
  * A phone number normalized to E.164 (Measurement details): the digits; a leading `+` or `00` gives `+`; a leading
  * single `0` (a Swiss national number) gives `+41` and the digits without that `0`. Any other text gives its digits.
+ * A `(0)` right after the country code is dropped first, so `+41 (0)81 555 01 10` is `+41815550110`.
  */
 function phoneOf(text: string): string {
-  const digits = text.replace(/\D+/g, '');
-  const trimmed = text.trimStart();
+  const plain = text.replace(TRUNK_ZERO, '$1');
+  const digits = plain.replace(/\D+/g, '');
+  const trimmed = plain.trimStart();
   if (trimmed.startsWith('+')) return `+${digits}`;
   if (trimmed.startsWith('00')) return `+${digits.slice(2)}`;
   if (trimmed.startsWith('0')) return `+41${digits.slice(1)}`;
