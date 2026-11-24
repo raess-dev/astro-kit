@@ -311,21 +311,27 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
     // The colors behind the gradient: the elements below the holder in the stack, their gradients included, then
     // white. Each lower element paints its background color, then its gradient layers, over what lies below it.
     const belowAll = backdrops(stack.slice(at + 1));
-    const below = belowAll[0] ?? white;
     // With `background-clip: text` the gradient paints the text itself, and its background color too is clipped.
     const clipText = style.backgroundClip === 'text';
-    const unders = belowAll.map((back) => (clipText ? back : kit.over(kit.pixel(style.backgroundColor), back)));
     const text = kit.pixel(getComputedStyle(element).color);
     // The background colors between the holder and the text lie over the gradient: from the holder up to the text.
     const above = clipText ? [] : stack.slice(0, at).reverse();
+    // Each painted color with the backdrop it lies on. At one point of the page, gradient text is its stop over the
+    // backdrop there, and the color around it is that same backdrop: so each stop is compared with its own backdrop.
+    const pairs = belowAll
+      .flatMap((back) => {
+        const under = clipText ? back : kit.over(kit.pixel(style.backgroundColor), back);
+        return paintedBy(layers, under).map((painted) => ({ back, painted }));
+      })
+      .slice(0, PAINT_LIMIT);
     let worst: { ratio: number; behind: number[] } | null = null;
-    for (const painted of unders.flatMap((under) => paintedBy(layers, under)).slice(0, PAINT_LIMIT)) {
+    for (const { back, painted } of pairs) {
       let seen = painted;
       for (const layer of above) {
         const color = kit.pixel(getComputedStyle(layer).backgroundColor);
         if (color.length === 4 && (color[3] ?? 0) > 0) seen = kit.over(color, seen);
       }
-      const behind = clipText ? below : seen;
+      const behind = clipText ? back : seen;
       const ratio = kit.contrast(kit.over(text, clipText ? painted : seen), behind);
       if (worst === null || ratio < worst.ratio) worst = { ratio, behind: seen };
     }
@@ -384,22 +390,30 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
   const inlineElements = new Set(arg.inlineNames);
   const word = /[\p{L}\p{N}]/u;
   // The ancestor that holds the text around a link: from its parent through the inline elements (a11y-targets).
-  // A link is underlined when each of its text nodes has an element with a text decoration line between it and
-  // the link, the link included: an underline on a `span` inside the link counts.
+  // A link is underlined when each of its text nodes gets a text decoration line from an element below the element
+  // that holds the text around the link: an underline on a `span` inside the link, on the link, or on an inline
+  // element around it counts. An underline on the holder or above it underlines the text around the link too, so it
+  // does not set the link apart. As CSS hands decorations down (CSS Text Decoration 3, 2.1), a float, an absolutely
+  // or fixed positioned element, or an atomic inline on the way stops the decorations of its ancestors.
   // A text node that the page renders: it holds a letter or a digit, and its element is visible. Hidden text
   // (`hidden`, `display: none`, `visibility: hidden`) does not count, as for axe.
   const rendered = (node: Node): boolean =>
     word.test(node.textContent ?? '') && node.parentElement?.checkVisibility({ visibilityProperty: true }) === true;
-  const underlined = (link: Element): boolean => {
+  const atomic = new Set(['inline-block', 'inline-flex', 'inline-grid', 'inline-table']);
+  const stopsDecorations = (style: CSSStyleDeclaration): boolean =>
+    atomic.has(style.display) || style.float !== 'none' || style.position === 'absolute' || style.position === 'fixed';
+  const underlined = (link: Element, around: Element): boolean => {
     const walker = document.createTreeWalker(link, NodeFilter.SHOW_TEXT);
     let texts = 0;
     for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
       if (!rendered(node)) continue;
       texts += 1;
       let marked = false;
-      for (let element = node.parentElement; element !== null; element = element.parentElement) {
-        if (getComputedStyle(element).textDecorationLine !== 'none') marked = true;
-        if (marked || element === link) break;
+      let element: Element | null = node.parentElement;
+      for (; element !== null && element !== around; element = parentOf(element)) {
+        const style = getComputedStyle(element);
+        if (style.textDecorationLine !== 'none') marked = true;
+        if (marked || stopsDecorations(style)) break;
       }
       if (!marked) return false;
     }
@@ -431,9 +445,9 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
     };
     collect(document);
     for (const [index, link] of links.entries()) {
-      if (underlined(link) || !kit.visible(link)) continue;
+      if (!kit.visible(link)) continue;
       const around = textAround(link);
-      if (around === null) continue;
+      if (around === null || underlined(link, around)) continue;
       const behind = flatten([link, ...ancestors(link)]);
       const text = kit.over(kit.pixel(getComputedStyle(around).color), behind);
       // The color of the link is the color of the elements that hold its text; the worst one counts.
