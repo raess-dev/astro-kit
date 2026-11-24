@@ -102,3 +102,6 @@
 - `facts-value` drops a `(0)` that stands right after the country code, so `+41 (0)81 555 01 10` is the number
   `+41815550110`. This common Swiss form failed before, because every digit counted. A `(0)` at any other place
   still counts as a digit.
+- A failing build no longer gets Astro's false hint "Browser APIs are not available on the server". Astro picks
+  that hint when the error text holds `document` or `window`, and the id `budget-document` did. `FindingError`
+  now gives Astro a one-line `toString()` that only counts the failing findings. The printed findings are the same.

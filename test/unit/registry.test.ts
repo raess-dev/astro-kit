@@ -156,6 +156,29 @@ test('the text never holds the passed line of 6.4: only the command line prints 
   assert.equal(new FindingError([warn], rules).message.includes(PASSED_LINE), false);
 });
 
+test('FindingError: toString() counts the failing findings and holds no rule text, so Astro adds no browser hint', () => {
+  const findings: Finding[] = [
+    { rule: 'budget-document', where: '/jobs/', detail: 'the page has 77,660 B compressed' },
+    { rule: 'links-target-blank', where: '/en/rooms/', detail: 'target=_blank opens a window' },
+  ];
+  const error = new FindingError(findings);
+  assert.equal(error.message, formatFindings(findings));
+  assert.equal(error.toString(), 'AstroKitError: astro-kit: 2 findings fail the build');
+  assert.equal(
+    new FindingError([findings[0] as Finding]).toString(),
+    'AstroKitError: astro-kit: 1 finding fails the build',
+  );
+  // Astro 7.4.11 `generateHint`: `["document", "window"].some((api) => err.toString().includes(api))`.
+  assert.equal(
+    ['document', 'window'].some((api) => error.toString().includes(api)),
+    false,
+  );
+  assert.equal(
+    ['document', 'window'].some((api) => error.message.includes(api)),
+    true,
+  );
+});
+
 test('a warn finding has "!", is not counted and fails nothing', () => {
   const findings: Finding[] = [{ rule: 'links-depth', where: '/a/b/c/d/' }];
   assert.equal(
