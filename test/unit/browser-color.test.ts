@@ -183,6 +183,16 @@ test('a11y-axe: a lower gradient layer that an opaque upper layer hides does not
   );
 });
 
+test('a11y-axe: a translucent background between the text and the gradient counts', async () => {
+  // Black text on a 95% white paragraph over a black gradient: the text sits on about #f2f2f2, far above 7:1.
+  const css =
+    '.g{background-image:linear-gradient(#000000, #000000)}.t{color:#000;background-color:rgb(255 255 255 / 95%)}';
+  assert.deepEqual(
+    await placesOf(axePage('<div class="g"><p class="t">Text auf einem hellen Feld.</p></div>', css), axeRule),
+    [],
+  );
+});
+
 test('a11y-axe: running text on a gradient must meet the AAA floor too, as on a flat color', async () => {
   // Black on #777777 is 4.68:1: AA passes, AAA fails on running text. A heading is no running text.
   const css = '.hero{color:#000;background-image:linear-gradient(#ffffff, #777777)}';
@@ -300,6 +310,19 @@ test('a11y-axe: a link whose text is underlined by an element inside it counts a
   );
 });
 
+test('a11y-axe: the link check reads the color of the element that holds the link text', async () => {
+  const sentence =
+    '<p class="t">Rufen Sie uns an: <a class="l" href="tel:+41815550110"><span class="s">081 555 01 10</span></a>, jeden Tag.</p>';
+  // The anchor is #aaaaaa, but its text sits in a span in the text color #222222: 1:1 against the text.
+  const css =
+    '.t{color:#222222}.l{color:#aaaaaa;text-decoration-line:none;text-decoration-thickness:1px}.s{color:#222222}';
+  const found = await placesOf(axePage(sentence, css), axeRule);
+  assert.ok(
+    found.some((line) => line.includes('without underline') && line.includes('1.00:1')),
+    JSON.stringify(found),
+  );
+});
+
 test('a11y-axe: the link check also reads a link inside an open shadow root', async () => {
   const shadow =
     '<div class="card"><template shadowrootmode="open"><style>p{color:#2b2521}a{color:#7d340d;text-decoration-line:none;text-decoration-thickness:1px}</style>' +
@@ -359,6 +382,19 @@ test('a11y-axe and contrast-pairs: a page that writes data-mode by itself gives 
       '/ 1280×800: the page changes data-mode by itself',
     ]);
   }
+});
+
+test('a11y-axe: a page that writes data-mode only at the narrow viewport gives the fixed finding there', async () => {
+  const design = designOf(DESIGN_TEXT);
+  const writer = "if (innerWidth < 500) setTimeout(() => { document.documentElement.dataset.mode = 'light'; }, 500);";
+  const page = html(BODY, {
+    css: `${renderTokens(design, MODES)}${CSS}body{color:var(--color-text);background:var(--color-page)}`,
+    head: '<script src="/writer.js"></script>',
+  });
+  const files = { 'index.html': page, 'writer.js': writer };
+  assert.deepEqual(await placesOf(files, axeRule, { settings: MODES }), [
+    '/ 390×844: the page changes data-mode by itself',
+  ]);
 });
 
 test('a11y-axe: the needs-review results bgImage, pseudoContent and video-caption fail', async () => {

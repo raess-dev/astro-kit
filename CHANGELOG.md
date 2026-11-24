@@ -183,6 +183,9 @@
     hides no longer counts (from the Codex review of #18).
   - A link whose text an element inside it underlines counts as underlined. After the navigation and the reload,
     `modes-behavior` reads the mode only after the 1 s watch of the new page (from the Codex review of #18).
+  - Over a gradient, the background colors between the gradient and the text count. The link check reads the color
+    of the element that holds the link text. The phone pass of `a11y-axe` waits for the 1 s watch too. An alias
+    chain of any length resolves; a circle still ends (from the Codex review of #18).
   - Running text for `color-contrast-enhanced` is found through the flat tree, so a paragraph in an open shadow
     root of a component in `main` counts (from the Codex review of #18).
   - The three rules measure colors only through the Colors probe of the harness: the one luminance formula of the

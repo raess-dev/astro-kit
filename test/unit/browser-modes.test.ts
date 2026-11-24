@@ -94,6 +94,18 @@ test('modes-behavior: a design value takes the fallback of its theme and resolve
     ],
   };
   assert.equal(designColor(circle, '--color-a', 'light'), undefined);
+  // A valid chain longer than 32 aliases resolves: the parser accepts any length.
+  const chain: Pick<Design, 'colors'> = {
+    colors: [
+      ...Array.from({ length: 40 }, (_, at) => ({
+        name: `--color-c${at}`,
+        values: { light: `var(--color-c${at + 1})` },
+        line: at + 1,
+      })),
+      { name: '--color-c40', values: { light: '#123456' }, line: 41 },
+    ],
+  };
+  assert.equal(designColor(chain, '--color-c0', 'light'), '#123456');
   assert.equal(modeScheme(DESIGN, 'auto'), 'light dark');
   assert.equal(modeScheme(DESIGN, 'dark'), 'dark');
 });

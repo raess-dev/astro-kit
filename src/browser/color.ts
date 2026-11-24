@@ -300,11 +300,18 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
     const clipText = style.backgroundClip === 'text';
     const under = clipText ? below : kit.over(kit.pixel(style.backgroundColor), below);
     const text = kit.pixel(getComputedStyle(element).color);
+    // The background colors between the holder and the text lie over the gradient: from the holder up to the text.
+    const above = clipText ? [] : stack.slice(0, at).reverse();
     let worst: { ratio: number; behind: number[] } | null = null;
     for (const painted of paintedBy(layers, under)) {
-      const behind = clipText ? below : painted;
-      const ratio = kit.contrast(kit.over(text, painted), behind);
-      if (worst === null || ratio < worst.ratio) worst = { ratio, behind: painted };
+      let seen = painted;
+      for (const layer of above) {
+        const color = kit.pixel(getComputedStyle(layer).backgroundColor);
+        if (color.length === 4 && (color[3] ?? 0) > 0) seen = kit.over(color, seen);
+      }
+      const behind = clipText ? below : seen;
+      const ratio = kit.contrast(kit.over(text, clipText ? painted : seen), behind);
+      if (worst === null || ratio < worst.ratio) worst = { ratio, behind: seen };
     }
     return worst;
   };
@@ -408,9 +415,24 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
       const around = textAround(link);
       if (around === null) continue;
       const behind = flatten([link, ...ancestors(link)]);
-      const own = kit.over(kit.pixel(getComputedStyle(link).color), behind);
       const text = kit.over(kit.pixel(getComputedStyle(around).color), behind);
-      const ratio = kit.contrast(own, text);
+      // The color of the link is the color of the elements that hold its text; the worst one counts.
+      const holders = new Set<Element>();
+      const walker = document.createTreeWalker(link, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+        if (word.test(node.textContent ?? '') && node.parentElement !== null) holders.add(node.parentElement);
+      }
+      if (holders.size === 0) holders.add(link);
+      let own = text;
+      let ratio = Number.POSITIVE_INFINITY;
+      for (const holder of holders) {
+        const color = kit.over(kit.pixel(getComputedStyle(holder).color), behind);
+        const each = kit.contrast(color, text);
+        if (each < ratio) {
+          ratio = each;
+          own = color;
+        }
+      }
       if (ratio >= arg.linkContrast) continue;
       hits.push({
         key: `link-in-text-block ${index}`,
@@ -520,6 +542,10 @@ export const axeRule: BrowserRule = {
       await reveal(narrow, async (state) => {
         if (going) going = await measure(narrow, NARROW, state.label, false);
       });
+      if (going && (await finalModeWrites(narrow)) > 0) {
+        written ??= sizeText(NARROW);
+        going = false;
+      }
       if (going) await animations(narrow, NARROW);
     }
     if (written !== undefined) {
@@ -659,9 +685,6 @@ interface ColorReading {
   colors: { name: string; probe: number[]; reference: number[] }[];
 }
 
-/** The most aliases that `designColor` follows. `design-format` refuses a circle; this bound keeps hostile input finite. */
-const ALIAS_DEPTH = 32;
-
 /**
  * The design value of a color token in a theme (7.4 and 7.7): the cell with its fallback along the themes, and an
  * alias `var(--color-…)` replaced with the value of the token it names, in the same theme. `undefined` when no
@@ -669,8 +692,12 @@ const ALIAS_DEPTH = 32;
  */
 export function designColor(design: Pick<Design, 'colors'>, name: string, theme: Theme): string | undefined {
   const byName = new Map(design.colors.map((color) => [color.name, color]));
+  // A chain of aliases of any length is followed; a token met twice is a circle (`design-format` refuses it), and
+  // the walk ends there, so hostile input stays finite.
+  const seen = new Set<string>();
   let current = name;
-  for (let depth = 0; depth <= ALIAS_DEPTH; depth += 1) {
+  while (!seen.has(current)) {
+    seen.add(current);
     const color = byName.get(current);
     const value = color === undefined ? undefined : colorValue(color, theme);
     if (value === undefined) return undefined;
