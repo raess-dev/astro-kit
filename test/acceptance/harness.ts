@@ -5,7 +5,8 @@
  *   and the packed kit installed once.
  * - Case folders under `<base>/cases/<name>/`. Node, Astro and the kit walk up to `<base>/node_modules` for every
  *   package. A spike starts from an empty folder (`caseDir`). A site case starts from a copy of the site (`siteCase`).
- * - Runners for the kit CLI (`run`), Astro, a static server, Chromium, and the file of measured values.
+ * - Runners for the kit CLI (`run`), Astro, the kit's static server `serveDist`, Chromium, and the file of measured
+ *   values.
  */
 import { AssertionError } from 'node:assert';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -28,7 +29,8 @@ import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual, stripVTControlCharacters } from 'node:util';
-import { type Served, type ServeOptions, serve as serveDist } from './serve.ts';
+import type * as ServeModule from '../../src/serve.ts';
+import type { Served as KitServed, ServeOptions } from '../../src/serve.ts';
 
 /** The repository root: the checkout of the kit. */
 export const REPO = resolve(import.meta.dirname, '../..');
@@ -622,8 +624,31 @@ export interface StandIn {
 export const standIn = (): Promise<StandIn> =>
   import(pathToFileURL(join(STAND_IN, 'integration.mjs')).href) as Promise<StandIn>;
 
-export function serve(dist: string, options: ServeOptions = {}): Promise<Served> {
-  return serveDist(dist, options);
+export type { ServeOptions };
+
+/** The kit's static server for a spike or a case, with the request targets as a list of their own. */
+export interface Served extends KitServed {
+  /** Every request target that the server saw, with the query, in order: the paths of `received`. */
+  readonly requests: string[];
+}
+
+/**
+ * Serves a built `dist/` with `serveDist` of the packed kit (14.2, "Kit functions"): `dist/client` when it is the
+ * client directory, else `dist`. The server records every request, with its method and its headers, in `received`.
+ */
+export async function serve(dist: string, options: ServeOptions = {}): Promise<Served> {
+  const { serveDist } = await kitModule<typeof ServeModule>('serve');
+  const served = await serveDist(dist, options);
+  return {
+    origin: served.origin,
+    address: served.address,
+    root: served.root,
+    received: served.received,
+    get requests() {
+      return served.received.map((request) => request.path);
+    },
+    close: () => served.close(),
+  };
 }
 
 interface Playwright {

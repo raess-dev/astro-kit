@@ -155,7 +155,8 @@ export interface HeaderRule {
 /** A line that Cloudflare reads as a pattern: it starts with `/` or with a scheme, such as `https://`. */
 const PATTERN_LINE = /^(\S+:\/\/|\/)/;
 
-const DETACH_LINE = /^!\s+(\S+)$/;
+/** A detach line: `! ` and one name. Cloudflare needs the space after `!`, so `!\tName` is no detach. */
+const DETACH_LINE = /^! +(\S+)$/;
 
 /** Reads one header line. A line that Cloudflare ignores gives `undefined`. */
 function headerLine(text: string, line: number): HeaderLine | undefined {
@@ -216,7 +217,7 @@ const ruleText = (pattern: string, lines: readonly string[]): string =>
  * own output.
  *
  * 1. `/*` comes first, because Cloudflare applies the matching rules in file order and a detach removes only what
- *    an earlier rule set. It holds the seven headers of the kit, with `astroPrefetch` the `Cache-Control` of HTML,
+ *    the answer holds at that point. It holds the seven headers of the kit, with `astroPrefetch` the `Cache-Control` of HTML,
  *    and then each line of an existing `/*` rule that neither sets nor detaches one of these names.
  * 2. One `/_astro/*` rule comes second. With `astroPrefetch` it detaches `Cache-Control` and sets the immutable
  *    value, also with forms: the adapter skips its rule when `/*` sets `Cache-Control`. Without `astroPrefetch`

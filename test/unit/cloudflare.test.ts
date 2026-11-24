@@ -279,6 +279,7 @@ test('parseHeaders reads a line as Cloudflare does: the content decides, and a l
     '/*',
     '  no colon and no detach',
     '  !X-NoSpace',
+    '  !\tX-Tab',
     '  : no name',
     '  X-Empty:',
     '  X Space: 1',

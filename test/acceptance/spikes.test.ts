@@ -1,6 +1,7 @@
 /**
  * The spikes of the specification, 13.2: S1 to S19. Each one proves a platform fact in a minimal Astro project that
- * the suite writes from strings. A spike uses no kit: it uses the stand-in integration of `kit/`.
+ * the suite writes from strings. A spike uses no kit: it uses the stand-in integration of `kit/`. The one kit part that
+ * a spike uses is the static server `serveDist`, for the pages that it opens in Chromium.
  * Run: node --test test/acceptance/spikes.test.ts
  * One spike alone: node --test test/acceptance/spikes/s05.ts
  */

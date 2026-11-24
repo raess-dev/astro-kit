@@ -196,7 +196,7 @@ export function checkHeaders(text: string, options: HeaderSettings, report: Repo
   }
 
   // With prefetch, `/*` sets a Cache-Control for HTML. The asset rule must detach it, and a detach removes only
-  // what an earlier rule set.
+  // what the answer holds at that point, so it must come after `/*`.
   if (!prefetch) return;
   const assets = rules.filter((rule) => rule.pattern === ASSETS_PATTERN);
   const detaches = assets.some((rule) =>
