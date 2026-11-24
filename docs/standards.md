@@ -31,7 +31,7 @@ Every failing check prints the same three lines:
 
 ## Rules
 
-93 rules in 22 groups.
+94 rules in 22 groups.
 
 ### config
 
@@ -170,6 +170,7 @@ Every failing check prints the same three lines:
 
 - <a id="edge-headers"></a>**edge-headers** — `_headers` has ≤ 100 rules, lines ≤ 2,000 characters and no duplicate pattern. `/*` has the seven headers of the kit: nosniff, referrer and CORP exact; COOP `same-origin`, or `same-origin-allow-popups` with a `frame` or `script` origin; the CSP directive set equal to the header policy (compared sorted); HSTS max-age ≥ 31,536,000 with includeSubDomains; each Permissions-Policy item `name=()`, or `=(self)` only for `autoplay` and `fullscreen`, or `=(self "https://<host>" …)` with the sorted hosts of the origins whose `allow` names it. No `X-Frame-Options` or `Cross-Origin-Embedder-Policy` on any rule. Cache-Control only on `/_astro/*` (= `public, max-age=31536000, immutable`) or, with prefetch, on `/*` (= `public, max-age=120`); with prefetch, `! Cache-Control` is required and `/_astro/*` comes after `/*`. Fix: Remove the integration or the file that changes `_headers`. The kit writes this file at the end of the build.
 - <a id="edge-redirects"></a>**edge-redirects** — `_redirects` has ≤ 2,000 static and ≤ 100 dynamic rules, lines ≤ 1,000 characters, line shape `from to [301|302|303|307|308]` with `from` starting `/` and no extra tokens, and static rules before dynamic ones. Each `from` and each `to` also passes the checks of `routes-redirects` on one path: no `?` and no `#` in `from`; `to` starts with `/` and not with `//` or `/\`; no backslash and no `.` or `..` segment. So a line that another integration left cannot leave the site either. Fix: Fix the rows of `redirects.json`, and remove the integration or the file that adds other lines to `_redirects`.
+- <a id="edge-private"></a>**edge-private** — No private file of the client directory is public. The private files are `_headers`, `_redirects` and `.assetsignore` at the root, and at any depth `wrangler.json`, `wrangler.jsonc`, `wrangler.toml`, `.dev.vars`, `.dev.vars.*`, `.env` and `.env.*`. Each one must be hidden by the ignore lines that Cloudflare applies, in its order: `/.assetsignore`, `/_redirects` and `/_headers` first, then the lines of `.assetsignore` with the rules of `.gitignore`. So a later `!` line makes a platform file public, and fails. Fix: Remove the `!` line from `public/.assetsignore`, or remove the file from `public/`. A secret never belongs in `public/`.
 
 ### html
 

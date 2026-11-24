@@ -4,6 +4,7 @@ import {
   auditEdge,
   BANNED_HEADERS,
   checkHeaders,
+  checkPrivate,
   checkRedirects,
   HEADER_LIMITS,
   REDIRECT_STATUSES,
@@ -13,6 +14,7 @@ import { headerCsp } from '../../src/csp.ts';
 import {
   headersText,
   IMMUTABLE,
+  isPrivateFile,
   kitHeaders,
   PREFETCH_HTML,
   redirectsText,
@@ -26,6 +28,7 @@ import { SPEC, specBlock } from './spec.ts';
 
 const HEADERS = 'edge-headers';
 const REDIRECTS = 'edge-redirects';
+const PRIVATE = 'edge-private';
 
 /** The row of a rule in the table of section 8. */
 const specRow = (rule: string): string => SPEC.split('\n').find((line) => line.startsWith(`| \`${rule}\` |`)) ?? '';
@@ -967,4 +970,92 @@ test('a rule that another integration planted in _headers fails the build audit 
     ctx.report.findings.map((finding) => finding.where),
     ['_headers:9', '_headers:13'],
   );
+});
+
+// edge-private
+
+/** The findings of `edge-private` on a client directory with these files, as `where: detail` lines. */
+function privateFindings(files: Readonly<Record<string, string>>): string[] {
+  const ctx = contextOf(STATIC, files);
+  checkPrivate(ctx);
+  return ctx.report.findings.map((finding) => `${finding.rule} ${finding.where}: ${finding.detail ?? ''}`);
+}
+
+const HIDES_NOT = 'no line of .assetsignore hides it';
+const PLATFORM = { _headers: '/*\n', _redirects: '' };
+
+test('edge-private: the private names, at the root and at any depth', () => {
+  const cases: [string, boolean][] = [
+    ['_headers', true],
+    ['_redirects', true],
+    ['.assetsignore', true],
+    ['fr/_headers', false],
+    ['wrangler.json', true],
+    ['wrangler.jsonc', true],
+    ['wrangler.toml', true],
+    ['a/b/wrangler.json', true],
+    ['.dev.vars', true],
+    ['.dev.vars.production', true],
+    ['.env', true],
+    ['.env.local', true],
+    ['fr/.env', true],
+    ['env', false],
+    ['.environment', false],
+    ['my.env', false],
+    ['wrangler.json.bak', false],
+    ['index.html', false],
+  ];
+  assert.deepEqual(
+    cases.map(([path]) => [path, isPrivateFile(path)]),
+    cases,
+  );
+});
+
+test('edge-private: a clean client directory passes, and the platform lines hide the three platform files', () => {
+  assert.deepEqual(privateFindings({ ...PLATFORM, 'index.html': '' }), []);
+  assert.deepEqual(privateFindings({ ...PLATFORM, '.assetsignore': 'wrangler.json\n.dev.vars\n' }), []);
+});
+
+test('edge-private: a later ! line makes a platform file public, and the finding names that line', () => {
+  assert.deepEqual(privateFindings({ ...PLATFORM, '.assetsignore': '!*\n' }), [
+    `${PRIVATE} .assetsignore: the line \`!*\` of .assetsignore makes it public`,
+    `${PRIVATE} _headers: the line \`!*\` of .assetsignore makes it public`,
+    `${PRIVATE} _redirects: the line \`!*\` of .assetsignore makes it public`,
+  ]);
+  assert.deepEqual(privateFindings({ ...PLATFORM, '.assetsignore': '# keep the rules\n!_headers\n' }), [
+    `${PRIVATE} _headers: the line \`!_headers\` of .assetsignore makes it public`,
+  ]);
+  // A line that hides the file again after the negation wins, as in .gitignore.
+  assert.deepEqual(
+    privateFindings({ ...PLATFORM, '.assetsignore': '!*\n/_headers\n/_redirects\n/.assetsignore\n' }),
+    [],
+  );
+});
+
+test('edge-private: a secret or a Worker config that no line hides fails', () => {
+  assert.deepEqual(privateFindings({ ...PLATFORM, '.env': 'KEY=1', 'fr/.dev.vars.local': 'KEY=1' }), [
+    `${PRIVATE} .env: ${HIDES_NOT}`,
+    `${PRIVATE} fr/.dev.vars.local: ${HIDES_NOT}`,
+  ]);
+  // The adapter names wrangler.json and .dev.vars (13.1 item 63); a later negation undoes that.
+  const adapter = 'wrangler.json\n.dev.vars\n';
+  assert.deepEqual(privateFindings({ ...PLATFORM, 'wrangler.json': '{}', '.assetsignore': adapter }), []);
+  assert.deepEqual(
+    privateFindings({ ...PLATFORM, 'wrangler.json': '{}', '.assetsignore': `${adapter}!wrangler.json\n` }),
+    [`${PRIVATE} wrangler.json: the line \`!wrangler.json\` of .assetsignore makes it public`],
+  );
+  // A folder line hides what is inside it, and a negation of a file inside that folder cannot undo it.
+  assert.deepEqual(privateFindings({ ...PLATFORM, 'conf/.env': '', '.assetsignore': 'conf/\n!conf/.env\n' }), []);
+});
+
+test('auditEdge runs edge-private on the client directory, and the rule is no waivable rule', async () => {
+  const ctx = contextOf(STATIC, { '.assetsignore': '!*\n', '.env': '' });
+  writeEdgeFiles(ctx);
+  await auditEdge(ctx);
+  assert.deepEqual(
+    ctx.report.findings.map((finding) => `${finding.rule} ${finding.where}`),
+    [`${PRIVATE} .assetsignore`, `${PRIVATE} .env`, `${PRIVATE} _headers`, `${PRIVATE} _redirects`],
+  );
+  assert.equal(getRule(PRIVATE).waivable, false);
+  assert.ok(specRow(PRIVATE).includes('then the lines of `.assetsignore` with the rules of `.gitignore`'));
 });

@@ -19,17 +19,15 @@ import {
   zstdCompress,
   zstdDecompressSync,
 } from 'node:zlib';
+import { globMatches, ignoreRules, isIgnored } from '../../src/hosts/cloudflare.ts';
 import {
   clientDir,
   contentTypeOf,
   decodePath,
   encodePath,
   encodingOf,
-  globMatches,
   headerRules,
-  ignoreRules,
   isCompressible,
-  isIgnored,
   matchParts,
   normalizePattern,
   passesGuard,

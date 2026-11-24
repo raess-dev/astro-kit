@@ -117,3 +117,9 @@
   compares the status, `location`, `cache-control` and the seven kit headers, and a second table on planted files.
   `_headers`: a detach needs `! ` with a space, as on Cloudflare, so `!<TAB>Name` is no detach. The suite and the spikes now serve
   pages with `serveDist` of the packed kit, and `test/acceptance/serve.ts` is gone.
+- New rule `edge-private` (build, not waivable): no private file of the client directory is public. Cloudflare reads
+  `.assetsignore` after its own lines for `/_headers`, `/_redirects` and `/.assetsignore`, so a later `!*` makes the
+  three files public (measured with `wrangler dev`, 13.1 item 66). The rule also fails a `.env`, `.dev.vars` or
+  Worker config that no line hides. It reads `.assetsignore` with the code of `serveDist`, which now lives in
+  `src/hosts/cloudflare.ts`. The `build` planted set gets the plant `!*` in `public/.assetsignore`. The kit has 94
+  rules.

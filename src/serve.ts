@@ -43,7 +43,17 @@ import { extname, join, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import { brotliCompress, constants, gzip, zstdCompress } from 'node:zlib';
-import { HEADERS_FILE, type HeaderRule, parseHeaders, REDIRECTS_OUT } from './hosts/cloudflare.ts';
+import {
+  HEADERS_FILE,
+  type HeaderRule,
+  IGNORE_FILE,
+  type IgnoreRule,
+  ignoreRules,
+  isIgnored,
+  PLATFORM_IGNORES,
+  parseHeaders,
+  REDIRECTS_OUT,
+} from './hosts/cloudflare.ts';
 
 /** The address that the server listens on. */
 export const HOST = '127.0.0.1';
@@ -154,9 +164,6 @@ const FRAMING: ReadonlySet<string> = new Set([
   'te',
   'proxy-connection',
 ]);
-
-/** The ignore lines that come before `.assetsignore`: the platform files of the root are never served. */
-const PLATFORM_IGNORES: readonly string[] = ['/.assetsignore', `/${REDIRECTS_OUT}`, `/${HEADERS_FILE}`];
 
 /** One request as the server saw it. */
 export interface Received {
@@ -641,164 +648,6 @@ function dynamicTarget(to: string, groups: ReadonlyMap<string, string>): string 
   return path.replace(/[/\\]+/g, '/') + (cut < 0 ? '' : target.slice(cut));
 }
 
-// `.assetsignore`
-
-/** One line of `.assetsignore`, read with the rules of `.gitignore`. */
-export interface IgnoreRule {
-  negate: boolean;
-  /** The line ends in `/`: it names folders only. */
-  folders: boolean;
-  /** The line holds a `/` before its end: it matches from the root. Else it matches a name at any depth. */
-  anchored: boolean;
-  /** The globs of its segments. `**` stands for any number of segments. */
-  globs: string[];
-}
-
-/**
- * The rules of the ignore lines. A line is a glob of `.gitignore`: `#` starts a comment, `!` negates, `\#` and
- * `\!` are literal, a trailing `/` names folders, `*` and `?` stay in one segment, `**` spans segments, and `[...]`
- * is a class. Trailing spaces are dropped.
- */
-export function ignoreRules(lines: readonly string[]): IgnoreRule[] {
-  const rules: IgnoreRule[] = [];
-  for (const raw of lines) {
-    let line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
-    let end = line.length;
-    while (end > 0 && line[end - 1] === ' ' && line[end - 2] !== '\\') end -= 1;
-    line = line.slice(0, end);
-    if (line === '' || line.startsWith('#')) continue;
-    const negate = line.startsWith('!');
-    if (negate || line.startsWith('\\!') || line.startsWith('\\#')) line = line.slice(1);
-    const folders = line.endsWith('/');
-    while (line.endsWith('/')) line = line.slice(0, -1);
-    if (line === '') continue;
-    const anchored = line.includes('/');
-    while (line.startsWith('/')) line = line.slice(1);
-    const globs = line.split('/');
-    // `a/**` names what is inside `a`: one segment or more.
-    if (globs.length > 1 && globs.at(-1) === '**') globs.splice(-1, 1, '*', '**');
-    rules.push({ negate, folders, anchored, globs });
-  }
-  return rules;
-}
-
-/** One token of a glob: a character, `?`, `*`, or a class. */
-type GlobToken =
-  | { kind: 'char'; char: string }
-  | { kind: 'one' }
-  | { kind: 'many' }
-  | { kind: 'class'; negate: boolean; ranges: [string, string][] };
-
-function globTokens(glob: string): GlobToken[] {
-  const tokens: GlobToken[] = [];
-  for (let at = 0; at < glob.length; at += 1) {
-    const char = glob[at] ?? '';
-    if (char === '\\' && at + 1 < glob.length) {
-      at += 1;
-      tokens.push({ kind: 'char', char: glob[at] ?? '' });
-    } else if (char === '*') {
-      if (tokens.at(-1)?.kind !== 'many') tokens.push({ kind: 'many' });
-    } else if (char === '?') tokens.push({ kind: 'one' });
-    else if (char === '[' && glob.indexOf(']', at + 2) > at) {
-      const close = glob.indexOf(']', at + 2);
-      let body = glob.slice(at + 1, close);
-      const negate = body.startsWith('!') || body.startsWith('^');
-      if (negate) body = body.slice(1);
-      const ranges: [string, string][] = [];
-      for (let index = 0; index < body.length; index += 1) {
-        const from = body[index] ?? '';
-        if (body[index + 1] === '-' && index + 2 < body.length) {
-          ranges.push([from, body[index + 2] ?? '']);
-          index += 2;
-        } else ranges.push([from, from]);
-      }
-      tokens.push({ kind: 'class', negate, ranges });
-      at = close;
-    } else tokens.push({ kind: 'char', char });
-  }
-  return tokens;
-}
-
-/** Says whether a glob matches one name. It runs the tokens as a set of states, so nothing backtracks. */
-export function globMatches(glob: string, name: string): boolean {
-  const tokens = globTokens(glob);
-  const close = (reached: Set<number>): Set<number> => {
-    for (const state of [...reached]) {
-      let next = state;
-      while (tokens[next]?.kind === 'many') {
-        next += 1;
-        reached.add(next);
-      }
-    }
-    return reached;
-  };
-  let states = close(new Set([0]));
-  for (const char of name) {
-    const after = new Set<number>();
-    for (const state of states) {
-      const token = tokens[state];
-      if (token === undefined) continue;
-      if (token.kind === 'many') after.add(state);
-      else if (token.kind === 'one') after.add(state + 1);
-      else if (token.kind === 'char') {
-        if (token.char === char) after.add(state + 1);
-      } else if (token.ranges.some(([low, high]) => char >= low && char <= high) !== token.negate) {
-        after.add(state + 1);
-      }
-    }
-    if (after.size === 0) return false;
-    states = close(after);
-  }
-  return states.has(tokens.length);
-}
-
-/** Says whether the globs match the whole list of segments; `**` takes any number of segments. */
-function globsMatch(globs: readonly string[], segments: readonly string[]): boolean {
-  const close = (reached: Set<number>): Set<number> => {
-    for (const state of [...reached]) {
-      let next = state;
-      while (globs[next] === '**') {
-        next += 1;
-        reached.add(next);
-      }
-    }
-    return reached;
-  };
-  let states = close(new Set([0]));
-  for (const segment of segments) {
-    const after = new Set<number>();
-    for (const state of states) {
-      const glob = globs[state];
-      if (glob === '**') after.add(state);
-      else if (glob !== undefined && globMatches(glob, segment)) after.add(state + 1);
-    }
-    if (after.size === 0) return false;
-    states = close(after);
-  }
-  return states.has(globs.length);
-}
-
-/**
- * Says whether the ignore rules hide a file, by the segments of its path from the root. As in git, a file is
- * hidden when it or a folder above it is hidden, and for one path the last rule that matches decides.
- */
-export function isIgnored(rules: readonly IgnoreRule[], segments: readonly string[]): boolean {
-  for (let depth = 1; depth <= segments.length; depth += 1) {
-    const entry = segments.slice(0, depth);
-    const folder = depth < segments.length;
-    let hidden = false;
-    for (const rule of rules) {
-      if (rule.folders && !folder) continue;
-      const matches = rule.anchored
-        ? globsMatch(rule.globs, entry)
-        : globMatches(rule.globs[0] ?? '', entry.at(-1) ?? '');
-      if (matches) hidden = !rule.negate;
-    }
-    if (hidden) return true;
-  }
-  return false;
-}
-
 // The folder
 
 /** The client directory of a build: `dist/client` with an adapter (13.1 item 16), else `dist`. */
@@ -1075,7 +924,7 @@ export async function serveDist(dist: string, options: ServeOptions = {}): Promi
     const found = await statOf(join(root, name));
     return found?.isFile() === true ? readFile(join(root, name), 'utf8') : '';
   };
-  const ignores = ignoreRules([...PLATFORM_IGNORES, ...(await text('.assetsignore')).split('\n')]);
+  const ignores = ignoreRules([...PLATFORM_IGNORES, ...(await text(IGNORE_FILE)).split('\n')]);
   const headers = headerRules(await text(HEADERS_FILE));
   const redirects = redirectRules(await text(REDIRECTS_OUT));
   const extra = options.headers ?? {};

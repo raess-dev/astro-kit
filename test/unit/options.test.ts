@@ -247,6 +247,7 @@ test('the registry holds the rules of milestones M2, M3 and parts 5a to 5c of M5
       ['csp-base', 'csp', 'build'],
       ['edge-headers', 'edge', 'build'],
       ['edge-redirects', 'edge', 'build'],
+      ['edge-private', 'edge', 'build'],
       ['html-validate', 'html', 'build'],
       ['html-shell', 'html', 'build'],
       ['legal-pages', 'legal', 'build'],

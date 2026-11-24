@@ -1,12 +1,13 @@
 /**
  * The edge audit: the rules `edge-headers` and `edge-redirects` on the two files that Cloudflare reads from the
- * client directory (specification, sections 6.3 and 8). It runs after `writeEdgeFiles`, so it checks what the kit
- * and every other integration left in `_headers` and `_redirects`.
+ * client directory, and `edge-private` on the files that Cloudflare would serve (specification, sections 6.3 and 8).
+ * It runs after `writeEdgeFiles`, so it checks what the kit and every other integration left in the client
+ * directory.
  *
  * Every expected value comes from `src/hosts/cloudflare.ts`, `src/csp.ts` and `src/redirects.ts`. This module
  * holds no second copy of a header value.
  */
-import type { Audit } from '../context.ts';
+import type { Audit, BuildContext } from '../context.ts';
 import { readText } from '../context.ts';
 import {
   ALL_PATTERN,
@@ -17,10 +18,15 @@ import {
   type HeaderRule,
   HSTS,
   HSTS_HEADER,
+  IGNORE_FILE,
   IMMUTABLE,
+  ignoreRules,
+  ignoreVerdict,
+  isPrivateFile,
   kitHeaders,
   namesHeader,
   PERMISSIONS_HEADER,
+  PLATFORM_IGNORES,
   PREFETCH_HTML,
   parseHeaders,
   permissionHosts,
@@ -34,6 +40,7 @@ import type { Report } from '../registry.ts';
 
 const HEADERS_RULE = 'edge-headers';
 const REDIRECTS_RULE = 'edge-redirects';
+const PRIVATE_RULE = 'edge-private';
 
 /** The limits of `_headers` on Cloudflare: the rules, and the characters of one line. */
 export const HEADER_LIMITS = { rules: 100, lineChars: 2_000 } as const;
@@ -254,6 +261,28 @@ export function checkRedirects(text: string, report: Report): void {
   }
 }
 
+// Private files
+
+/**
+ * The rule `edge-private`: no private file of the client directory is public. Each private file must be hidden by
+ * the ignore lines that Cloudflare applies: the platform lines first, then the lines of `.assetsignore` (13.1 item
+ * 66). It reports one finding per public file, with the `!` line that undoes the platform line, when there is one.
+ */
+export function checkPrivate(ctx: Pick<BuildContext, 'files' | 'read' | 'report'>): void {
+  const text = readText(ctx, IGNORE_FILE) ?? '';
+  const rules = ignoreRules([...PLATFORM_IGNORES, ...text.split('\n')]);
+  for (const file of ctx.files) {
+    if (!isPrivateFile(file)) continue;
+    const verdict = ignoreVerdict(rules, file.split('/'));
+    if (verdict.hidden) continue;
+    const detail =
+      verdict.undone === undefined
+        ? `no line of ${IGNORE_FILE} hides it`
+        : `the line \`${verdict.undone.source}\` of ${IGNORE_FILE} makes it public`;
+    ctx.report.add(PRIVATE_RULE, file, detail);
+  }
+}
+
 // The audit
 
 /**
@@ -265,4 +294,5 @@ export const auditEdge: Audit = (ctx) => {
   if (headers === undefined) ctx.report.add(HEADERS_RULE, HEADERS_FILE, 'the file is missing');
   else checkHeaders(headers, ctx.options, ctx.report);
   checkRedirects(readText(ctx, REDIRECTS_OUT) ?? '', ctx.report);
+  checkPrivate(ctx);
 };

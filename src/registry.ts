@@ -769,6 +769,14 @@ export const RULES: readonly Rule[] = [
     'The built `_redirects` file is not valid for Cloudflare.',
     'Fix the rows of `redirects.json`, and remove the integration or the file that adds other lines to `_redirects`.',
   ),
+  r(
+    'edge-private',
+    'edge',
+    'build',
+    'No private file of the client directory is public. The private files are `_headers`, `_redirects` and `.assetsignore` at the root, and at any depth `wrangler.json`, `wrangler.jsonc`, `wrangler.toml`, `.dev.vars`, `.dev.vars.*`, `.env` and `.env.*`. Each one must be hidden by the ignore lines that Cloudflare applies, in its order: `/.assetsignore`, `/_redirects` and `/_headers` first, then the lines of `.assetsignore` with the rules of `.gitignore`. So a later `!` line makes a platform file public, and fails.',
+    'Cloudflare would serve a private file of the build to every visitor.',
+    'Remove the `!` line from `public/.assetsignore`, or remove the file from `public/`. A secret never belongs in `public/`.',
+  ),
   // html
   r(
     'html-validate',
