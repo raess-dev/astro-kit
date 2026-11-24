@@ -286,6 +286,20 @@ test('a11y-axe: a link without underline in running text needs 3:1 against the t
   assert.deepEqual(await placesOf(axePage(alone, css), axeRule), []);
 });
 
+test('a11y-axe: a link whose text is underlined by an element inside it counts as underlined', async () => {
+  const sentence =
+    '<p class="t">Rufen Sie uns an: <a class="l" href="tel:+41815550110"><span class="u">081 555 01 10</span></a>, jeden Tag.</p>';
+  const css = '.t{color:#2b2521}.l{color:#2b2521;text-decoration-line:none}.u{text-decoration-line:underline}';
+  assert.deepEqual(await placesOf(axePage(sentence, css), axeRule), []);
+  // Without the underline on the span, the same link fails at 1:1.
+  const bare = css.replace('.u{text-decoration-line:underline}', '');
+  const found = await placesOf(axePage(sentence, bare), axeRule);
+  assert.ok(
+    found.some((line) => line.includes('without underline') && line.includes('1.00:1')),
+    JSON.stringify(found),
+  );
+});
+
 test('a11y-axe: the link check also reads a link inside an open shadow root', async () => {
   const shadow =
     '<div class="card"><template shadowrootmode="open"><style>p{color:#2b2521}a{color:#7d340d;text-decoration-line:none;text-decoration-thickness:1px}</style>' +

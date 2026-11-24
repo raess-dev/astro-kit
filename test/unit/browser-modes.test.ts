@@ -152,6 +152,15 @@ test('modes-behavior: a choice lost on the next page fails', async () => {
   ]);
 });
 
+test('modes-behavior: a next page that resets the mode on a timer after its load gives the fixed finding', async () => {
+  // The next page restores the choice at once, then sets it back to light 500 ms later.
+  const reset = `${modeScript(MODES)};setTimeout(() => { document.documentElement.dataset.mode = 'light'; }, 500);`;
+  assert.deepEqual(await modePlaces(modeSite({}, modePage({ script: reset }))), [
+    '/ 1280×800: the page changes data-mode by itself',
+    '/ 390×844: the page changes data-mode by itself',
+  ]);
+});
+
 test('modes-behavior: the navigation goes to a content page before the 404 page', async () => {
   // The 404 page sorts first and has no mode script; the content page keeps the choice.
   const files = { ...modeSite(), '404.html': modePage({ script: '' }) };

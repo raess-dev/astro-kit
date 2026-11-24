@@ -361,6 +361,23 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
   const inlineElements = new Set(arg.inlineNames);
   const word = /[\p{L}\p{N}]/u;
   // The ancestor that holds the text around a link: from its parent through the inline elements (a11y-targets).
+  // A link is underlined when each of its text nodes has an element with a text decoration line between it and
+  // the link, the link included: an underline on a `span` inside the link counts.
+  const underlined = (link: Element): boolean => {
+    const walker = document.createTreeWalker(link, NodeFilter.SHOW_TEXT);
+    let texts = 0;
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      if (!word.test(node.textContent ?? '')) continue;
+      texts += 1;
+      let marked = false;
+      for (let element = node.parentElement; element !== null; element = element.parentElement) {
+        if (getComputedStyle(element).textDecorationLine !== 'none') marked = true;
+        if (marked || element === link) break;
+      }
+      if (!marked) return false;
+    }
+    return texts > 0 || getComputedStyle(link).textDecorationLine !== 'none';
+  };
   // The parent of a node, across the top of a shadow tree to its host.
   const parentOf = (node: Element): Element | null => {
     if (node.parentElement) return node.parentElement;
@@ -387,7 +404,7 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
     };
     collect(document);
     for (const [index, link] of links.entries()) {
-      if (getComputedStyle(link).textDecorationLine !== 'none' || !kit.visible(link)) continue;
+      if (underlined(link) || !kit.visible(link)) continue;
       const around = textAround(link);
       if (around === null) continue;
       const behind = flatten([link, ...ancestors(link)]);
@@ -959,10 +976,10 @@ async function withScripts(check: Check, viewport: Viewport, design: Design): Pr
   for (const visit of visits) {
     await visit.go();
     await settle(tab);
-    // A new document: the watch starts again after its own mode script ran.
-    await modeWrites(tab);
+    // A new document: its watch starts at its own load, after its mode script ran. The mode counts only once the
+    // watch has run for `MODE_WATCH_MS`, so a script that resets it on a timer after the load is seen.
+    if ((await finalModeWrites(tab)) > 0) return fixed();
     const shown: { mode: string | null; shows: boolean } = await tab.evaluate(shownMode, last);
-    if (await watch()) return fixed();
     const { mode, shows } = shown;
     if (mode !== last) report(`${label}: after ${visit.name}, html has data-mode ${JSON.stringify(mode)}, not ${last}`);
     if (!shows) report(`${label}: after ${visit.name}, the switch does not show ${last}`);

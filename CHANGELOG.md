@@ -181,6 +181,8 @@
     verdict, so a page script on a timer is always seen. Before, `contrast-pairs` missed it in about 1 run of 5.
   - The kit's link check also reads links in open shadow roots, and a gradient layer that an opaque upper layer
     hides no longer counts (from the Codex review of #18).
+  - A link whose text an element inside it underlines counts as underlined. After the navigation and the reload,
+    `modes-behavior` reads the mode only after the 1 s watch of the new page (from the Codex review of #18).
   - Running text for `color-contrast-enhanced` is found through the flat tree, so a paragraph in an open shadow
     root of a component in `main` counts (from the Codex review of #18).
   - The three rules measure colors only through the Colors probe of the harness: the one luminance formula of the
