@@ -528,6 +528,17 @@ test('a11y-no-js: a declared form inside a dialog that a native invoker opens pa
   assert.deepEqual(await idsOf(browser(), files, [noJs], { settings: FORMS }), []);
 });
 
+test('a11y-no-js: a declared form inside a dialog whose invoker sits in an auto popover passes', async () => {
+  const page = bookingPage()
+    .replace(
+      '<form method="post"',
+      '<button type="button" popovertarget="menu">Menü</button><div popover id="menu"><button type="button" commandfor="book" command="show-modal">Buchen</button></div><dialog id="book"><form method="post"',
+    )
+    .replace('</form>', '</form></dialog>');
+  const files = { 'index.html': page, _redirects: '/api/forms/booking/ /#sent 303\n' };
+  assert.deepEqual(await idsOf(browser(), files, [noJs], { settings: FORMS }), []);
+});
+
 test('a11y-no-js: a declared form inside a dialog that no native invoker opens fails', async () => {
   const page = bookingPage()
     .replace('<form method="post"', '<dialog id="book"><form method="post"')
