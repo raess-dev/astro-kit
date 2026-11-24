@@ -158,3 +158,28 @@
   - `a11y-no-js` clicks a dialog's invoker before it closes the popovers, so an invoker inside a popover works.
     Before, the popover closed first, and the click timed out on a hidden button. The popovers that do not hold
     the invoker close before the click, so a full-screen menu cannot cover it.
+- Milestone M6, part 6c: three rules that read colors, in `src/browser/color.ts`. The kit has 105 rules.
+  - `a11y-axe` (browser, waivable) runs axe-core 4.14.0 from the kit's own dependency on every tested page: at
+    1280×800 in every declared theme, and at 390×844 after the reveal step, so the content of a closed `details`,
+    a popover or a dialog is read too. The kit injects axe with `evaluate`, so it works under the kit's CSP with
+    Trusted Types on. A node fails once, in the first state that shows it, and equal details are one finding with
+    a count. Text on a gradient is decided with the color stops of the gradient layer that axe sees behind it, each
+    over the color behind that layer; gradient text is read as text. `color-contrast-enhanced` counts on running
+    text in `main` only, also over a gradient. A link without underline in running text needs 3:1 against the text
+    around it, which axe's `link-in-text-block` misses. An animation that never ends fails (WCAG 2.2.2). An axe run
+    that takes longer than 15 s is reported, and the rule goes on.
+  - `contrast-pairs` (browser, waivable) reads every pair of `docs/design.md` from a probe on the default home, in
+    every declared theme, and fails a pair below the ratio of its role: text 7, ui 4.5, non-text 3. A background
+    token with alpha is read over the page background of its theme.
+  - `modes-behavior` (browser, not waivable) clicks through the mode switch of the default home at 1280×800 and at
+    390×844. It opens a closed `details`, popover or dialog around the switch through its native invoker. Each choice
+    must set `data-mode`, give `html` the `color-scheme` of 7.7 and paint every color token as `docs/design.md`
+    gives it, in each system state. The last choice must survive a navigation and a reload. With JavaScript off, no
+    mode control shows and the page shows the default mode. A `dialog` with the `popover` attribute opens as a
+    popover, and a close button is no invoker.
+  - The three rules measure colors only through the Colors probe of the harness: the one luminance formula of the
+    kit, which the focus ring of `a11y-focus` uses too. Each read uses a fresh probe, so no transition of the page
+    changes it. A page that writes `data-mode` by itself gives one fixed finding, so its result does not change from
+    run to run.
+  - The waits of the harness also hold the animations inside open shadow roots, which `document.getAnimations()`
+    leaves out in Chromium 153.

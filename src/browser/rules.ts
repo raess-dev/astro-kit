@@ -3,6 +3,7 @@
  * that adds rules adds its file's list here, and nothing else changes in the runner.
  */
 import { RULES } from '../registry.ts';
+import { COLOR_RULES } from './color.ts';
 import type { BrowserRule } from './harness.ts';
 import { KEYBOARD_RULES } from './keyboard.ts';
 import { LAYOUT_RULES } from './layout.ts';
@@ -16,4 +17,8 @@ export function inRegistryOrder(rules: readonly BrowserRule[]): BrowserRule[] {
   return [...rules].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
 }
 
-export const BROWSER_RULES: readonly BrowserRule[] = inRegistryOrder([...LAYOUT_RULES, ...KEYBOARD_RULES]);
+export const BROWSER_RULES: readonly BrowserRule[] = inRegistryOrder([
+  ...LAYOUT_RULES,
+  ...KEYBOARD_RULES,
+  ...COLOR_RULES,
+]);
