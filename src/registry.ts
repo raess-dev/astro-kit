@@ -906,7 +906,7 @@ export const RULES: readonly Rule[] = [
     'a11y-no-js',
     'a11y',
     'browser',
-    'With JS off, `h1` and `main` are visible, and every link target and named control visible with JS on, except `[data-mode-switch]` and its content, is visible with JS off (both after the reveal step). Each declared form is filled and submitted within 10 s: email `probe@example.com`; tel `+41441234567`; date today + 30 days; number its `min`; choice its first option; consent checked; text and textarea `Kit browser test`. It must land on `<page path>#sent` with `#sent` visible.',
+    'With JS off, `h1` and `main` are visible, and every link target and named control visible with JS on, except `[data-mode-switch]` and its content, is visible with JS off (both after the reveal step). Each declared form is filled and submitted within 10 s: email `probe@example.com`; tel `+41441234567`; date today + 30 days; number its `min`; choice its first option; consent checked; text and textarea `Kit browser test`. It must land on `<page path>#sent` with `#sent` visible. Before it fills a form, a fresh tab with JS off opens every `details` and popover, as the reveal step does, and then the dialog that holds the form, with a click on its visible native invoker (`[commandfor][command=show-modal]`). A form in a dialog that no visible invoker opens fails.',
     'Without JavaScript, content, a link or a control is missing, or a form does not reach its confirmation.',
     'Render the content and the controls in HTML, and let a script only add to them. A form posts as plain HTML and returns to `#sent`.',
   ),

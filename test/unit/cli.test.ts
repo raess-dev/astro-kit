@@ -745,7 +745,7 @@ test('the process: test --shots writes the images into the folder, relative to t
   });
   assert.deepEqual(seen, {
     exit: { status: 0, stdout: PASSED, stderr: '' },
-    files: ['404-1280x800.png', '404-390x844.png', 'index-1280x800.png', 'index-390x844.png'],
+    files: ['_404-1280x800.png', '_404-390x844.png', '_index-1280x800.png', '_index-390x844.png'],
     widths: [1280, 390, 1280, 390],
   });
 });

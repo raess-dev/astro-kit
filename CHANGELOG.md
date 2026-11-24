@@ -148,3 +148,10 @@
     `outline-color: transparent` hid the ring and passed `build` and `test`.
   - A page that does not load within 30 s costs one limit for the whole run. `test --outline` on a target that
     answers other than 2xx exits 1. `--shots` joins the segments of a path with `--`.
+- Three fixes in the browser checks, from the review of #14:
+  - The reveal step opens an exclusive group as a whole. Before, a second `auto` popover closed the first, and an
+    exclusive `details[name]` closed the others, so only the last one was measured. Now each popover shows as
+    `manual` and each `details` loses its `name`.
+  - `a11y-no-js` opens the dialog that holds a declared form, with a click on its native invoker, before it fills
+    the form. Before, such a form failed although a visitor can use it without JavaScript.
+  - `--shots` names the home `_index` and the 404 page `_404`, so `/index/` and `/404/` keep their own images.
