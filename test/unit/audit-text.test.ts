@@ -154,6 +154,21 @@ test('facts-value normalizes Swiss phones written +41, 0041 or 0 to E.164', () =
   }
 });
 
+test('facts-value drops a (0) right after the country code, and nowhere else', () => {
+  for (const shown of ['+41 (0)81 555 01 10', '0041 (0)81 555 01 10', '+41(0)815550110', '+41 (0) 81 555 01 10']) {
+    assert.deepEqual(ids(facts(withMain(`<p>Telefon ${shown}</p>`))), [], shown);
+  }
+  // A tel: link reads the same way. site.json holds E.164 only (its schema), so it never has a (0).
+  assert.deepEqual(ids(facts(withMain('<p><a href="tel:+41(0)815550110">Anrufen</a></p>'))), []);
+  const cases: [string, string][] = [
+    ['+41 (0)81 555 01 11', 'facts-value /zimmer/ phone +41815550111 is not in site.json (phone, contacts)'],
+    ['+41 81 (0)555 01 10', 'facts-value /zimmer/ phone +418105550110 is not in site.json (phone, contacts)'],
+  ];
+  for (const [shown, expected] of cases) {
+    assert.deepEqual(findings(facts(withMain(`<p>Telefon ${shown}</p>`))), [expected], shown);
+  }
+});
+
 test('facts-value finds a foreign number written with +, and no other national form', () => {
   assert.deepEqual(ids(facts(withMain('<p>Berlin: +49 30 1234 5678</p>'))), ['facts-value']);
   assert.deepEqual(ids(facts(withMain('<p>Berlin: (030) 12345678</p>'))), []);

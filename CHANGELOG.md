@@ -99,3 +99,6 @@
   agent mistakes, in `test/acceptance/planted-build.test.ts` and `planted.test.ts`. Each set runs `build` once and
   asserts its exact ids and no passed line. `KIT_PLANTED_DROP=<id>` runs the `build` or the `css` set without one
   plant, for the removal proof of a review.
+- `facts-value` drops a `(0)` that stands right after the country code, so `+41 (0)81 555 01 10` is the number
+  `+41815550110`. This common Swiss form failed before, because every digit counted. A `(0)` at any other place
+  still counts as a digit.
