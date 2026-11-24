@@ -264,6 +264,23 @@ test('a11y-axe: gradient text is decided with its stops against the color behind
   );
 });
 
+test('a11y-axe: gradient text over a parent gradient is compared with the backdrop under each of its stops', async () => {
+  const over = (parent: string): Record<string, string> =>
+    axePage(
+      '<div class="p"><p class="g">Ein Text im Verlauf.</p></div>',
+      `.p{${parent}}.g{background-image:linear-gradient(90deg,#111,#222);background-clip:text;color:transparent}`,
+    );
+  // On a flat white parent, #111 and #222 are about 18.9:1 and 15.9:1.
+  assert.deepEqual(await placesOf(over('background-color:#fff'), axeRule), []);
+  // The parent runs from white to black. Where it is black, the dark text stops are about 1.1:1 against it. The
+  // first backdrop (white) alone would hide that.
+  const found = await placesOf(over('background-image:linear-gradient(#fff,#000)'), axeRule);
+  assert.ok(
+    found.some((line) => /color-contrast on p\.g: 1\.\d\d:1 on the gradient stop rgb\(17, 17, 17\)/.test(line)),
+    JSON.stringify(found),
+  );
+});
+
 test('a11y-axe: a second pass at 390×844 reads closed details, popovers and dialogs after the reveal step', async () => {
   const css = '.faint{color:#999}';
   // The answer of a closed details, and the content of a popover, show only after the reveal step.
@@ -318,6 +335,34 @@ test('a11y-axe: a link whose text is underlined by an element inside it counts a
     found.some((line) => line.includes('without underline') && line.includes('1.00:1')),
     JSON.stringify(found),
   );
+});
+
+test('a11y-axe: an underline drawn by an element around the link counts, as CSS hands it down', async () => {
+  const around = (css: string, wrap = 'span'): Record<string, string> =>
+    axePage(
+      `<p class="t">Rufen Sie uns an: <${wrap} class="u"><a class="l" href="tel:+41815550110">081 555 01 10</a></${wrap}>, jeden Tag.</p>`,
+      `.t{color:#2b2521}.l{display:inline;color:#2b2521;text-decoration-line:none}${css}`,
+    );
+  // The fixture CSS makes links inline-block (a11y-targets); a link in running text is inline here.
+  const bare = (found: string[]): number =>
+    found.filter((line) => line.includes('without underline') && line.includes('1.00:1')).length;
+  // The span around the link draws the underline on the link text: the link is set apart.
+  const span = await placesOf(around('.u{text-decoration-line:underline}'), axeRule);
+  assert.equal(bare(span), 0, JSON.stringify(span));
+  // An inline-block link stops the underline of the span (CSS Text Decoration 3, 2.1): the link text has none.
+  const block = await placesOf(around('.u{text-decoration-line:underline}.l{display:inline-block}'), axeRule);
+  assert.equal(bare(block), 1, JSON.stringify(block));
+  // An underline on the paragraph underlines the text around the link too, so it does not set the link apart.
+  const paragraph = await placesOf(around('.t{text-decoration-line:underline}'), axeRule);
+  assert.equal(bare(paragraph), 1, JSON.stringify(paragraph));
+  // A shadow host around the link that draws the underline counts, through the flat tree.
+  const host = axePage(
+    '<p class="t">Rufen Sie uns an: <span class="u"><template shadowrootmode="open"><slot></slot></template>' +
+      '<a class="l" href="tel:+41815550110">081 555 01 10</a></span>, jeden Tag.</p>',
+    '.t{color:#2b2521}.l{display:inline;color:#2b2521;text-decoration-line:none}.u{text-decoration-line:underline}',
+  );
+  const hosted = await placesOf(host, axeRule);
+  assert.equal(bare(hosted), 0, JSON.stringify(hosted));
 });
 
 test('a11y-axe: the link check reads the color of the element that holds the link text', async () => {
