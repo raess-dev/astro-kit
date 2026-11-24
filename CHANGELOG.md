@@ -148,3 +148,17 @@
     `outline-color: transparent` hid the ring and passed `build` and `test`.
   - A page that does not load within 30 s costs one limit for the whole run. `test --outline` on a target that
     answers other than 2xx exits 1. `--shots` joins the segments of a path with `--`.
+- Milestone M6, part 6c: three rules that read colors, in `src/browser/color.ts`. The kit has 105 rules.
+  - `a11y-axe` (browser, waivable) runs axe-core 4.14.0 from the kit's own dependency on every tested page, at
+    1280×800, in every declared theme. The kit injects axe with `evaluate`, so it works under the kit's CSP with
+    Trusted Types on. A node fails once, in the first theme that shows it. Text on a gradient is decided with the
+    color stops of the gradient, and `color-contrast-enhanced` counts on running text in `main` only.
+  - `contrast-pairs` (browser, waivable) reads every pair of `docs/design.md` from a probe on the default home, in
+    every declared theme, and fails a pair below the ratio of its role: text 7, ui 4.5, non-text 3.
+  - `modes-behavior` (browser, not waivable) clicks through the mode switch of the default home at 1280×800 and at
+    390×844. It opens a closed `details`, popover or dialog around the switch through its native invoker. Each choice
+    must set `data-mode`, give `html` the `color-scheme` of 7.7 and paint every color token as `docs/design.md`
+    gives it, in each system state. The last choice must survive a navigation and a reload. With JavaScript off, no
+    mode control shows and the page shows the default mode.
+  - The three rules measure colors only through the Colors probe of the harness: the one luminance formula of the
+    kit, which the focus ring of `a11y-focus` uses too.

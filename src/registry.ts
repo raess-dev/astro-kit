@@ -727,6 +727,14 @@ export const RULES: readonly Rule[] = [
     'CSS or HTML outside `tokens.css` reads the color scheme or the contrast of the system, names `data-mode` or sets `color-scheme`.',
     'Use a color token: `tokens.css` maps each mode to its theme. For an image that changes with the theme, use an inline SVG that takes its colors from tokens.',
   ),
+  r(
+    'modes-behavior',
+    'modes',
+    'browser',
+    'With two or more mode options, on the default home, at 1280×800 and at 390×844, without the reveal step, each viewport in a browser context of its own. When the `[data-mode-switch]` element is a closed `details`, `popover` or `dialog`, or sits inside one, the rule first opens each such element, outermost first, with a click on its native invoker (`summary`, `[popovertarget]` or `[commandfor]`), and opens nothing else. With JS on: the switch is visible. `html` has `data-mode` before `body` exists: an init script `MutationObserver` on `document` records `document.body` when `data-mode` appears, and that value is `null`. A click on the label of each option, or `selectOption()` on the select, sets `data-mode` to that option; the default mode comes first, then the other options in the order `auto`, `light`, `dark`, `contrast`, so the last choice is never the default. Then, in each emulated system state `S`, the computed `color-scheme` of `html` is `scheme(option)` of 7.7, and the probe color of every `--color-` token equals the design.md value of `T(option, S)`, with fallbacks and aliases resolved and painted through the same probe; each of the four channels is equal within 1 of 255. The last choice survives a navigation to the first page of the sample, in path order, that is neither the default home nor the 404 page (else the 404 page), and a reload: `data-mode` and the control show it. With JS off: no `input`, `select`, `textarea` or `button` named `mode` is visible, and in each `S` the probe colors equal those of `T(D, S)`. With fewer options, the rule has nothing to check.',
+    'The mode switch does not work: it is hidden, a choice does not set `data-mode`, a mode shows other colors than `docs/design.md`, or the choice is lost on the next page.',
+    'Build the switch as `docs/modes.md` says (one labeled radio or option per mode, inside `[data-mode-switch]`), take every color from a token, and never set `color-scheme` or `data-mode` outside the kit.',
+  ),
   // csp
   r(
     'csp-meta',
@@ -855,6 +863,14 @@ export const RULES: readonly Rule[] = [
   ),
   // a11y
   r(
+    'a11y-axe',
+    'a11y',
+    'browser',
+    'No axe violation with tags `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`, `wcag22aa`, `best-practice`, in every declared theme, on a fresh tab at 1280×800 without the reveal step; a node fails once, in the first theme that shows it. These "needs review" results also fail: `color-contrast` with reason `bgImage`, `imgNode` or `pseudoContent`, and `video-caption`. For `color-contrast` with reason `bgGradient`, the kit reads the color stops of the first computed `background-image` on the text\'s element or its ancestors, composites each stop over white and the text color over the stop, and the node fails when any stop gives less than the ratio that axe expects for it (`expectedContrastRatio`), or when no stop is found. Axe\'s `color-contrast-enhanced` also runs; a violation counts on running text: inside `main`, in a `p`, `li`, `dd`, `td`, `th`, `blockquote` or `figcaption`, not inside `a`, `button`, `label` or `summary`; its "needs review" results do not fail.',
+    'axe-core finds an accessibility fault on the page, in at least one theme.',
+    'Read the axe rule named in the detail (https://dequeuniversity.com/rules/axe/4.14/<rule>) and fix the markup or the token it names; a contrast fault needs a darker or lighter token in `docs/design.md`.',
+  ),
+  r(
     'a11y-focus',
     'a11y',
     'browser',
@@ -917,6 +933,15 @@ export const RULES: readonly Rule[] = [
     'Hidden UI opens only through native invokers (`summary`, `[popovertarget]`, `[commandfor]`). An element with `aria-expanded` or `aria-controls` that is none of those fails, unless it is inside an `astro-island`.',
     'A script-only toggle opens hidden content.',
     'Use `<details>` with `<summary>`, a `popovertarget` button or a `commandfor` button, so that the browser opens the content without a script.',
+  ),
+  // contrast
+  r(
+    'contrast-pairs',
+    'contrast',
+    'browser',
+    'On the default home, in every declared theme, every `docs/design.md` pair meets its role ratio: text 7, ui 4.5, non-text 3. A probe element takes the foreground as `color` and the background as `background-color`; each computed color is painted on a 1×1 canvas, the background composited over white and the foreground over the background, and the ratio uses WCAG relative luminance. A pair with another role is left to `design-pairs`.',
+    'A contrast pair of `docs/design.md` misses the ratio of its role in a theme.',
+    'Change the token value in `docs/design.md` for that theme (run `npx --no astro-kit tokens`), or give the pair the role it really has.',
   ),
 ];
 

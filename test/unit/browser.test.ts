@@ -209,6 +209,8 @@ test('the browser rules are the browser rules of the registry, in its order', ()
     registry,
   );
   assert.deepEqual(registry, [
+    'modes-behavior',
+    'a11y-axe',
     'a11y-focus',
     'a11y-targets',
     'a11y-reflow',
@@ -217,6 +219,7 @@ test('the browser rules are the browser rules of the registry, in its order', ()
     'a11y-keyboard',
     'a11y-no-js',
     'a11y-reveal',
+    'contrast-pairs',
   ]);
   assert.deepEqual(
     inRegistryOrder([probe(nothing), { id: 'a11y-focus', pages: 'tested', check: nothing }]).map((rule) => rule.id),

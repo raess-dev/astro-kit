@@ -242,6 +242,7 @@ test('the registry holds the rules of milestones M2, M3, M5 and part 6b of M6 in
       ['modes-script', 'modes', 'build'],
       ['modes-switch', 'modes', 'build'],
       ['modes-media', 'modes', 'config + build'],
+      ['modes-behavior', 'modes', 'browser'],
       ['csp-meta', 'csp', 'build'],
       ['csp-hash', 'csp', 'config + build'],
       ['csp-base', 'csp', 'build'],
@@ -257,6 +258,7 @@ test('the registry holds the rules of milestones M2, M3, M5 and part 6b of M6 in
       ['media-captions', 'media', 'build'],
       ['media-pdf', 'media', 'build'],
       ['svg-name', 'svg', 'build'],
+      ['a11y-axe', 'a11y', 'browser'],
       ['a11y-focus', 'a11y', 'browser'],
       ['a11y-targets', 'a11y', 'browser'],
       ['a11y-reflow', 'a11y', 'browser'],
@@ -265,6 +267,7 @@ test('the registry holds the rules of milestones M2, M3, M5 and part 6b of M6 in
       ['a11y-keyboard', 'a11y', 'browser'],
       ['a11y-no-js', 'a11y', 'browser'],
       ['a11y-reveal', 'a11y', 'browser'],
+      ['contrast-pairs', 'contrast', 'browser'],
     ],
   );
   // Section 8, Waivers: of these rules, only these are waivable.
@@ -300,6 +303,7 @@ test('the registry holds the rules of milestones M2, M3, M5 and part 6b of M6 in
     'media-captions',
     'media-pdf',
     'svg-name',
+    'a11y-axe',
     'a11y-focus',
     'a11y-targets',
     'a11y-reflow',
@@ -308,6 +312,7 @@ test('the registry holds the rules of milestones M2, M3, M5 and part 6b of M6 in
     'a11y-keyboard',
     'a11y-no-js',
     'a11y-reveal',
+    'contrast-pairs',
   ];
   for (const rule of RULES) {
     assert.equal(rule.level, 'error', rule.id);
