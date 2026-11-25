@@ -258,8 +258,10 @@ async function runCheck(
         shared.set(javaScript, context);
       }
       const path = options.path ?? page.path;
-      const key = `${javaScript ? 'on' : 'off'} ${path}`;
-      const failed = loads.failed.get(key);
+      // A navigation with `prepare` (the throttle of perf-lcp-priority) neither reads nor fills the shared failures:
+      // a page that is too slow under the throttle can still load in time for the other rules.
+      const key = options.prepare === undefined ? `${javaScript ? 'on' : 'off'} ${path}` : undefined;
+      const failed = key === undefined ? undefined : loads.failed.get(key);
       if (failed !== undefined) throw new Error(failed);
       const tab: Page = await context.newPage();
       await tab.setViewportSize(options.viewport ?? DESKTOP);
@@ -271,7 +273,7 @@ async function runCheck(
       } catch (error) {
         if (!(error instanceof errors.TimeoutError)) throw error;
         const detail = `${path} did not load within ${loads.limitMs / 1000} s`;
-        loads.failed.set(key, detail);
+        if (key !== undefined) loads.failed.set(key, detail);
         throw new Error(detail);
       }
       const status = response?.status() ?? 200;

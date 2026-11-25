@@ -41,7 +41,7 @@ test('sha256 is sha256- and the base64 of the SHA-256 of the UTF-8 text', () => 
 test('the speculation JSON is the compact text of 6.2, and its hash is the one of 6.2', () => {
   assert.equal(SPECULATION_JSON, specBlock('- **Speculation JSON**', 'json'));
   assert.equal(SPECULATION_JSON, JSON.stringify(SPECULATION_RULES));
-  assert.equal(SPECULATION_HASH, 'sha256-tOSko/m7oZ1fFgczQ9bxn4GNGRSqOuaDsZ0CXhS51h0=');
+  assert.equal(SPECULATION_HASH, 'sha256-ynPcOw3WAXU/3UCEoMSCzlD92bFuZasG83zVhJPOS5w=');
   assert.equal(SPECULATION_HASH, sha256(SPECULATION_JSON));
 });
 
@@ -285,7 +285,7 @@ test('a source is forbidden when 6.2 lists it, holds a star, or is a host that i
     ["'self'", false],
     ["'none'", false],
     ["'wasm-unsafe-eval'", false],
-    ["'sha256-tOSko/m7oZ1fFgczQ9bxn4GNGRSqOuaDsZ0CXhS51h0='", false],
+    ["'sha256-ynPcOw3WAXU/3UCEoMSCzlD92bFuZasG83zVhJPOS5w='", false],
     ['https://maps.example.org', false],
     ["'unsafe-inline'", true],
     ["'UNSAFE-INLINE'", true],

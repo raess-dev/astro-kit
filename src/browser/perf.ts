@@ -659,10 +659,12 @@ function readImages(page: Page): Promise<LoadedImage[]> {
         rendered,
         smallest: false,
       };
+      // The browser takes the first source whose media matches; a source whose media does not match gives nothing.
       const sets: string[] = [];
       if (image.parentElement instanceof HTMLPictureElement) {
         for (const child of Array.from(image.parentElement.children)) {
-          if (child instanceof HTMLSourceElement && child.srcset !== '') sets.push(child.srcset);
+          if (!(child instanceof HTMLSourceElement) || child.srcset === '') continue;
+          if (child.media === '' || window.matchMedia(child.media).matches) sets.push(child.srcset);
         }
       }
       if (image.srcset !== '') sets.push(image.srcset);
@@ -781,12 +783,15 @@ export const imageOversize: BrowserRule = {
       const page = await check.open({ context, viewport: viewportOf(device) });
       const early = await readImages(page);
       const before = await resources(page);
+      const unshown = new Set<string>();
       for (const [index, image] of early.entries()) {
         if (!image.raster || image.box) continue;
-        // The file is the image's own when no other image that loaded on its own shows it.
-        const shared = early.some((other, at) => at !== index && other.raster && other.href === image.href);
+        // The file shows when another image with a box shows it. Two hidden copies do not exempt each other, and a
+        // file that shows nowhere is reported once, for its first image.
+        const shows = early.some((other, at) => at !== index && other.raster && other.box && other.href === image.href);
         const bytes = before.get(image.href);
-        if (shared || bytes === undefined) continue;
+        if (shows || bytes === undefined || unshown.has(image.href)) continue;
+        unshown.add(image.href);
         check.report(`${deviceText(device)}: ${image.name} loads ${image.url} (${bytes} B) and shows nowhere`);
       }
       await loadLazyImages(page, CLS_IMAGES_MS);
@@ -921,10 +926,10 @@ interface Hovered {
 
 /**
  * The links that the kit's document rule of 6.2 leaves out, and those that the prefetch gate leaves out. A `target`
- * of `_self`, in any letter case, opens the link in the same tab, as no `target` does.
+ * of `_self`, in any letter case, and an empty `target` open the link in the same tab, as no `target` does.
  */
-const RULE_EXCLUDED = "[download], [hreflang], [target]:not([target='_self' i]), [rel~=nofollow]";
-const GATE_EXCLUDED = "[download], [target]:not([target='_self' i])";
+const RULE_EXCLUDED = "[download], [hreflang], [target]:not([target='_self' i]):not([target='']), [rel~=nofollow]";
+const GATE_EXCLUDED = "[download], [target]:not([target='_self' i]):not([target=''])";
 
 /**
  * The first link in `header`, `main` or `footer`, in document order, that is visible, leads to another page of the

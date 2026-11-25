@@ -236,3 +236,10 @@
   - The spike S17 starts its Chromium with the switches of Playwright's launch that change features and scheduling,
     writes a network log, and waits for the prerender request, the prerendered page and the activation one after the
     other, so a failed run names the step that did not come.
+- The perf rules after the Codex review of #21:
+  - `perf-image-oversize` exempts a hidden image only when another image with a box shows its file, and reports a
+    file that no image shows once; it reads the descriptors only from the `source` whose `media` matches.
+  - The throttled navigation of `perf-lcp-priority` keeps its timeout to itself, so the other rules still measure a
+    page that is only too slow under the throttle.
+  - The speculation rule and the prefetch gate take a link with an empty `target`. The speculation JSON and its hash
+    change.
