@@ -197,6 +197,11 @@
     run to run.
   - The waits of the harness also hold the animations inside open shadow roots, which `document.getAnimations()`
     leaves out in Chromium 153.
+- `a11y-axe` after the last Codex round of #18. Gradient text over another element's gradient compares each stop
+  with the color it lies on, not with the first color below. A link in running text counts as underlined when an
+  inline element around it draws the underline; an underline on the element that holds the text around the link
+  does not set the link apart, and a float, a positioned element or an atomic inline on the way stops the
+  underline of the elements above it, as CSS hands decorations down.
 - Milestone M6, part 6d: the perf pass, in `src/browser/perf.ts`. The kit has 111 rules. The perf rules read the
   sample, and every page with `--all`.
   - `perf-lcp-priority` throttles a phone (390×844@3) and a desktop (1440×900@1) through CDP and reads the last
