@@ -5,9 +5,10 @@
  * the built `dist/`, each on one page of the sample. One `test --all` run must report
  * exactly the ids of the set, and no passed line.
  *
- * - `perf-bfcache`: a `_headers` rule gives the German privacy page `Cache-Control: no-store`. Chromium keeps no
- *   such page in the back/forward cache. No first eligible link of a sample page leads to it, so it changes nothing
- *   for the prefetch. (An `unload` listener blocked the cache in Chromium 153, but no longer in 158: 13.1 item 76.)
+ * - `perf-bfcache`: a `_headers` rule gives the German privacy page `Cache-Control: no-store`, and a module script on
+ *   it makes one fetch. Chromium 153 and 158 both keep such a page out of the back/forward cache; an `unload`
+ *   listener or `no-store` alone blocks it in only one of the two (13.1 item 76). No first eligible link of a sample
+ *   page leads to it, so it changes nothing for the prefetch.
  * - `perf-prefetch`: on the German jobs page, a script adds a query to the URL of a link when it is clicked, as a
  *   click counter does. The hover prefetches the link's URL, and the click loads another URL. The page itself enters
  *   the back/forward cache as before.
@@ -33,8 +34,10 @@ function script(dir: string, path: string, name: string, js: string): void {
 const PLANTS: readonly { id: string; plant: (dir: string) => void }[] = [
   {
     id: 'perf-bfcache',
-    plant: (dir) =>
-      write(dir, { 'dist/_headers': `${read(dir, 'dist/_headers')}\n/datenschutz/\n  Cache-Control: no-store\n` }),
+    plant: (dir) => {
+      write(dir, { 'dist/_headers': `${read(dir, 'dist/_headers')}\n/datenschutz/\n  Cache-Control: no-store\n` });
+      script(dir, '/datenschutz/', 'plant-fetch', "fetch('/datenschutz/', { cache: 'no-store' });\n");
+    },
   },
   {
     id: 'perf-prefetch',
