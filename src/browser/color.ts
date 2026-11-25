@@ -394,7 +394,8 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
   // that holds the text around the link: an underline on a `span` inside the link, on the link, or on an inline
   // element around it counts. An underline on the holder or above it underlines the text around the link too, so it
   // does not set the link apart. As CSS hands decorations down (CSS Text Decoration 3, 2.1), a float, an absolutely
-  // or fixed positioned element, or an atomic inline on the way stops the decorations of its ancestors.
+  // or fixed positioned element, or an atomic inline on the way stops the decorations of its ancestors. The walk
+  // follows the flat tree (`up`): a slotted link passes its slot and the elements around it in the shadow tree.
   // A text node that the page renders: it holds a letter or a digit, and its element is visible. Hidden text
   // (`hidden`, `display: none`, `visibility: hidden`) does not count, as for axe.
   const rendered = (node: Node): boolean =>
@@ -410,7 +411,7 @@ async function runAxe(arg: AxeArgument): Promise<AxeHit[]> {
       texts += 1;
       let marked = false;
       let element: Element | null = node.parentElement;
-      for (; element !== null && element !== around; element = parentOf(element)) {
+      for (; element !== null && element !== around; element = up(element)) {
         const style = getComputedStyle(element);
         if (style.textDecorationLine !== 'none') marked = true;
         if (marked || stopsDecorations(style)) break;
