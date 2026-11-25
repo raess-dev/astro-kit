@@ -9,7 +9,10 @@ import {
   BIOME_CONFIG_NAMES,
   BIOME_FILE,
   CONFIG_FILE,
+  checkFormsShim,
   checkShims,
+  FORMS_SHIM,
+  FORMS_SHIM_FILE,
   firstDifference,
   normalize,
   otherBiomeConfigs,
@@ -457,4 +460,52 @@ test('a finding reads as one line with the fix and the rule', () => {
       '    rule: node_modules/@raess/astro-kit/docs/standards.md#config-shim',
     ].join('\n'),
   );
+});
+
+// The forms shim (9.1): compared in preflight from M7
+
+/** Runs the forms part of `config-shim` on a root that holds the given text as the forms shim, or none. */
+function formsShimRun(text: string | typeof FOLDER | null): string[] {
+  const root = mkdtempSync(join(tmpdir(), 'astro-kit-'));
+  try {
+    const path = join(root, FORMS_SHIM_FILE);
+    mkdirSync(text === FOLDER ? path : dirname(path), { recursive: true });
+    if (text !== null && text !== FOLDER) writeFileSync(path, text);
+    const report = new Report();
+    checkFormsShim(root, report);
+    return report.findings.map((finding) => `${finding.rule} ${finding.where}: ${finding.detail}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test('the forms shim is the file of templates/features/forms and the block of 9.1', () => {
+  const template = new URL('../../templates/features/forms/src/pages/api/forms/[form].ts', import.meta.url);
+  assert.equal(readFileSync(fileURLToPath(template), 'utf8'), FORMS_SHIM);
+  assert.equal(FORMS_SHIM_FILE, 'src/pages/api/forms/[form].ts');
+  assert.equal(SPEC.includes(`\n  \`\`\`ts\n${FORMS_SHIM.replace(/^(?=.)/gm, '  ')}  \`\`\`\n`), true);
+});
+
+test('config-shim: the forms shim passes when equal, also with CRLF; it fails when missing or edited', () => {
+  const where = `config-shim ${FORMS_SHIM_FILE}`;
+  assert.deepEqual(
+    [
+      formsShimRun(FORMS_SHIM),
+      formsShimRun(FORMS_SHIM.replaceAll('\n', '\r\n')),
+      formsShimRun(`${FORMS_SHIM.trimEnd()}\n\n\n`),
+      formsShimRun(null),
+      formsShimRun(FOLDER),
+      formsShimRun(FORMS_SHIM.replace('createFormEndpoint();', 'async () => new Response(null);')),
+    ],
+    [
+      [],
+      [],
+      [],
+      [`${where}: ${MISSING}`],
+      [`${where}: this is not a file`],
+      [`${where}:4: ${has('export const POST = createFormEndpoint();')}`],
+    ],
+  );
+  // The hint names the command that writes the shim.
+  assert.match(getRule(RULE).hint, /init --shims/);
 });

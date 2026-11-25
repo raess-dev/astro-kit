@@ -331,7 +331,7 @@ function coverageOf(input: BuiltCssInput): Coverage {
 
 /**
  * `css-element-coverage`: each listed element on a built page has a rule in `elements.css` that covers it (`cover`:
- * `input` by its `type`, a bare `input` rule covers all), and each variant class of `elements.css` on any element has
+ * `input` by its `type`, a bare `input` rule covers all, `input[type=hidden]` needs none), and each variant class of `elements.css` on any element has
  * a rule with its type and that class (`button.button` next to `a.button`, `span.button` on a `span`). An exempt or
  * unlisted element needs no rule of its own. One finding for each page and key.
  */
@@ -350,7 +350,10 @@ export function auditCssElementCoverage(input: BuiltCssInput, report: Report): v
       // A variant rule matches an element with its class: `h1.lead` covers `<h1 class="lead">`, not `<h1>`.
       if (classes.some((name) => coverage.keys.has(`${tag}.${name}`))) continue;
       if (tag === 'input') {
-        const key = `input[type=${asciiLower(element.getAttribute('type') ?? '') || 'text'}]`;
+        const type = asciiLower(element.getAttribute('type') ?? '') || 'text';
+        // A hidden input is never shown, so it needs no rule (the `return` input of 9.1).
+        if (type === 'hidden') continue;
+        const key = `input[type=${type}]`;
         if (!coverage.keys.has(ANY_INPUT) && !coverage.keys.has(key)) add('css-element-coverage', page.path, key);
       } else if (!coverage.keys.has(tag)) add('css-element-coverage', page.path, tag);
     }

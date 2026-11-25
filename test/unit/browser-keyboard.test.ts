@@ -512,8 +512,8 @@ test('a11y-no-js: the fill values of 8', () => {
 });
 
 test('a11y-no-js: a declared form that lands on #sent passes', async () => {
-  // Until the form stub of M7, a `_redirects` rule answers the post with 303 to `/#sent`, as the stub does.
-  const files = { 'index.html': bookingPage(), _redirects: '/api/forms/booking/ /#sent 303\n' };
+  // The form stub of serveDist (9.1) answers the post with 303 to `/#sent`, with the field validation of the endpoint.
+  const files = { 'index.html': bookingPage() };
   assert.deepEqual(await idsOf(browser(), files, [noJs], { settings: FORMS }), []);
 });
 
@@ -524,7 +524,7 @@ test('a11y-no-js: a declared form inside a dialog that a native invoker opens pa
       '<button type="button" commandfor="book" command="show-modal">Buchen</button><dialog id="book"><form method="post"',
     )
     .replace('</form>', '</form></dialog>');
-  const files = { 'index.html': page, _redirects: '/api/forms/booking/ /#sent 303\n' };
+  const files = { 'index.html': page };
   assert.deepEqual(await idsOf(browser(), files, [noJs], { settings: FORMS }), []);
 });
 
@@ -535,7 +535,7 @@ test('a11y-no-js: a declared form inside a dialog whose invoker sits in an auto 
       '<button type="button" popovertarget="menu">Menü</button><div popover id="menu"><button type="button" commandfor="book" command="show-modal">Buchen</button></div><dialog id="book"><form method="post"',
     )
     .replace('</form>', '</form></dialog>');
-  const files = { 'index.html': page, _redirects: '/api/forms/booking/ /#sent 303\n' };
+  const files = { 'index.html': page };
   assert.deepEqual(await idsOf(browser(), files, [noJs], { settings: FORMS }), []);
 });
 
@@ -547,7 +547,7 @@ test('a11y-no-js: a full-screen popover does not keep the click from a dialog in
     )
     .replace('</form>', '</form></dialog>')
     .replace('</style>', '.cover{position:fixed;inset:0;inline-size:auto;block-size:auto;margin:0}</style>');
-  const files = { 'index.html': page, _redirects: '/api/forms/booking/ /#sent 303\n' };
+  const files = { 'index.html': page };
   assert.deepEqual(await idsOf(browser(), files, [noJs], { settings: FORMS }), []);
 });
 
@@ -555,18 +555,20 @@ test('a11y-no-js: a declared form inside a dialog that no native invoker opens f
   const page = bookingPage()
     .replace('<form method="post"', '<dialog id="book"><form method="post"')
     .replace('</form>', '</form></dialog>');
-  const files = { 'index.html': page, _redirects: '/api/forms/booking/ /#sent 303\n' };
+  const files = { 'index.html': page };
   assert.deepEqual(await idsOf(browser(), files, [noJs], { settings: FORMS }), ['a11y-no-js']);
 });
 
 test('a11y-no-js: a declared form that the server refuses fails', async () => {
-  assert.deepEqual(await placesOf(browser(), { 'index.html': bookingPage() }, [noJs], { settings: FORMS }), [
-    '/ 390×844 with JS off: the form booking lands on /api/forms/booking/, not on /#sent',
+  // A `return` without its last slash fails step 5 of 9.1: the stub answers 303 to `/#not-sent`.
+  const page = bookingPage().replace('name="return" value="/"', 'name="return" value="/start"');
+  assert.deepEqual(await placesOf(browser(), { 'index.html': page }, [noJs], { settings: FORMS }), [
+    '/ 390×844 with JS off: the form booking lands on /#not-sent, not on /#sent',
   ]);
 });
 
 test('a11y-no-js: a declared form that the fill cannot make valid fails before the submission', async () => {
-  const files = { 'index.html': bookingPage(' max="2000-01-01"'), _redirects: '/api/forms/booking/ /#sent 303\n' };
+  const files = { 'index.html': bookingPage(' max="2000-01-01"') };
   assert.deepEqual(await placesOf(browser(), files, [noJs], { settings: FORMS }), [
     '/ 390×844 with JS off: the form booking is not valid after the fill: the field arrival',
   ]);

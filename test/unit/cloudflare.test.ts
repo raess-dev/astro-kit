@@ -892,8 +892,9 @@ test('the rendering has full-line // comments only and no trailing commas: witho
   });
 });
 
-test('renderWrangler has no text for a site with forms before milestone M7', () => {
-  assert.throws(() => renderWrangler(FORMS), /M7/);
+test('renderWrangler gives the forms text for a site with forms (test/unit/forms-wrangler.test.ts holds its cases)', () => {
+  assert.notEqual(renderWrangler(FORMS), renderWrangler(optionsOf({ ...SMALLEST, site: FORMS.site })));
+  assert.ok(renderWrangler(FORMS).includes('"run_worker_first": ["/api/forms/*"]'));
 });
 
 // config-wrangler
@@ -969,8 +970,16 @@ const WRANGLER_CASES: readonly WranglerCase[] = [
     undefined,
     [`wrangler.toml: remove this file: ${ONLY}`],
   ],
-  // A site with forms: milestone M7 adds its text. Until then only the file part runs.
-  ['forms: the text is not compared before M7', { [WRANGLER_FILE]: RENDERED }, FORMS, []],
+  // A site with forms: the forms text of 10.4.
+  ['forms: the forms rendering of the kit', { [WRANGLER_FILE]: renderWrangler(FORMS) }, FORMS, []],
+  [
+    'forms: the static text',
+    { [WRANGLER_FILE]: RENDERED },
+    FORMS,
+    [
+      'wrangler.jsonc:6: the kit renders `  "assets": { "directory": "./dist/client", "not_found_handling": "404-page", "html_handling": "auto-trailing-slash", "run_worker_first": ["/api/forms/*"] },` here',
+    ],
+  ],
   ['forms: a missing file', {}, FORMS, ['wrangler.jsonc: the file is missing']],
 ];
 

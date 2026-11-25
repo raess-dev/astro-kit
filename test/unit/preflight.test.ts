@@ -11,7 +11,7 @@ import { renderWrangler } from '../../src/hosts/cloudflare.ts';
 import { LIMITS, type Options, parseOptions } from '../../src/options.ts';
 import { preflight } from '../../src/preflight.ts';
 import { Report, RULE_BY_ID } from '../../src/registry.ts';
-import { SHIMS } from '../../src/shims.ts';
+import { FORMS_SHIM, FORMS_SHIM_FILE, SHIMS } from '../../src/shims.ts';
 import { specBlock } from './spec.ts';
 
 // The project of a case
@@ -242,6 +242,7 @@ const ORDER: readonly string[] = [
   'images-original',
   // 7.
   'config-wrangler',
+  'forms-binding',
   // 8.
   'routes-redirects',
   // 9. design
@@ -292,6 +293,25 @@ const WRANGLER_CHANGED_BY_HAND = WRANGLER_JSONC.replace(
   '"compatibility_date": "2020-01-01"',
 );
 
+/** The smallest settings with forms: the contact block, the default form `contact` and the four processing keys. */
+const FORMS_SETTINGS = {
+  ...SETTINGS,
+  features: { forms: true },
+  contact: { to: 'info@example.ch', from: 'form@example.ch', probe: 'probe@example.ch' },
+  processing: ['cdn', 'previews', 'forms', 'server'],
+};
+
+/** The text of `wrangler.jsonc` that the kit renders for the forms settings. */
+const WRANGLER_FORMS = renderWrangler(optionsOf(FORMS_SETTINGS));
+
+/** The smallest forms project, with `wrangler.jsonc` and the forms shim as given (`null`: no shim). */
+const withForms = (wrangler: string = WRANGLER_FORMS, shim: string | null = FORMS_SHIM): Files =>
+  withFiles({
+    'astro-kit.json': json(FORMS_SETTINGS),
+    [WRANGLER]: wrangler,
+    ...(shim === null ? {} : { [FORMS_SHIM_FILE]: shim }),
+  });
+
 /** A waiver that names a waivable rule and ended long ago. */
 const OLD_WAIVER = {
   rule: 'head-title',
@@ -339,6 +359,12 @@ type Case = readonly [name: string, files: Files, ids: readonly string[]];
 /** Projects that pass. Each one holds the smallest input that meets the rules which read its files. */
 const PASSING: readonly Case[] = [
   ['the smallest project', SMALLEST, []],
+  ['the smallest project with forms, the forms text of wrangler.jsonc and the forms shim', withForms(), []],
+  [
+    'the forms shim with CRLF line ends and no final newline equals the shim',
+    withForms(WRANGLER_FORMS, FORMS_SHIM.trimEnd().replaceAll('\n', '\r\n')),
+    [],
+  ],
   [
     'the smallest project with each optional file that a rule of M2 reads',
     withFiles({
@@ -468,6 +494,28 @@ const FAILING: readonly Case[] = [
     withSettings({ site: 'https://www.example.ch' }),
     ['config-wrangler'],
   ],
+  [
+    'config-wrangler and forms-binding: a forms site with the static text',
+    withForms(WRANGLER_JSONC),
+    ['config-wrangler', 'forms-binding'],
+  ],
+  [
+    'forms-binding: the probe inbox is not an allowed destination',
+    withForms(WRANGLER_FORMS.replace(', "probe@example.ch"', '')),
+    ['config-wrangler', 'forms-binding'],
+  ],
+  [
+    'forms-binding: the rate limit per IP address is 30',
+    withForms(WRANGLER_FORMS.replace('"limit": 3,', '"limit": 30,')),
+    ['config-wrangler', 'forms-binding'],
+  ],
+  ['forms-binding: a text that is not JSON', withForms(`${WRANGLER_FORMS},\n`), ['config-wrangler', 'forms-binding']],
+  ['config-shim: a forms site without the forms shim', withForms(WRANGLER_FORMS, null), ['config-shim']],
+  [
+    'config-shim: a forms site with a hand-written endpoint in place of the forms shim',
+    withForms(WRANGLER_FORMS, "export const prerender = false;\nexport const POST = () => new Response('ok');\n"),
+    ['config-shim'],
+  ],
   // 8.
   [
     'routes-redirects: a `to` that leaves the site',
@@ -561,7 +609,7 @@ const DESIGN_RULES = ['design-format', 'modes-themes', 'design-tokens'] as const
 type DesignRule = (typeof DESIGN_RULES)[number];
 
 /** The settings of the project that fails every rule. They are valid. */
-const EVERY_RULE_SETTINGS = { ...SETTINGS, waivers: [OLD_WAIVER], processing: ['cdn'] };
+const EVERY_RULE_SETTINGS = { ...FORMS_SETTINGS, waivers: [OLD_WAIVER], processing: ['cdn'] };
 
 /** What one design rule needs to fail, on top of the project that fails every other rule. */
 const DESIGN_PLANTS: Readonly<Record<DesignRule, Files>> = {
@@ -610,8 +658,8 @@ const EVERY_RULE_BOX_CSS = [
 
 /**
  * A project that fails every rule of `ORDER` outside the first three rules of sub-step 9, and one of these three.
- * Its settings are valid. It fails both parts of `config-wrangler`: a second wrangler file, and a text that the kit
- * did not render. The CSS rules fail in `src/styles/extra.css`, `elements.css`, the components `Card` and `Box`,
+ * Its settings are valid, with forms. It fails both parts of `config-wrangler`: a second wrangler file, and a text
+ * that the kit did not render. That text is the static one, so it fails `forms-binding` too. The CSS rules fail in `src/styles/extra.css`, `elements.css`, the components `Card` and `Box`,
  * and the page file of `PAGE`.
  */
 const everyRule = (design: DesignRule): Files => ({
@@ -777,6 +825,7 @@ const NEEDS_SETTINGS: readonly string[] = [
   'config-waiver',
   'legal-processing',
   'config-dep-allowlist',
+  'forms-binding',
   'modes-themes',
   'design-tokens',
   'modes-media',
@@ -788,7 +837,9 @@ const NEEDS_SETTINGS: readonly string[] = [
  * `wrangler.jsonc` with the rendering reports a line of that file.
  */
 const needsSettings = (line: string): boolean =>
-  NEEDS_SETTINGS.some((id) => line.startsWith(`${id} `)) || line.startsWith(`config-wrangler ${WRANGLER}:`);
+  NEEDS_SETTINGS.some((id) => line.startsWith(`${id} `)) ||
+  line.startsWith(`config-wrangler ${WRANGLER}:`) ||
+  line === `config-shim ${FORMS_SHIM_FILE}`;
 
 test('without valid settings, every check that reads no setting still runs', () => {
   const seen = run(everyRuleNoSettings('design-format'));
@@ -820,6 +871,11 @@ test('without valid settings, every check that reads no setting still runs', () 
     rest(seen).filter((line) => line.startsWith('config-wrangler ')),
     ['config-wrangler wrangler.toml'],
     'without settings, only the file part of config-wrangler runs',
+  );
+  assert.deepEqual(
+    [valid, seen].map((each) => rest(each).filter((line) => line.includes(FORMS_SHIM_FILE))),
+    [[`config-shim ${FORMS_SHIM_FILE}`], []],
+    'the forms shim is compared with valid settings and forms only',
   );
 });
 

@@ -368,11 +368,12 @@ async function writeShots(run: TestRun, folder: string): Promise<void> {
 
 /**
  * Runs the browser rules on a built site and adds their findings to `input.report`. It serves the client
- * directory, launches the browser (unless the caller gives one), runs each rule on the pages of its scope, and
+ * directory (with the form stub on a forms site), launches the browser (unless the caller gives one), runs each rule on the pages of its scope, and
  * closes the browser and then the server, also when the launch fails.
  */
 export async function runBrowser(input: BrowserInput): Promise<void> {
-  const served = await serveDist(input.dist);
+  // A forms site gets the form stub of 9.1, so that `a11y-no-js` can send each declared form.
+  const served = await serveDist(input.dist, input.options.features.forms ? { forms: input.options } : {});
   try {
     const pages = testPages(served.root, input.options, input.components);
     const sample = samplePages(pages);

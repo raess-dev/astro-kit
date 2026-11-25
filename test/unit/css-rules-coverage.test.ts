@@ -351,6 +351,15 @@ test('css-element-coverage: input goes by its type, and a bare input rule covers
   assert.deepEqual(ids(audited(bare.input)), []);
 });
 
+test('css-element-coverage: a hidden input needs no rule (the return input of 9.1); a text input still does', () => {
+  const hidden =
+    '<form method="post"><input type="hidden" name="return" value="/"><input type="HIDDEN" name="x"></form>';
+  const passing = site({}, { 'index.html': page(hidden) });
+  assert.deepEqual(ids(audited(passing.input)), []);
+  const failing = site({}, { 'index.html': page(`${hidden}<input type="text" name="name">`) });
+  assert.deepEqual(findings(audited(failing.input)), ['css-element-coverage / input[type=text]']);
+});
+
 test('css-element-coverage: a variant of elements.css on another type needs its own rule (button.button)', () => {
   const body = '<a class="button" href="/">Go</a><button class="button" type="button">Go</button>';
   const elements = elementsWith(

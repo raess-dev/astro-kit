@@ -25,6 +25,7 @@
 import type { HTMLElement } from 'node-html-parser';
 import type { BuildContext, BuiltPage } from '../context.ts';
 import { snippet } from '../css/rules.ts';
+import { FORM_ACTION_PREFIX } from '../forms/limits.ts';
 import { fieldPlace, type Locale, OPTIONS_FILE } from '../options.ts';
 import { redirectMatcher } from '../redirects.ts';
 import { localeHome, NOT_FOUND_PATH, pagePathProblems, pathSegments } from '../routes.ts';
@@ -73,9 +74,6 @@ import {
  */
 export const notFoundSegmentMessage = (path: string): string =>
   `${path} has a 404 segment. Under build.format 'directory' it is written to ${path}index.html, an ordinary page that answers 200. Cloudflare answers a missing URL only with a file named 404.html, which Astro builds only from src/pages/404.astro. Put every language on ${NOT_FOUND_PATH}.`;
-
-/** The start of the action of a kit form (9.1). `FORM_ACTION_PREFIX` of M7 takes its place. */
-const FORM_ACTION_PREFIX = '/api/forms/';
 
 /** The tag of a locale code, or `undefined` for a code that is not configured. */
 const tagOfCode = (ctx: BuildContext, code: string): string | undefined => localeOf(ctx.options, code)?.tag;
