@@ -470,12 +470,11 @@ test('perf-bfcache fails a page with Cache-Control: no-store, with the reason of
   );
 });
 
-test('perf-bfcache fails an unload listener and a held Web Lock with a stable detail', async () => {
+test('perf-bfcache fails a held Web Lock with a stable detail', async () => {
   const restore =
     '/ 1280×800: after ?kit-bfcache and back, the page loaded again instead of a restore from the back/forward cache';
-  // Chromium names only `masked` for an unload listener, in most runs: the detail names no reason.
-  const unload = html(`${BODY}<script>addEventListener('unload', () => {})</script>`, { css: CSS });
-  assert.deepEqual(await detailsOf({ 'index.html': unload }, bfcache), [restore]);
+  // An unload listener is no case here: Chromium 153 keeps such a page out of the cache, and Chromium 158 restores it
+  // (13.1 item 76). The kit reports what the browser does; bfcacheReasons has its own test for `masked`.
   // The second page asks for the lock that the first one holds, once its scripts ran.
   const lock = html(`${BODY}<script>navigator.locks.request('kit', () => new Promise(() => {}));</script>`, {
     css: CSS,
