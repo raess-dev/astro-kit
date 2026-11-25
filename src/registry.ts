@@ -956,7 +956,7 @@ export const RULES: readonly Rule[] = [
     'perf-cls',
     'perf',
     'browser',
-    'On each tested page at 390×844 and at 1280×800, the largest session window of layout shifts without recent input (a gap under 1 s, at most 5 s) is at most 0.05. Every animation moves in fixed frames of 16.7 ms, so a slow machine gets the same result. It is measured from `load`, while the page scrolls down half a viewport every 150 ms to its end, then at its top while the images load (10 s at most) and until 2 s pass with no shift (10 s at most).',
+    'On each tested page at 390×844 and at 1280×800, the largest session window of layout shifts without recent input (a gap under 1 s, at most 5 s) is at most 0.05. Every animation moves in fixed frames of 16.7 ms, so a slow machine gets the same result. It is measured from `load`, while the page scrolls down half a viewport every 150 ms to its end, then at its top while the images load (10 s at most) and until at least 5 s after `load` and 2 s with no shift (10 s at most).',
     'Content moves while the page loads or scrolls.',
     'Give every image, video and embed its `width` and `height` (or an `aspect-ratio`), reserve the space of late content, and never insert content above what the visitor sees.',
   ),

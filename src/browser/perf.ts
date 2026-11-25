@@ -248,9 +248,13 @@ export const CLS_STEP_MS = 150;
 export const CLS_IMAGES_MS = 10_000;
 /** The most scroll steps on one page: a page taller than 100 half viewports is measured in its first part. */
 export const CLS_STEPS = 100;
-/** The quiet time that ends the measurement: 2 s with no layout shift, after the images, and at most 10 s. */
+/**
+ * The end of the measurement: at least `CLS_WATCH_MS` after `load`, and 2 s with no layout shift, after the images,
+ * at most 10 s. The watch time catches a banner that a script adds a few seconds after load on a short page.
+ */
 export const CLS_QUIET_MS = 2_000;
 export const CLS_QUIET_CAP_MS = 10_000;
+export const CLS_WATCH_MS = 5_000;
 /** One frame of the animation clock of `perf-cls`, in ms: the frame of a 60 Hz screen. */
 export const CLS_FRAME_MS = 16.7;
 /** How long `perf-cls` waits for the running animations to end before a scroll step, at most. */
@@ -425,20 +429,26 @@ async function animationsDone(page: Page): Promise<void> {
     .catch(() => undefined);
 }
 
-/** Waits until the page had no layout shift for `CLS_QUIET_MS`, for `CLS_QUIET_CAP_MS` at most. */
+/**
+ * Waits until at least `CLS_WATCH_MS` passed since `load` and the page had no layout shift for `CLS_QUIET_MS`, for
+ * `CLS_QUIET_CAP_MS` at most.
+ */
 function quiet(page: Page): Promise<void> {
   return page.evaluate(
     async (limits) => {
       const shifts = (window as unknown as { __astroKitShifts?: Shift[] }).__astroKitShifts ?? [];
       const start = performance.now();
+      const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+      const loaded = navigation !== undefined && navigation.loadEventEnd > 0 ? navigation.loadEventEnd : start;
       for (;;) {
         const now = performance.now();
         const last = Math.max(start, shifts.at(-1)?.time ?? 0);
-        if (now - last >= limits.quiet || now - start >= limits.cap) return;
-        await new Promise((done) => setTimeout(done, 50));
+        const done = now - loaded >= limits.watch && now - last >= limits.quiet;
+        if (done || now - start >= limits.cap) return;
+        await new Promise((next) => setTimeout(next, 50));
       }
     },
-    { quiet: CLS_QUIET_MS, cap: CLS_QUIET_CAP_MS },
+    { quiet: CLS_QUIET_MS, cap: CLS_QUIET_CAP_MS, watch: CLS_WATCH_MS },
   );
 }
 
@@ -489,7 +499,8 @@ async function clsAt(check: Check, viewport: Viewport): Promise<string | undefin
  * its start, and from `load` on a clock moves every animation one frame of 16.7 ms in each animation frame. The rule
  * waits until the animations end, pauses 500 ms, and scrolls down half a viewport every 150 ms to the end of the
  * page, each step after the animations that it started have ended. Then it scrolls back to the top, the images get
- * up to 10 s to load, and the measurement ends when 2 s pass with no layout shift, after 10 s at most. The largest session window of the layout
+ * up to 10 s to load, and the measurement ends when at least 5 s passed since `load` and 2 s pass with no layout
+ * shift, after 10 s at most. The largest session window of the layout
  * shifts must be at most 0.05.
  */
 export const cls: BrowserRule = {

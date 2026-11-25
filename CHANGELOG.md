@@ -210,7 +210,8 @@
     `fetchPriority` and `loading` as the browser does.
   - `perf-cls` runs at 390×844 and at 1280×800. The timeline of the page stands still, and a clock moves every
     animation 16.7 ms in each frame, so a slow machine paints the same frames and gets the same result. It scrolls the
-    page, goes back to the top, waits for the images and then until 2 s pass with no shift (10 s at most).
+    page, goes back to the top, waits for the images and then until at least 5 s after `load` and 2 s with no shift (10 s at
+    most), so a banner that a script adds a few seconds after load on a short page counts.
   - `perf-image-oversize` reads the `w` descriptor of the loaded `srcset` candidate on both devices, with the `h`
     descriptor of HTML. It judges what an image adds to the transfer, keeps an image with `sizes="auto"` lazy and
     scrolls it into view, and fails an image that loads a raster file and shows nowhere.

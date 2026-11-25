@@ -19,6 +19,7 @@ import {
   CLS_QUIET_MS,
   CLS_STEP_MS,
   CLS_VIEWPORTS,
+  CLS_WATCH_MS,
   cls,
   cut,
   deviceText,
@@ -123,6 +124,7 @@ test('the values of the perf rules are the values of section 8', () => {
     [0.05, 1000, 5000, 500, 150, 10_000],
   );
   assert.deepEqual([CLS_QUIET_MS, CLS_QUIET_CAP_MS, CLS_FRAME_MS, CLS_ANIMATION_MS], [2000, 10_000, 16.7, 10_000]);
+  assert.equal(CLS_WATCH_MS, 5000);
   assert.deepEqual(
     CLS_VIEWPORTS.map((viewport) => `${viewport.width}×${viewport.height}`),
     ['390×844', '1280×800'],
@@ -291,6 +293,20 @@ test('perf-cls watches until 2 s pass with no shift: a block 2 s after load fail
   const files: Files = {
     'index.html': page(
       "<p>Ein Absatz.</p><script>addEventListener('load', () => setTimeout(() => { const block = document.createElement('div'); block.style.blockSize = '300px'; document.querySelector('main').prepend(block); }, 2000));</script>",
+    ),
+  };
+  const details = await detailsOf(files, cls);
+  assert.deepEqual(details.map(withoutValue), [
+    '/ 390×844: CLS <value> in the largest session window, at most 0.05; its largest shift moves body',
+    '/ 1280×800: CLS <value> in the largest session window, at most 0.05; its largest shift moves body',
+  ]);
+});
+
+test('perf-cls watches at least 5 s after load: a block 4 s after load on a short page fails', async () => {
+  // A short page: the 2 s quiet period alone ended about 2 s after load, so a late banner was never seen.
+  const files: Files = {
+    'index.html': page(
+      "<p>Ein Absatz.</p><script>addEventListener('load', () => setTimeout(() => { const block = document.createElement('div'); block.style.blockSize = '300px'; document.querySelector('main').prepend(block); }, 4000));</script>",
     ),
   };
   const details = await detailsOf(files, cls);
