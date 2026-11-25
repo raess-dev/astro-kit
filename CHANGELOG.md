@@ -272,3 +272,6 @@
     - A failed load of `virtual:astro-kit` or `cloudflare:workers` answers `no_binding` with the five headers.
     - On a forms site, `config-shim` compares `src/pages/api/forms/[form].ts` with the forms shim in every command
       that runs preflight. `css-element-coverage` needs no rule for `input[type=hidden]`.
+- `perf-image-oversize` no longer loses a lazy image that finishes its own load while the rule reads the page (1 run
+  in 50 under load lost the finding). A file that a preload or a style sheet fetched exempts no image, so its
+  verdict no longer depends on which load ends first.
