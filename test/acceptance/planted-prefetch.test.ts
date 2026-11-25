@@ -6,8 +6,8 @@
  * exactly the ids of the set, and no passed line.
  *
  * - `perf-bfcache`: a `_headers` rule gives the German privacy page `Cache-Control: no-store`, and a module script on
- *   it makes one fetch. Chromium 153 and 158 both keep such a page out of the back/forward cache; an `unload`
- *   listener or `no-store` alone blocks it in only one of the two (13.1 item 76). No first eligible link of a sample
+ *   it makes one fetch. Chromium keeps such a page out of the back/forward cache in 153 and, as measured on CI, in
+ *   158; an `unload` listener blocks it in 153 only, and `no-store` alone not in 153 (13.1 item 76). No first eligible link of a sample
  *   page leads to it, so it changes nothing for the prefetch.
  * - `perf-prefetch`: on the German jobs page, a script adds a query to the URL of a link when it is clicked, as a
  *   click counter does. The hover prefetches the link's URL, and the click loads another URL. The page itself enters

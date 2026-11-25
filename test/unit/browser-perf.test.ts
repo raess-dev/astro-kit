@@ -476,7 +476,7 @@ test('perf-bfcache fails a held Web Lock with a stable detail', async () => {
   // An unload listener is no case here: Chromium 153 keeps such a page out of the cache, and Chromium 158 restores it
   // (13.1 item 76). The kit reports what the browser does; bfcacheReasons has its own test for `masked`.
   // The second page asks for the lock that the first one holds, once its scripts ran. Chromium 153 names
-  // weblocks-contention; Chromium 158 names only masked, which the detail leaves out (13.1 item 76).
+  // weblocks-contention; the detail of another version may name no reason, when it names only masked (13.1 item 76).
   const lock = html(`${BODY}<script>navigator.locks.request('kit', () => new Promise(() => {}));</script>`, {
     css: CSS,
   });
