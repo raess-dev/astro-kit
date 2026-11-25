@@ -26,7 +26,7 @@ export const SPECULATION_RULES = {
         and: [
           { href_matches: '/*' },
           { not: { href_matches: '/api/*' } },
-          { not: { selector_matches: '[download], [hreflang], [target], [rel~=nofollow]' } },
+          { not: { selector_matches: "[download], [hreflang], [target]:not([target='_self' i]), [rel~=nofollow]" } },
         ],
       },
       eagerness: 'moderate',
@@ -190,7 +190,7 @@ const sr = ${options.prefetch.speculationRules ? 'true' : 'false'} && HTMLScript
 if (!sr) {
   const done = new Set();
   let timer;
-  const pick = (t) => { const a = t instanceof Element ? t.closest('a[href]') : null; return a && a.origin === location.origin && !a.hasAttribute('download') && !a.target && !a.pathname.startsWith('/api/') && a.href.split('#')[0] !== location.href.split('#')[0] ? a : null; };
+  const pick = (t) => { const a = t instanceof Element ? t.closest('a[href]') : null; return a && a.origin === location.origin && !a.hasAttribute('download') && (!a.target || a.target.toLowerCase() === '_self') && !a.pathname.startsWith('/api/') && a.href.split('#')[0] !== location.href.split('#')[0] ? a : null; };
   const go = (a) => { if (!done.has(a.href)) { done.add(a.href); prefetch(a.href); } };
   document.addEventListener('pointerover', (e) => { const a = pick(e.target); if (a) { clearTimeout(timer); timer = setTimeout(() => go(a), 80); } }, { passive: true });
   document.addEventListener('pointerout', () => clearTimeout(timer), { passive: true });

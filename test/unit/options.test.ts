@@ -268,6 +268,12 @@ test('the registry holds the rules of milestones M2, M3, M5 and part 6b of M6 in
       ['a11y-no-js', 'a11y', 'browser'],
       ['a11y-reveal', 'a11y', 'browser'],
       ['contrast-pairs', 'contrast', 'browser'],
+      ['perf-lcp-priority', 'perf', 'browser'],
+      ['perf-cls', 'perf', 'browser'],
+      ['perf-image-oversize', 'perf', 'browser'],
+      ['perf-bfcache', 'perf', 'browser'],
+      ['perf-prerender', 'perf', 'browser'],
+      ['perf-prefetch', 'perf', 'browser'],
     ],
   );
   // Section 8, Waivers: of these rules, only these are waivable.
@@ -313,6 +319,12 @@ test('the registry holds the rules of milestones M2, M3, M5 and part 6b of M6 in
     'a11y-no-js',
     'a11y-reveal',
     'contrast-pairs',
+    'perf-lcp-priority',
+    'perf-cls',
+    'perf-image-oversize',
+    'perf-bfcache',
+    'perf-prerender',
+    'perf-prefetch',
   ];
   for (const rule of RULES) {
     assert.equal(rule.level, 'error', rule.id);

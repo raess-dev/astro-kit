@@ -205,3 +205,34 @@
 - The underline walk of the link check in `a11y-axe` follows the flat tree: a slotted link passes its slot and the
   elements around it in the shadow tree, so an `inline-block` there stops the host's underline (from the Codex review
   of #19).
+- Milestone M6, part 6d: the perf pass, in `src/browser/perf.ts`. The kit has 111 rules. The perf rules read the
+  sample, and every page with `--all`.
+  - `perf-lcp-priority` throttles a phone (390×844@3) and a desktop (1440×900@1) through CDP and reads the last
+    LCP entry. It waits for the `load` of a lazy image in the viewport, up to the page load limit of 30 s, and for
+    the entry of each larger image, because Chromium reports an entry only when the frame is presented. It reads
+    `fetchPriority` and `loading` as the browser does.
+  - `perf-cls` runs at 390×844 and at 1280×800. The timeline of the page stands still, and a clock moves every
+    animation 16.7 ms in each frame, so a slow machine paints the same frames and gets the same result. It scrolls the
+    page, goes back to the top, waits for the images and then until at least 5 s after `load` and 2 s with no shift (10 s at
+    most), so a banner that a script adds a few seconds after load on a short page counts.
+  - `perf-image-oversize` reads the `w` descriptor of the loaded `srcset` candidate on both devices, with the `h`
+    descriptor of HTML. It judges what an image adds to the transfer, keeps an image with `sizes="auto"` lazy and
+    scrolls it into view, and fails an image that loads a raster file and shows nowhere.
+  - `perf-bfcache` goes to `?kit-bfcache`, lets that page settle, and goes back. Its detail names the reasons of
+    `notRestoredReasons` when the page loads again, without `masked`, and without `navigation-canceled` beside another
+    reason.
+  - `perf-prerender` hovers the first eligible link and waits for the request with `Sec-Purpose: prefetch;prerender`.
+    A page whose links to other pages are all left out fails. `perf-prefetch` hovers, waits for the prefetch, clicks,
+    waits for the load of the navigation wherever it ends, and accepts a navigation with `transferSize` 0 or one that
+    only revalidated the prefetched page (Chromium revalidates a page with `max-age=0`).
+  - The speculation rule and the prefetch gate take a link with `target="_self"`, which opens in the same tab. The
+    speculation JSON and its hash change.
+  - The runner checks up to four pages of a rule with `concurrent` at the same time and adds the findings in page
+    order.
+  - The test site gives the photo of each content page `priority`: it is the LCP element of its first screen.
+  - The acceptance suite has the `browser` and `prefetch` planted sets, and the site case runs `test --all`. The two
+    sets run in the CI job `kit / acceptance (browser)`, through `npm run acceptance:browser`; `kit / acceptance` runs
+    the rest through `npm run acceptance:core`.
+  - The spike S17 starts its Chromium with the switches of Playwright's launch that change features and scheduling,
+    writes a network log, and waits for the prerender request, the prerendered page and the activation one after the
+    other, so a failed run names the step that did not come.

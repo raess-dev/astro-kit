@@ -17,7 +17,8 @@ Run it in the project root.
 
   build             Runs astro build. The kit checks the project and the built site inside it.
   test [--all]      Runs the browser checks on dist: one page for each locale and layout, or every page
-                    with --all. --shots <dir> also writes a full-page image of each page and viewport.
+                    with --all, for the perf rules too. --shots <dir> also writes a full-page image of each
+                    page and viewport.
                     --outline <path|https URL> prints the accessibility outline of one page instead.
   tokens [--check]  Writes src/styles/tokens.css from docs/design.md and the mode options.
                     With --check it writes nothing and compares the file.

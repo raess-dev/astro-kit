@@ -90,7 +90,7 @@ test('S8: the speculation block inserted in build:done passes the CSP in Chromiu
   assert.ok(meta, 'the page has the CSP meta');
   assert.equal(home.split(block).length, 2, 'one speculation block, with the text of 6.2');
   assert.equal(home.indexOf(block), meta.index + meta[0].length, 'the block follows the CSP meta directly');
-  assert.equal(kit.SPECULATION_HASH, 'sha256-4255RGsO6JUC8vuukcO69AaAmBKnnolynaWf9b0Q6og=', 'the hash of 6.2');
+  assert.equal(kit.SPECULATION_HASH, 'sha256-tOSko/m7oZ1fFgczQ9bxn4GNGRSqOuaDsZ0CXhS51h0=', 'the hash of 6.2');
   assert.ok(cspMeta(home).includes(`'${kit.SPECULATION_HASH}'`), 'the CSP meta holds the hash of the block');
   assert.ok(kit.headerCsp({}).includes("require-trusted-types-for 'script'"), 'the header CSP has Trusted Types on');
 

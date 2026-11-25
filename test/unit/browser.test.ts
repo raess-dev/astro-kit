@@ -27,6 +27,7 @@ import {
   launchBrowser,
   layoutKey,
   openPath,
+  PAGE_CONCURRENCY,
   runBrowser,
   SYSTEM_CHROME,
   samplePages,
@@ -223,6 +224,12 @@ test('the browser rules are the browser rules of the registry, in its order', ()
     'a11y-no-js',
     'a11y-reveal',
     'contrast-pairs',
+    'perf-lcp-priority',
+    'perf-cls',
+    'perf-image-oversize',
+    'perf-bfcache',
+    'perf-prerender',
+    'perf-prefetch',
   ]);
   assert.deepEqual(
     inRegistryOrder([probe(nothing), { id: 'a11y-focus', pages: 'tested', check: nothing }]).map((rule) => rule.id),
@@ -234,6 +241,40 @@ test('the browser rules are the browser rules of the registry, in its order', ()
 test('the rules of this part give no finding on a page that meets them', async () => {
   const findings = await findingsOf(browser(), { 'index.html': html(BODY, { css: CSS }) }, BROWSER_RULES);
   assert.deepEqual(findings, []);
+});
+
+test('a concurrent rule checks up to PAGE_CONCURRENCY pages at once, and its findings come in page order', async () => {
+  assert.equal(PAGE_CONCURRENCY, 4);
+  const files = Object.fromEntries(
+    ['', 'a/', 'b/', 'c/', 'd/', 'e/'].map((path) => [`${path}index.html`, html(BODY)] as const),
+  );
+  for (const concurrent of [true, false]) {
+    let running = 0;
+    let most = 0;
+    const rule: BrowserRule = {
+      ...probe(async (check) => {
+        running += 1;
+        most = Math.max(most, running);
+        // The first page ends last, so the order of the ends is not the page order.
+        await new Promise((done) => setTimeout(done, check.page.where === '/' ? 300 : 50));
+        check.report(`seen ${check.page.where}`);
+        running -= 1;
+      }),
+      concurrent,
+    };
+    const findings = await findingsOf(browser(), files, [rule]);
+    assert.deepEqual(
+      findings.map((finding) => `${finding.where} ${finding.detail}`),
+      ['/', '/a/', '/b/', '/c/', '/d/', '/e/'].map((where) => `${where} seen ${where}`),
+    );
+    assert.equal(most, concurrent ? PAGE_CONCURRENCY : 1);
+  }
+  // The two rules that read the shared request log of the server check one page at a time. A rule of the home
+  // checks one page anyway.
+  const alone = BROWSER_RULES.filter((rule) => rule.pages !== 'home' && rule.concurrent !== true).map(
+    (rule) => rule.id,
+  );
+  assert.deepEqual(alone, ['perf-prerender', 'perf-prefetch']);
 });
 
 test('the scopes: the tested pages, the sample also with --all, and the default home', async () => {

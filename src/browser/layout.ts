@@ -117,6 +117,7 @@ async function reportTargets(check: Check, page: Page, state: string): Promise<v
 export const targets: BrowserRule = {
   id: 'a11y-targets',
   pages: 'tested',
+  concurrent: true,
   check: async (check) => {
     const desktop = await check.open({ viewport: DESKTOP });
     await reportTargets(check, desktop, sizeText(DESKTOP));
@@ -205,6 +206,7 @@ async function reportReflow(check: Check, page: Page, state: string, whole: bool
 export const reflow: BrowserRule = {
   id: 'a11y-reflow',
   pages: 'tested',
+  concurrent: true,
   check: async (check) => {
     const page = await check.open({ viewport: REFLOW });
     const size = sizeText(REFLOW);
@@ -279,6 +281,7 @@ function cutBoxes(page: Page): Promise<{ name: string; scrollHeight: number; cli
 export const spacing: BrowserRule = {
   id: 'a11y-spacing',
   pages: 'tested',
+  concurrent: true,
   check: async (check) => {
     for (const viewport of SPACING_VIEWPORTS) {
       const page = await check.open({ viewport });
@@ -407,6 +410,7 @@ function reportBorders(check: Check, state: string, measured: ForcedColors): voi
 export const forcedColors: BrowserRule = {
   id: 'a11y-forced-colors',
   pages: 'tested',
+  concurrent: true,
   check: async (check) => {
     const state = 'forced colors';
     const page = await check.open({ viewport: DESKTOP, media: { forcedColors: 'active' } });
@@ -466,6 +470,7 @@ function toggles(page: Page): Promise<{ name: string; attributes: string[] }[]> 
 export const revealRule: BrowserRule = {
   id: 'a11y-reveal',
   pages: 'tested',
+  concurrent: true,
   check: async (check) => {
     const page = await check.open({ viewport: DESKTOP });
     for (const toggle of await toggles(page)) {

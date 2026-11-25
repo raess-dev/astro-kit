@@ -943,6 +943,55 @@ export const RULES: readonly Rule[] = [
     'A contrast pair of `docs/design.md` misses the ratio of its role in a theme.',
     'Change the token value in `docs/design.md` for that theme (run `npx --no astro-kit tokens`), or give the pair the role it really has.',
   ),
+  // perf
+  r(
+    'perf-lcp-priority',
+    'perf',
+    'browser',
+    'On each tested page (the sample, or every page with `--all`), at 390×844 with device scale 3 and at 1440×900 with device scale 1, with 150 ms latency, 200,000 B/s down, 75,000 B/s up, the CPU 4× slower and the cache off: an `img` that is the LCP element has `fetchpriority="high"` and no `loading="lazy"`, as the browser reads them. The LCP element is the last `largest-contentful-paint` entry after the load of each image in the viewport (30 s at most) and, while a larger loaded image has no entry, after its entry (5 s at most).',
+    'The largest image of the first screen loads late: it has no `fetchpriority="high"`, or it is lazy.',
+    'Give the main image of the first screen `fetchpriority="high"` and `loading="eager"` (the kit image component does this with its priority prop), and keep `loading="lazy"` for images further down.',
+  ),
+  r(
+    'perf-cls',
+    'perf',
+    'browser',
+    'On each tested page at 390×844 and at 1280×800, the largest session window of layout shifts without recent input (a gap under 1 s, at most 5 s) is at most 0.05. Every animation moves in fixed frames of 16.7 ms, so a slow machine gets the same result. It is measured from `load`, while the page scrolls down half a viewport every 150 ms to its end, then at its top while the images load (10 s at most) and until at least 5 s after `load` and 2 s with no shift (10 s at most).',
+    'Content moves while the page loads or scrolls.',
+    'Give every image, video and embed its `width` and `height` (or an `aspect-ratio`), reserve the space of late content, and never insert content above what the visitor sees.',
+  ),
+  r(
+    'perf-image-oversize',
+    'perf',
+    'browser',
+    'On each tested page, at 390×844 with device scale 3 and at 1440×900 with device scale 1: no image that loads on its own loads a raster file and shows nowhere. With every lazy image loaded, no rendered raster image loads more than 1.5 × its rendered width × the device scale, for the files that it adds to the transfer. The loaded width is the `w` descriptor of the chosen `srcset` candidate (not `naturalWidth`), else the natural width times the density. Only the smallest `w` candidate of a `srcset` is exempt.',
+    'An image loads far more pixels than it shows, or it loads and shows nowhere.',
+    'Give the image a `sizes` that matches its rendered width and a `srcset` with smaller widths, or a smaller original. An image that a device does not show is lazy, or its `picture` gives that device no file.',
+  ),
+  r(
+    'perf-bfcache',
+    'perf',
+    'browser',
+    'On each tested page at 1280×800: the page, then the page with the query `?kit-bfcache`, which settles, then back; the `pageshow` of the page has `persisted` true within 5 s.',
+    'The browser cannot restore the page from the back/forward cache.',
+    'Remove what blocks the cache: `Cache-Control: no-store`, an `unload` listener, an open connection. The detail names the reason that Chromium gives.',
+  ),
+  r(
+    'perf-prerender',
+    'perf',
+    'browser',
+    'With `prefetch.speculationRules`, on each tested page at 1280×800: hovering the first visible link to another page in `header`, `main` or `footer` that the speculation rules of the kit match gives a request for its URL with `Sec-Purpose: prefetch;prerender` within 2 s. A page with links to other pages, none of them matched, fails.',
+    'A hover on a link starts no prerender, or no link of the page can be prerendered.',
+    'Keep the speculation block of the kit in every page: no change to its text, its place or the CSP hash, and no `target` other than `_self`, no `download`, `hreflang` or `rel="nofollow"` on ordinary links.',
+  ),
+  r(
+    'perf-prefetch',
+    'perf',
+    'browser',
+    'With `prefetch.astroPrefetch` on and `prefetch.speculationRules` off, on each tested page at 1280×800: hovering the first visible link to another page in `header`, `main` or `footer` that the prefetch gate picks gives a request for its URL within 2 s, and once the page holds the response, the click on the link loads the page where it lands with `transferSize` 0, or with only a conditional request (a 304 of a page with `max-age=0`).',
+    'A hovered link is not prefetched, or the click does not use the prefetch.',
+    'Let the prefetch gate of the kit run on every page, do not send `Cache-Control: no-store` for pages, and do not change the URL of a link when it is clicked.',
+  ),
 ];
 
 export type RuleMap = ReadonlyMap<string, Rule>;

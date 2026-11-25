@@ -226,8 +226,17 @@ async function quietly(close: () => Promise<void>): Promise<void> {
   }
 }
 
-/** Runs one rule on one page. A check that throws, or that takes longer than the limit, did not finish. */
-async function runCheck(rule: BrowserRule, page: TestPage, run: TestRun, report: Report, loads: Loads): Promise<void> {
+/**
+ * Runs one rule on one page. A check that throws, or that takes longer than the limit, did not finish. Each detail
+ * goes to `sink`, so the caller adds the findings of the checks that run at the same time in page order.
+ */
+async function runCheck(
+  rule: BrowserRule,
+  page: TestPage,
+  run: TestRun,
+  sink: (detail: string) => void,
+  loads: Loads,
+): Promise<void> {
   const contexts: BrowserContext[] = [];
   const shared = new Map<boolean, BrowserContext>();
   const newContext = async (options: BrowserContextOptions = {}): Promise<BrowserContext> => {
@@ -239,7 +248,7 @@ async function runCheck(rule: BrowserRule, page: TestPage, run: TestRun, report:
     rule: rule.id,
     page,
     run,
-    report: (detail) => report.add(rule.id, page.where, detail),
+    report: sink,
     context: newContext,
     open: async (options: OpenOptions = {}) => {
       const javaScript = options.javaScript !== false;
@@ -255,6 +264,7 @@ async function runCheck(rule: BrowserRule, page: TestPage, run: TestRun, report:
       const tab: Page = await context.newPage();
       await tab.setViewportSize(options.viewport ?? DESKTOP);
       if (options.media) await tab.emulateMedia(options.media);
+      if (options.prepare) await options.prepare(tab);
       let response: Awaited<ReturnType<Page['goto']>>;
       try {
         response = await tab.goto(`${run.origin}${path}`, { waitUntil: 'load', timeout: loads.limitMs });
@@ -266,7 +276,7 @@ async function runCheck(rule: BrowserRule, page: TestPage, run: TestRun, report:
       }
       const status = response?.status() ?? 200;
       if (status < 200 || status > 299) throw new Error(`${path} answered ${status}`);
-      await settle(tab);
+      if (options.settle !== false) await settle(tab);
       return tab;
     },
   };
@@ -283,11 +293,31 @@ async function runCheck(rule: BrowserRule, page: TestPage, run: TestRun, report:
   try {
     await Promise.race([work, limit]);
   } catch (error) {
-    report.add(rule.id, page.where, didNotFinish(error));
+    sink(didNotFinish(error));
   } finally {
     clearTimeout(timer);
     for (const context of contexts) await quietly(() => context.close());
   }
+}
+
+/**
+ * How many pages of one rule the runner checks at the same time. A check spends most of its time waiting for the
+ * page (loads, animations, the fixed pauses of `perf-cls`), so checks of different pages overlap well. Each check
+ * has its own contexts, so no check sees another one. Only a rule with `concurrent` runs pages at the same time.
+ */
+export const PAGE_CONCURRENCY = 4;
+
+/** Runs `work(0)` … `work(count - 1)`, at most `limit` at the same time. */
+async function inParallel(count: number, limit: number, work: (index: number) => Promise<void>): Promise<void> {
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < count) {
+      const index = next;
+      next += 1;
+      await work(index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, count)) }, worker));
 }
 
 /** The pages of a rule's scope. */
@@ -358,7 +388,16 @@ export async function runBrowser(input: BrowserInput): Promise<void> {
       };
       const loads: Loads = { limitMs: input.navigationLimitMs ?? NAVIGATION_LIMIT_MS, failed: new Map() };
       for (const rule of input.rules ?? BROWSER_RULES) {
-        for (const page of pagesOf(rule, run)) await runCheck(rule, page, run, input.report, loads);
+        const scope = pagesOf(rule, run);
+        const details = scope.map((): string[] => []);
+        await inParallel(scope.length, rule.concurrent === true ? PAGE_CONCURRENCY : 1, async (index) => {
+          const page = scope[index];
+          if (page !== undefined) await runCheck(rule, page, run, (detail) => details[index]?.push(detail), loads);
+        });
+        // The findings come in page order, whatever check ended first, so one run prints what the next one does.
+        for (const [index, page] of scope.entries()) {
+          for (const detail of details[index] ?? []) input.report.add(rule.id, page.where, detail);
+        }
       }
       if (input.shots !== undefined) await writeShots(run, input.shots);
     } finally {

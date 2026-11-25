@@ -96,7 +96,7 @@ const ALL_MODES = { auto: true, light: true, dark: true, contrast: true } as con
 const SOLID_HASH: Sha256 = 'sha256-VmEf2BGdqVUwcvyhTyarJo/bY7DNqS2+T2sz4IO/kbw=';
 
 /** The hash of the speculation rules (6.2). */
-const SPECULATION: Sha256 = 'sha256-4255RGsO6JUC8vuukcO69AaAmBKnnolynaWf9b0Q6og=';
+const SPECULATION: Sha256 = 'sha256-tOSko/m7oZ1fFgczQ9bxn4GNGRSqOuaDsZ0CXhS51h0=';
 
 /** The hash of the mode script with all four options and the default `auto` (9.3, test vector). */
 const MODE_ALL: Sha256 = 'sha256-tVX7IDqXb4rkmRiqqGfEY8YPs6KvuNlSnmTbTdmGmSs=';

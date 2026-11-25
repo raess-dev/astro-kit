@@ -104,6 +104,16 @@ export interface OpenOptions {
   path?: string;
   /** Opens the page in this context: one that `Check.context` made. */
   context?: BrowserContext;
+  /**
+   * Runs on the new tab before the navigation, after the viewport and the media are set: for a setting that must
+   * hold from the first request, such as the network and CPU throttling of `perf-lcp-priority`.
+   */
+  prepare?: (page: Page) => Promise<void>;
+  /**
+   * `false`: `open` gives the tab right after `load`, with no wait for the fonts and the animations (`settle`): for
+   * `perf-cls`, which moves the animations itself. The default is `true`.
+   */
+  settle?: boolean;
 }
 
 /** The context of one rule on one page. Every page and context that it opens is closed when the check ends. */
@@ -118,7 +128,7 @@ export interface Check {
   report(detail: string): void;
   /**
    * Opens the page in a new tab, with the page helpers, and waits for `load`, the fonts and the animations
-   * (`settle`). Throws when the answer is not 2xx: the check then did not finish.
+   * (`settle`, unless `settle` is `false`). Throws when the answer is not 2xx: the check then did not finish.
    */
   open(options?: OpenOptions): Promise<Page>;
   /** A browser context of its own, with the page helpers, for options that a context fixes (`deviceScaleFactor`). */
@@ -137,6 +147,12 @@ export interface BrowserRule {
    * pass). `home`: the home of the default locale only.
    */
   pages: PageScope;
+  /**
+   * The runner may check several pages of this rule at the same time (`PAGE_CONCURRENCY` in `src/browser.ts`). Without
+   * it, one page at a time: for a rule that reads the requests that the server got, which all tabs share
+   * (`perf-prerender`, `perf-prefetch`).
+   */
+  concurrent?: boolean;
   check(check: Check): Promise<void>;
 }
 
