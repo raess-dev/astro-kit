@@ -363,6 +363,17 @@ test('a11y-axe: an underline drawn by an element around the link counts, as CSS 
   );
   const hosted = await placesOf(host, axeRule);
   assert.equal(bare(hosted), 0, JSON.stringify(hosted));
+  // An inline-block around the slot, in the shadow tree, stops the host's underline: the walk follows the slot.
+  const blocked = await placesOf(
+    {
+      'index.html': (host['index.html'] ?? '').replace(
+        '<slot></slot>',
+        '<style>.w{display:inline-block}</style><span class="w"><slot></slot></span>',
+      ),
+    },
+    axeRule,
+  );
+  assert.equal(bare(blocked), 1, JSON.stringify(blocked));
 });
 
 test('a11y-axe: the link check reads the color of the element that holds the link text', async () => {

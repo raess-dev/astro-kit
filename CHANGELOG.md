@@ -202,3 +202,6 @@
   inline element around it draws the underline; an underline on the element that holds the text around the link
   does not set the link apart, and a float, a positioned element or an atomic inline on the way stops the
   underline of the elements above it, as CSS hands decorations down.
+- The underline walk of the link check in `a11y-axe` follows the flat tree: a slotted link passes its slot and the
+  elements around it in the shadow tree, so an `inline-block` there stops the host's underline (from the Codex review
+  of #19).
