@@ -1,1 +1,1 @@
-{"prerender":[{"source":"document","where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/api/*"}},{"not":{"selector_matches":"[download], [hreflang], [target], [rel~=nofollow]"}}]},"eagerness":"moderate"}]}
+{"prerender":[{"source":"document","where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/api/*"}},{"not":{"selector_matches":"[download], [hreflang], [target]:not([target='_self' i]), [rel~=nofollow]"}}]},"eagerness":"moderate"}]}

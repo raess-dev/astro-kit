@@ -1,7 +1,8 @@
 ---
 /**
  * A photo of the house in running text, with an optional caption. The kit's image rules want a `picture` with AVIF
- * sources and a WebP `img`, both with a `sizes` that matches the width of the column.
+ * sources and a WebP `img`, both with a `sizes` that matches the width of the column. A photo in the first screen is
+ * the largest element there, so its page gives it `priority`: eager, with `fetchpriority="high"` (`perf-lcp-priority`).
  */
 
 import { Picture } from 'astro:assets';
@@ -15,9 +16,11 @@ interface Props {
   alt: string;
   /** A caption below the photo. */
   caption?: string;
+  /** The photo stands in the first screen: it loads first. A page has at most one such image. */
+  priority?: boolean;
 }
 
-const { src, alt, caption } = Astro.props;
+const { src, alt, caption, priority = false } = Astro.props;
 
 /** The widths of the photo: the column is at most 46 rem (736 px) wide. */
 const WIDTHS = [640, 960];
@@ -30,6 +33,7 @@ const SIZES = '(min-width: 50rem) 46rem, calc(100vw - 2.5rem)';
     class="photo__image"
     src={src}
     alt={alt}
+    priority={priority}
     formats={['avif']}
     fallbackFormat="webp"
     widths={WIDTHS}

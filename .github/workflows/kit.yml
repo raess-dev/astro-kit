@@ -1,6 +1,8 @@
 # The kit's CI (specification, 11.1). test: types, lint, unit tests and the generated docs. acceptance: the
-# acceptance suite of test/acceptance/ with the test site of test/site/. scan: zizmor on the workflows and gitleaks
-# on the history. merge: squashes a green pull request of an agent account or Dependabot.
+# acceptance suite of test/acceptance/ with the test site of test/site/, without the two planted sets of the browser
+# rules. acceptance-browser: those two sets; each runs `test --all` on a copy of the test site, so they get a job and
+# a time budget of their own. scan: zizmor on the workflows and gitleaks on the history. merge: squashes a green
+# pull request of an agent account or Dependabot.
 # A pull request that changes the root .github/ or the root .npmrc is never merged here: the owner approves it and
 # merges it by hand. The kit repository deploys nothing, so no wrangler file is protected here.
 # The merge after an approval is in kit-approved.yml: a job that is skipped here on a review event would report a
@@ -62,8 +64,29 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Chromium for the browser cases
         run: npx --no playwright-core install --with-deps chromium
-      - name: The acceptance suite, with the kit that the harness builds and packs from this checkout
-        run: npm run acceptance
+      - name: The acceptance suite without the browser sets, with the kit that the harness builds and packs
+        run: npm run acceptance:core
+
+  # The planted sets of the browser rules (specification, 14.2): planted-browser and planted-prefetch. The same
+  # setup as the acceptance job, and the same rules: no secret and no token that can write.
+  acceptance-browser:
+    name: kit / acceptance (browser)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Chromium for the browser cases
+        run: npx --no playwright-core install --with-deps chromium
+      - name: The browser sets, with the kit that the harness builds and packs from this checkout
+        run: npm run acceptance:browser
 
   scan:
     name: kit / scan
@@ -89,7 +112,7 @@ jobs:
 
   merge:
     name: kit / merge
-    needs: [test, scan, acceptance]
+    needs: [test, scan, acceptance, acceptance-browser]
     if: >-
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository

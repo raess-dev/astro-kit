@@ -1,7 +1,7 @@
 /**
  * The site cases of milestone M3 (specification, 14 and 14.2): the hotel site of `test/site/` with the packed kit.
  * Each case is a copy of the site in a folder of its own, with one change, and it runs a command of the kit CLI
- * there. M3 has the commands `build` and `tokens`. A failing case asserts the exact sorted rule ids, and that the
+ * there. M3 has the commands `build` and `tokens`, and M6 adds `test`. A failing case asserts the exact sorted rule ids, and that the
  * output holds no passed line. A passing case asserts status 0, and that the passed line is the last line of stdout
  * and stands once in the output (6.4). Run: node --test test/acceptance/site.test.ts
  */
@@ -116,6 +116,15 @@ test('M3: the site builds, and every page has the CSP meta, the mode script and 
       `${page}: the CSP meta lacks the hash of the speculation block`,
     );
   }
+});
+
+test('M6: test --all passes on the built site', () => {
+  const { dir, run: build } = built();
+  assert.equal(build.status, 0, `astro-kit build failed in ${dir}:\n${tail(build)}`);
+  const result = run(dir, ['test', '--all']);
+  assert.equal(result.status, 0, tail(result));
+  assert.deepEqual(result.ids, []);
+  assert.deepEqual(passedLine(result), PASSED, tail(result));
 });
 
 test('M3: tokens --check passes, so tokens.css is the rendering of docs/design.md', () => {

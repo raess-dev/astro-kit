@@ -206,6 +206,7 @@ async function clickState(check: Check): Promise<void> {
 export const focus: BrowserRule = {
   id: 'a11y-focus',
   pages: 'tested',
+  concurrent: true,
   check: async (check) => {
     let firstTab = true;
     const known = new Set<string>();
@@ -310,6 +311,7 @@ function unreached(presses: number): void {
 export const keyboard: BrowserRule = {
   id: 'a11y-keyboard',
   pages: 'tested',
+  concurrent: true,
   check: async (check) => {
     await eachState(check, async (tab, label) => {
       await tab.evaluate(beginState);
@@ -589,6 +591,7 @@ async function submitForm(check: Check, fields: readonly FormField[], index: num
 export const noJs: BrowserRule = {
   id: 'a11y-no-js',
   pages: 'tested',
+  concurrent: true,
   check: async (check) => {
     const on = await shownAfterReveal(await check.open({ viewport: NARROW }));
     const offTab = await check.open({ viewport: NARROW, javaScript: false });

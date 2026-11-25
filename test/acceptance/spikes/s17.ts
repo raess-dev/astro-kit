@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { type ChildProcess, spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
@@ -172,11 +173,15 @@ interface Waited<T> {
 }
 
 /**
- * Waits until `read` gives a value that `done` accepts, for 30 seconds at most. It asserts nothing: the caller
- * asserts `done` right after the wait, with a message that holds the last value and the state of that moment.
+ * Waits until `read` gives a value that `done` accepts, for 30 seconds at most, or until `end` (a `Date.now()` time)
+ * when the caller gives one. It asserts nothing: the caller asserts `done` right after the wait, with a message that
+ * holds the last value and the state of that moment.
  */
-async function until<T>(read: () => T | Promise<T>, done: (value: T) => boolean): Promise<Waited<T>> {
-  const end = Date.now() + 30_000;
+async function until<T>(
+  read: () => T | Promise<T>,
+  done: (value: T) => boolean,
+  end = Date.now() + 30_000,
+): Promise<Waited<T>> {
   for (;;) {
     const value = await read();
     if (done(value)) return { done: true, value };
@@ -276,6 +281,88 @@ interface Report {
   stored: string | null;
 }
 
+/**
+ * The switches of the browser with no DevTools client. They are the switches of Playwright's launch that change what
+ * Chromium enables or how it schedules a page, so this browser runs as the browser of the kit's checks does (8,
+ * the harness). Without `--disable-field-trial-config`, a Chromium build that is not Google Chrome turns on the
+ * groups of its field-trial testing config: 90 in Chromium 153, other ones in each version. A prerendered page has no
+ * visible widget, so without the three other switches Chromium may give its renderer a lower priority and throttle
+ * its timers.
+ */
+const KIT_LIKE = [
+  '--disable-field-trial-config',
+  '--disable-background-timer-throttling',
+  '--disable-backgrounding-occluded-windows',
+  '--disable-renderer-backgrounding',
+];
+
+/**
+ * What Chromium's network log says about each request for `path`: the status line of the answer, the bytes that the
+ * page got, and the network error. The log has one event on each line, and the last lines of a log of a killed
+ * browser can be cut. A line that is no event is left out.
+ */
+function netLogOf(file: string, path: string): string {
+  let text: string;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch {
+    return 'no network log';
+  }
+  const lines = text.split('\n');
+  const head = lines[0] ?? '';
+  const types = new Map<number, string>();
+  try {
+    const constants = JSON.parse(head.slice('{"constants":'.length, head.endsWith(',') ? -1 : undefined)) as {
+      logEventTypes?: Record<string, number>;
+    };
+    for (const [name, id] of Object.entries(constants.logEventTypes ?? {})) types.set(id, name);
+  } catch {
+    return 'a network log with no constants';
+  }
+  interface Event {
+    source?: { id?: number };
+    type?: number;
+    phase?: number;
+    params?: { url?: unknown; headers?: unknown; net_error?: unknown; byte_count?: unknown };
+  }
+  const events: Event[] = [];
+  for (const line of lines.slice(1)) {
+    const trimmed = line.trim().replace(/,$/, '');
+    if (!trimmed.startsWith('{')) continue;
+    try {
+      events.push(JSON.parse(trimmed) as Event);
+    } catch {
+      // The cut last line of a killed browser.
+    }
+  }
+  const sources = new Set<number>();
+  for (const event of events) {
+    const url = event.params?.url;
+    if (typeof url !== 'string' || !URL.canParse(url) || types.get(event.type ?? -1) !== 'REQUEST_ALIVE') continue;
+    if (new URL(url).pathname === path) sources.add(event.source?.id ?? -1);
+  }
+  const notes: string[] = [];
+  for (const id of sources) {
+    let status = 'no answer';
+    let bytes = 0;
+    let error = 'none';
+    let ended = false;
+    for (const event of events) {
+      if (event.source?.id !== id) continue;
+      const type = types.get(event.type ?? -1);
+      const headers = event.params?.headers;
+      if (type === 'HTTP_TRANSACTION_READ_RESPONSE_HEADERS' && Array.isArray(headers)) status = String(headers[0]);
+      if (type === 'URL_REQUEST_JOB_FILTERED_BYTES_READ' && typeof event.params?.byte_count === 'number') {
+        bytes += event.params.byte_count;
+      }
+      if (event.params?.net_error !== undefined) error = String(event.params.net_error);
+      if (type === 'REQUEST_ALIVE' && event.phase === 2) ended = true;
+    }
+    notes.push(`${status}, ${bytes} bytes read, net error ${error}, ${ended ? 'ended' : 'still open'}`);
+  }
+  return notes.length === 0 ? `no request for ${path}` : notes.join('; ');
+}
+
 test('S17: a prerendered page shows the changed mode when it activates, with no DevTools client', async () => {
   const { dist, dir, header } = await site();
   const binary = chromePath();
@@ -291,12 +378,14 @@ test('S17: a prerendered page shows the changed mode when it activates, with no 
       timeline.push(`${Date.now() - start}ms ${request.path}${typeof purpose === 'string' ? ` [${purpose}]` : ''}`);
     },
   });
+  const netLog = join(dir, 's17-net.json');
   let chrome: ChildProcess | undefined;
   let exited: Promise<void> | undefined;
   let forget: (() => void) | undefined;
   let limit: NodeJS.Timeout | undefined;
   try {
-    // No debugging port and no pipe: nothing can attach to this browser. The pages report to the server.
+    // No debugging port and no pipe: nothing can attach to this browser. The pages report to the server. The
+    // network log is a file that Chromium writes itself; it attaches no client.
     const child = spawn(
       binary,
       [
@@ -308,7 +397,9 @@ test('S17: a prerendered page shows the changed mode when it activates, with no 
         '--disable-background-networking',
         '--disable-component-update',
         '--disable-sync',
+        ...KIT_LIKE,
         '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1',
+        `--log-net-log=${netLog}`,
         `--user-data-dir=${join(dir, '.chrome-profile')}`,
         `${server.origin}/auto/`,
       ],
@@ -328,18 +419,42 @@ test('S17: a prerendered page shows the changed mode when it activates, with no 
         resolve();
       });
     });
+    const gone = (): boolean => child.exitCode !== null || child.signalCode !== null || failed !== undefined;
+    // The three steps of the run are events that the server sees: the prerender request of page B, the first note
+    // of page B while it is prerendered, and its report after the activation. Each wait ends at its event, and all
+    // three end at the same time limit. So a failed run names the step that did not come.
+    const end = Date.now() + 30_000;
+    const state = (): string =>
+      `the requests were: ${timeline.join(', ')}; Chromium's network log of /auto/b/: ${netLogOf(netLog, '/auto/b/')}`;
+    const prerender = await until(
+      () => server.received.find((request) => request.path === '/auto/b/'),
+      (request) => request !== undefined || gone(),
+      end,
+    );
+    assert.equal(failed, undefined, `Chromium did not start: ${String(failed)}`);
+    assert.equal(
+      prerender.value?.headers['sec-purpose'],
+      'prefetch;prerender',
+      `Chromium sent no prerender request for page B; ${state()}`,
+    );
+    const running = await until(
+      () => server.requests.find((path) => path.startsWith('/trace/?b-loaded')),
+      (path) => path !== undefined || gone(),
+      end,
+    );
+    assert.equal(
+      running.value,
+      '/trace/?b-loaded-prerendering-true',
+      `page B did not run as a prerendered page: Chromium sent its prerender request and then dropped it; ${state()}`,
+    );
     const reported = await until(
       () => server.requests.find((path) => path.startsWith('/report/?')),
-      (path) => path !== undefined || child.exitCode !== null || failed !== undefined,
+      (path) => path !== undefined || gone(),
+      end,
     );
     // The request list is the only trace of this browser, so the message reads it right after the wait.
-    assert.ok(
-      reported.done,
-      `page B sent no report; the requests were: ${timeline.join(', ')}: ${JSON.stringify(reported.value)}`,
-    );
+    assert.ok(reported.done && reported.value, `page B sent no report; ${state()}`);
     const sent = reported.value;
-    assert.equal(failed, undefined, `Chromium did not start: ${String(failed)}`);
-    assert.ok(sent, `Chromium ended with code ${child.exitCode} before page B sent its report`);
     const report = JSON.parse(decodeURIComponent(sent.slice('/report/?'.length))) as Report;
     assert.deepEqual(report, {
       log: [

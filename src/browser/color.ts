@@ -501,6 +501,7 @@ const limitText = `${ACTION_LIMIT_MS / 1000} s`;
 export const axeRule: BrowserRule = {
   id: 'a11y-axe',
   pages: 'tested',
+  concurrent: true,
   check: async (check) => {
     const argument: AxeArgument = {
       options: AXE_OPTIONS,

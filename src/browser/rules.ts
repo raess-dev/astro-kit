@@ -7,6 +7,7 @@ import { COLOR_RULES } from './color.ts';
 import type { BrowserRule } from './harness.ts';
 import { KEYBOARD_RULES } from './keyboard.ts';
 import { LAYOUT_RULES } from './layout.ts';
+import { PERF_RULES } from './perf.ts';
 
 /** The browser rules of the registry, in its order. Throws when a rule has no registry entry of stage `browser`. */
 export function inRegistryOrder(rules: readonly BrowserRule[]): BrowserRule[] {
@@ -21,4 +22,5 @@ export const BROWSER_RULES: readonly BrowserRule[] = inRegistryOrder([
   ...LAYOUT_RULES,
   ...KEYBOARD_RULES,
   ...COLOR_RULES,
+  ...PERF_RULES,
 ]);

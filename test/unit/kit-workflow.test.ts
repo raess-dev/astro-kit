@@ -74,9 +74,10 @@ test('the merge after an approval is a workflow of its own, on review events onl
   assert.deepEqual(Object.keys(jobs), ['merge-approved']);
   // A skipped job counts as a passed check. So no workflow that runs on a review may hold a job with the name of a
   // required check, and no job of kit.yml may be skipped by an event condition except the merge job.
-  assert.deepEqual(Object.keys(KIT.workflow.jobs), ['test', 'acceptance', 'scan', 'merge']);
+  assert.deepEqual(Object.keys(KIT.workflow.jobs), ['test', 'acceptance', 'acceptance-browser', 'scan', 'merge']);
   assert.equal(job('test').if, undefined);
   assert.equal(job('acceptance').if, undefined);
+  assert.equal(job('acceptance-browser').if, undefined);
   assert.equal(job('scan').if, undefined);
 });
 
@@ -84,6 +85,7 @@ test('every job has a name, its own permissions and a timeout', () => {
   const names: Record<string, string> = {
     test: 'kit / test',
     acceptance: 'kit / acceptance',
+    'acceptance-browser': 'kit / acceptance (browser)',
     scan: 'kit / scan',
     merge: 'kit / merge',
     'merge-approved': 'kit / merge after approval',
@@ -97,8 +99,10 @@ test('every job has a name, its own permissions and a timeout', () => {
   }
   assert.deepEqual(job('test').permissions, { contents: 'read' });
   assert.deepEqual(job('acceptance').permissions, { contents: 'read' });
+  assert.deepEqual(job('acceptance-browser').permissions, { contents: 'read' });
   assert.deepEqual(job('scan').permissions, { contents: 'read' });
   assert.equal(job('acceptance')['timeout-minutes'], 30);
+  assert.equal(job('acceptance-browser')['timeout-minutes'], 30);
   for (const id of ['merge', 'merge-approved']) {
     assert.deepEqual(job(id).permissions, { contents: 'write', 'pull-requests': 'write', actions: 'write' });
     assert.equal(job(id)['timeout-minutes'], 5);
@@ -144,42 +148,66 @@ test('the test job runs the commands of 11.1 in order, and scan gets the gitleak
   assert.match(job('scan').env?.GITLEAKS ?? '', /^ghcr\.io\/gitleaks\/gitleaks:v\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/);
 });
 
-test('the acceptance job runs the suite of this checkout: one repository, no second checkout, no secret', () => {
-  const found = job('acceptance');
-  assert.equal(found.name, 'kit / acceptance');
-  assert.equal(found.needs, undefined);
-  assert.equal(found.if, undefined, 'it runs on every event that runs the test job');
-  assert.equal(found.env, undefined);
-  assert.deepEqual(
-    found.steps.map((step) => step.uses?.replace(/@.*$/, '') ?? step.run),
-    [
-      'actions/checkout',
-      'actions/setup-node',
-      'npm ci --ignore-scripts --no-audit --no-fund',
-      'npx --no playwright-core install --with-deps chromium',
-      'npm run acceptance',
-    ],
+/** The npm scripts of the two acceptance jobs (3.4): the suite without the browser sets, and the browser sets. */
+const SCRIPTS = (
+  JSON.parse(readFileSync(fileURLToPath(new URL('../../package.json', import.meta.url)), 'utf8')) as {
+    scripts: Record<string, string>;
+  }
+).scripts;
+
+test('the npm scripts split the acceptance suite in two, and acceptance runs it whole', () => {
+  assert.equal(SCRIPTS.acceptance, "node --test 'test/acceptance/**/*.test.ts'");
+  assert.equal(
+    SCRIPTS['acceptance:core'],
+    "node --test 'test/acceptance/**/!(planted-browser|planted-prefetch).test.ts'",
   );
-  // The same pins as the test job (2.2).
-  assert.deepEqual(
-    found.steps.slice(0, 2).map((step) => step.uses),
-    job('test')
-      .steps.slice(0, 2)
-      .map((step) => step.uses),
+  assert.equal(
+    SCRIPTS['acceptance:browser'],
+    'node --test test/acceptance/planted-browser.test.ts test/acceptance/planted-prefetch.test.ts',
   );
-  // The checkout reads this repository only, and it keeps no token.
-  assert.deepEqual(found.steps[0]?.with, { 'persist-credentials': false });
-  assert.deepEqual(found.steps[1]?.with, { 'node-version-file': '.node-version' });
-  // Code of the test site runs in this job. So no step gets a secret, a token or a variable, and the harness packs
-  // the kit itself: no step sets KIT_TARBALL.
-  for (const step of found.steps) assert.equal(step.env, undefined, step.run ?? step.uses);
-  const text = sliceJob(KIT.text, 'acceptance');
-  assert.doesNotMatch(text, /secrets\.|github\.token|GH_TOKEN|GITHUB_TOKEN|vars\.|KIT_TARBALL|repository:|token:/);
-  assert.doesNotMatch(text, /: write\b/);
 });
 
+for (const [id, name, script] of [
+  ['acceptance', 'kit / acceptance', 'npm run acceptance:core'],
+  ['acceptance-browser', 'kit / acceptance (browser)', 'npm run acceptance:browser'],
+] as const) {
+  test(`the ${id} job runs its part of the suite of this checkout: one repository, no second checkout, no secret`, () => {
+    const found = job(id);
+    assert.equal(found.name, name);
+    assert.equal(found.needs, undefined);
+    assert.equal(found.if, undefined, 'it runs on every event that runs the test job');
+    assert.equal(found.env, undefined);
+    assert.deepEqual(
+      found.steps.map((step) => step.uses?.replace(/@.*$/, '') ?? step.run),
+      [
+        'actions/checkout',
+        'actions/setup-node',
+        'npm ci --ignore-scripts --no-audit --no-fund',
+        'npx --no playwright-core install --with-deps chromium',
+        script,
+      ],
+    );
+    // The same pins as the test job (2.2).
+    assert.deepEqual(
+      found.steps.slice(0, 2).map((step) => step.uses),
+      job('test')
+        .steps.slice(0, 2)
+        .map((step) => step.uses),
+    );
+    // The checkout reads this repository only, and it keeps no token.
+    assert.deepEqual(found.steps[0]?.with, { 'persist-credentials': false });
+    assert.deepEqual(found.steps[1]?.with, { 'node-version-file': '.node-version' });
+    // Code of the test site runs in this job. So no step gets a secret, a token or a variable, and the harness packs
+    // the kit itself: no step sets KIT_TARBALL.
+    for (const step of found.steps) assert.equal(step.env, undefined, step.run ?? step.uses);
+    const text = sliceJob(KIT.text, id);
+    assert.doesNotMatch(text, /secrets\.|github\.token|GH_TOKEN|GITHUB_TOKEN|vars\.|KIT_TARBALL|repository:|token:/);
+    assert.doesNotMatch(text, /: write\b/);
+  });
+}
+
 test('merge needs the checks and a pull request of this repository; merge-approved needs an approval into main', () => {
-  assert.deepEqual(job('merge').needs, ['test', 'scan', 'acceptance']);
+  assert.deepEqual(job('merge').needs, ['test', 'scan', 'acceptance', 'acceptance-browser']);
   const condition = job('merge').if ?? '';
   assert.match(condition, /github\.event_name == 'pull_request'/);
   assert.match(condition, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
