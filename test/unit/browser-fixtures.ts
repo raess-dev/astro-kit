@@ -80,6 +80,8 @@ export interface RunParts {
   components?: readonly string[];
   /** `--all`. The default is `true`, so that every page of a test runs. */
   all?: boolean;
+  /** The navigation limit of `open()`. The default is the limit of the harness. */
+  navigationLimitMs?: number;
 }
 
 /**
@@ -104,6 +106,7 @@ export function findingsOf(
       all: parts.all ?? true,
       rules,
       browser,
+      ...(parts.navigationLimitMs === undefined ? {} : { navigationLimitMs: parts.navigationLimitMs }),
     });
     return report.findings;
   });

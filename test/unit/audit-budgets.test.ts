@@ -434,21 +434,24 @@ function measured(files: Files): { head: number; document: number } {
 
 /**
  * A policy whose CSP meta compresses to exactly `size` bytes: the fixture policy with one more source of noise,
- * found by a search over its length. Throws when no length gives the size.
+ * found by a search over its length. The compressed size moves in steps, so one noise sequence can miss a size; the
+ * search then tries the next seed. Throws when no seed and length give the size.
  */
 function policyOfSize(size: number): string {
   const base = cspContent(OPTIONS, { styles: [PAGE_CSS] });
-  const sizeOf = (length: number): number =>
-    compressedSize(`<meta http-equiv="content-security-policy" content="${base} ${noise(length, 7)}">`);
-  let low = 0;
-  let high = 40_000;
-  while (low < high) {
-    const middle = Math.floor((low + high) / 2);
-    if (sizeOf(middle) < size) low = middle + 1;
-    else high = middle;
-  }
-  for (let length = Math.max(0, low - 64); length < low + 64; length += 1) {
-    if (sizeOf(length) === size) return `${base} ${noise(length, 7)}`;
+  for (let seed = 7; seed < 47; seed += 1) {
+    const sizeOf = (length: number): number =>
+      compressedSize(`<meta http-equiv="content-security-policy" content="${base} ${noise(length, seed)}">`);
+    let low = 0;
+    let high = 40_000;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (sizeOf(middle) < size) low = middle + 1;
+      else high = middle;
+    }
+    for (let length = Math.max(0, low - 64); length < low + 64; length += 1) {
+      if (sizeOf(length) === size) return `${base} ${noise(length, seed)}`;
+    }
   }
   throw new Error(`audit-budgets: no policy compresses to ${size} B`);
 }

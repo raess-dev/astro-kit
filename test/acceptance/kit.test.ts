@@ -8,7 +8,7 @@ test('the stand-in integration holds the exact texts of the specification', asyn
   // The stand-in integration is plain JavaScript: `standIn` imports it by its file URL and gives it a type.
   const { modeScript, SPECULATION_HASH, SPECULATION_JSON, sha256 } = await standIn();
   // 6.2: the speculation JSON and its hash.
-  assert.equal(SPECULATION_HASH, 'sha256-tOSko/m7oZ1fFgczQ9bxn4GNGRSqOuaDsZ0CXhS51h0=');
+  assert.equal(SPECULATION_HASH, 'sha256-ynPcOw3WAXU/3UCEoMSCzlD92bFuZasG83zVhJPOS5w=');
   assert.equal(JSON.stringify(JSON.parse(SPECULATION_JSON)), SPECULATION_JSON);
   // 9.3: the test vector of the mode script with all four options and D = auto.
   const script = modeScript({ auto: true, light: true, dark: true, contrast: true });

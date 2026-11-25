@@ -26,7 +26,12 @@ export const SPECULATION_RULES = {
         and: [
           { href_matches: '/*' },
           { not: { href_matches: '/api/*' } },
-          { not: { selector_matches: "[download], [hreflang], [target]:not([target='_self' i]), [rel~=nofollow]" } },
+          {
+            not: {
+              selector_matches:
+                "[download], [hreflang], [target]:not([target='_self' i]):not([target='']), [rel~=nofollow]",
+            },
+          },
         ],
       },
       eagerness: 'moderate',

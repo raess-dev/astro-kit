@@ -444,6 +444,54 @@ test('perf-image-oversize fails an image that loads and shows nowhere', async ()
   assert.match(details[0] ?? '', /^\/ 390×844@3: img\.wide loads \/w1600\.png \(\d+ B\) and shows nowhere$/);
 });
 
+test('perf-image-oversize fails a file that two hidden images load, once', async () => {
+  // Each copy loads the file, and no image with a box shows it: the copies do not exempt each other.
+  const files: Files = {
+    'index.html': page(
+      '<img class="a" src="/w1600.png" width="1600" height="100" alt="Breit"><img class="b" src="/w1600.png" width="1600" height="100" alt="Breit">',
+      { css: '.a,.b{display:none}' },
+    ),
+    'w1600.png': png(1600, 100),
+  };
+  const details = await detailsOf(files, imageOversize);
+  assert.equal(details.length, 2, details.join('\n'));
+  assert.match(details[0] ?? '', /^\/ 390×844@3: img\.a loads \/w1600\.png \(\d+ B\) and shows nowhere$/);
+  assert.match(details[1] ?? '', /^\/ 1440×900@1: img\.a loads \/w1600\.png \(\d+ B\) and shows nowhere$/);
+});
+
+test('perf-image-oversize reads the descriptors of the source that the browser selected', async () => {
+  // The source does not match at either device: the img gives the candidate, with 1x, so the file is 300 px wide.
+  const files: Files = {
+    'index.html': page(
+      '<picture><source media="(width >= 2000px)" srcset="/p300.png 2x"><img class="p" src="/p300.png" srcset="/p300.png 1x" width="100" height="10" alt="Bild"></picture>',
+      { css: 'img.p{display:block;inline-size:100px}@media (width >= 48rem){img.p{inline-size:300px}}' },
+    ),
+    'p300.png': png(300, 30),
+  };
+  assert.deepEqual(await detailsOf(files, imageOversize), []);
+});
+
+test('a navigation that times out under the throttle of perf-lcp-priority is not replayed to other rules', async () => {
+  // About 1 MB: fast on the local server, more than 3 s at 200,000 B/s.
+  const files: Files = {
+    'index.html': page('<img class="big" src="/big.png" width="200" height="200" alt="Gross">', {
+      css: 'img.big{display:block;inline-size:200px;block-size:auto}',
+    }),
+    'big.png': png(600, 600, true),
+  };
+  const findings = await findingsOf(browser(), files, [lcpPriority, imageOversize], { navigationLimitMs: 3_000 });
+  const of = (id: string): string[] =>
+    findings.filter((finding) => finding.rule === id).map((finding) => finding.detail ?? '');
+  assert.ok(
+    of('perf-lcp-priority').some((detail) => detail.includes('did not load within 3 s')),
+    of('perf-lcp-priority').join('\n'),
+  );
+  // perf-image-oversize measures the page: 600 px for a box of 200 px at scale 1.
+  assert.deepEqual(of('perf-image-oversize'), [
+    '1440×900@1: img.big loads /big.png at 600 px for a box of 200.0 px × 1 (3.00×, at most 1.5×)',
+  ]);
+});
+
 // perf-bfcache
 
 test('bfcacheReasons: sorted, without masked, and without navigation-canceled beside another reason', () => {
@@ -504,6 +552,11 @@ test('perf-prerender passes a page whose hovered link starts a prerender', async
   // `target="_self"` opens the link in the same tab: the document rule takes it.
   assert.deepEqual(
     await detailsOf(speculation(SPECULATION_JSON, '<a href="/zimmer/" target="_SELF">Zimmer</a>'), prerender),
+    [],
+  );
+  // `target=""` opens the link in the same tab too.
+  assert.deepEqual(
+    await detailsOf(speculation(SPECULATION_JSON, '<a href="/zimmer/" target="">Zimmer</a>'), prerender),
     [],
   );
   // A page with no link to another page passes.
