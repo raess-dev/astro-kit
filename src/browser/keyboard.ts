@@ -9,6 +9,7 @@
  * element once in a state, at the first press that fails it.
  */
 import { errors, type Page } from 'playwright-core';
+import { formAction } from '../forms/limits.ts';
 import { defaultMode, SYSTEM_STATES, themeOf } from '../modes.ts';
 import type { FormField } from '../options.ts';
 import {
@@ -466,7 +467,7 @@ export function formValue(field: FormField, now: number): string {
 export const FORM_LIMIT_MS = 10_000;
 
 /** The path of the endpoint of a declared form (9.1). */
-export const formAction = (id: string): string => `/api/forms/${id}/`;
+export { formAction };
 
 /** The submit controls of a form, as the first one is found. */
 const SUBMIT = 'button:not([type]), button[type="submit" i], input[type="submit" i], input[type="image" i]';

@@ -24,8 +24,13 @@
  *    the values.
  * 8. Text answers are compressed: zstd level 3, else brotli quality 5, else gzip, as the request accepts them.
  *
- * The form stub of 9.1 is not here: it comes with forms (M7). A caller observes each request through `received`
- * or `onRequest`, for example the `Sec-Purpose` header of a prerender (`perf-prerender`).
+ * With the settings of a forms site (`ServeOptions.forms`), a POST to `/api/forms/<id>/` goes to the test server
+ * stub of 9.1 before every step above, as `run_worker_first` sends it to the Worker (10.4). The stub runs the
+ * `checkForm` of the endpoint, without limits or mail, and answers 303 or JSON with the five headers of 9.1. No
+ * `_headers` rule and no header of `ServeOptions.headers` applies to it, as on the Worker.
+ *
+ * A caller observes each request through `received` or `onRequest`, for example the `Sec-Purpose` header of a
+ * prerender (`perf-prerender`).
  */
 import { createHash } from 'node:crypto';
 import { createReadStream, type Stats } from 'node:fs';
@@ -43,6 +48,8 @@ import { extname, join, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import { brotliCompress, constants, gzip, zstdCompress } from 'node:zlib';
+import { type FormSettings, stubForm } from './forms/index.ts';
+import { FORM_ACTION_PREFIX } from './forms/limits.ts';
 import {
   HEADERS_FILE,
   type HeaderRule,
@@ -179,6 +186,8 @@ export interface ServeOptions {
   headers?: Readonly<Record<string, string>>;
   /** Called for each request, before the answer. An error that it throws or a promise that it rejects is ignored. */
   onRequest?: (request: Received) => void;
+  /** The settings of a forms site. With them, the form stub of 9.1 answers a POST to `/api/forms/<id>/`. */
+  forms?: FormSettings;
 }
 
 export interface Served {
@@ -910,6 +919,88 @@ async function send(
   await pipeline(createReadStream(answer.file), response);
 }
 
+// The form stub
+
+/**
+ * The form id of a request target `/api/forms/<id>/`, percent-decoded as Astro decodes a route parameter, or
+ * `undefined` for any other target. The query is not part of the path.
+ */
+export function formIdOf(target: string): string | undefined {
+  const path = target.split(/[?#]/)[0] ?? '';
+  if (!path.startsWith(FORM_ACTION_PREFIX) || !path.endsWith('/')) return undefined;
+  const segment = path.slice(FORM_ACTION_PREFIX.length, -1);
+  if (segment === '' || segment.includes('/')) return undefined;
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+/**
+ * The body of a Node request as a web stream that reads on demand. A cancel stops the reading and discards the
+ * rest of the body, so the connection can still carry the answer.
+ */
+function bodyOf(request: IncomingMessage): ReadableStream<Uint8Array> {
+  let ended = false;
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      request.pause();
+      request.on('data', (chunk: unknown) => {
+        if (ended || !(chunk instanceof Uint8Array)) return;
+        controller.enqueue(new Uint8Array(chunk));
+        if ((controller.desiredSize ?? 0) <= 0) request.pause();
+      });
+      request.once('end', () => {
+        if (ended) return;
+        ended = true;
+        controller.close();
+      });
+      request.once('error', (error) => {
+        if (ended) return;
+        ended = true;
+        controller.error(error);
+      });
+    },
+    pull() {
+      request.resume();
+    },
+    cancel() {
+      ended = true;
+      request.removeAllListeners('data');
+      request.resume();
+    },
+  });
+}
+
+/** Answers one POST with the form stub. The rest of the body that the stub did not read is discarded. */
+async function answerStub(
+  request: IncomingMessage,
+  response: ServerResponse,
+  origin: string,
+  id: string,
+  settings: FormSettings,
+): Promise<void> {
+  const headers = new Headers();
+  for (let index = 0; index + 1 < request.rawHeaders.length; index += 2) {
+    try {
+      headers.append(request.rawHeaders[index] ?? '', request.rawHeaders[index + 1] ?? '');
+    } catch {
+      // A header that `Headers` refuses is left out.
+    }
+  }
+  const init: RequestInit & { duplex: 'half' } = { method: 'POST', headers, body: bodyOf(request), duplex: 'half' };
+  const answer = await stubForm(new Request(`${origin}${FORM_ACTION_PREFIX}`, init), id, settings);
+  const body = Buffer.from(await answer.arrayBuffer());
+  request.removeAllListeners('data');
+  request.resume();
+  const sent: Record<string, string> = {};
+  for (const [name, value] of answer.headers) sent[name] = value;
+  sent['content-length'] = String(body.byteLength);
+  response.writeHead(answer.status, sent);
+  response.end(body);
+}
+
 /**
  * Serves a build on 127.0.0.1 and a free port: `dist/client` when it is the client directory, else `dist`
  * (`clientDir`). It reads `_headers`, `_redirects` and `.assetsignore` once, at the start. The caller closes the
@@ -945,6 +1036,11 @@ export async function serveDist(dist: string, options: ServeOptions = {}): Promi
     received.push(seen);
     observe(seen);
     if (site === undefined) throw new Error('astro-kit: the server is not ready');
+    const id = options.forms !== undefined && seen.method === 'POST' ? formIdOf(seen.path) : undefined;
+    if (options.forms !== undefined && id !== undefined) {
+      await answerStub(request, response, site.origin, id, options.forms);
+      return;
+    }
     const [answer, path] = await site.answer(seen.method, seen.path, request.headers);
     await send(site, request, response, answer, path, extra);
   };

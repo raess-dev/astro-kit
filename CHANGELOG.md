@@ -243,3 +243,32 @@
     page that is only too slow under the throttle.
   - The speculation rule and the prefetch gate take a link with an empty `target`. The speculation JSON and its hash
     change.
+- Milestone M7, part 7a: the form runtime, `@raess/astro-kit/forms`. The kit has 112 rules.
+  - `createFormEndpoint` and `handleForm` follow the ten steps of 9.1 in order, and the first step that fails
+    decides the code. The body is read into one buffer of 32,768 B, and the stream is cancelled past it. Every
+    answer, a 303 or JSON, carries `private, no-store` and the five headers of 9.1 from one constant. The log holds
+    the code only. The probe compare hashes both texts with SHA-256 and compares the digests with
+    `crypto.subtle.timingSafeEqual` in the Worker, or with a loop over every byte where that is missing.
+  - `src/forms/fields.ts` validates the declared fields (CRLF and CR count as one character, no control character
+    except tab and line feed in a textarea) and writes the mail text. `src/forms/limits.ts` holds the fixed values.
+  - `serveDist` holds the test server stub of 9.1 on a forms site: a POST to `/api/forms/<id>/` runs steps 1 to 7
+    with the code of the endpoint, without limits or mail. `astro-kit test` serves a forms site with it, so
+    `a11y-no-js` sends each declared form to the stub.
+  - `renderWrangler` writes the forms text of 10.4, and `config-wrangler` compares a forms site with it. The new
+    rule `forms-binding` checks the mail binding and the two rate limits in `wrangler.jsonc`.
+  - The feature shim `templates/features/forms/src/pages/api/forms/[form].ts`.
+  - The decisions of the owner after the review of 7a:
+    - The probe header is `x-kit-probe-token`. Cloudflare redacts a header whose name holds `token` in trace events,
+      Workers Logs and Tail Workers, so the secret never reaches a log.
+    - Step 9 calls `FORM_RATE_LIMIT` first, and `FORM_RATE_LIMIT_ALL` only when it passed. A client refused for its
+      IP address uses no budget of the form. A matched probe skips the IP limiter and still counts against the form,
+      so smoke can probe ten forms from one runner. An IPv6 address counts by its /64 prefix. A limiter that throws
+      at once counts as `rate_limited`.
+    - Step 3 reads the part headers of a multipart body itself: a `filename` or `filename*` parameter rejects the
+      body, also where the Worker's parser gives the part as a text. An urlencoded body with a charset other than
+      UTF-8 is `bad_body` in Node and in the Worker.
+    - Step 7 rejects U+2028, U+2029 and the bidi controls in every field. The mail gets a `replyTo` only for a valid
+      e-mail address of HTML.
+    - A failed load of `virtual:astro-kit` or `cloudflare:workers` answers `no_binding` with the five headers.
+    - On a forms site, `config-shim` compares `src/pages/api/forms/[form].ts` with the forms shim in every command
+      that runs preflight. `css-element-coverage` needs no rule for `input[type=hidden]`.

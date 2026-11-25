@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'astro/zod';
+import { AUTOCOMPLETE, DATE, EMAIL, FIELD_TYPES, type FieldType, isRealDate, MAX_LENGTH } from './forms/fields.ts';
 import { isWaivable, type Report } from './registry.ts';
 import { PAGE_PATH, pathSegments, RESERVED_SEGMENTS } from './routes.ts';
 
@@ -48,17 +49,9 @@ export const MESSAGES = {
     'a gesture origin needs features.scripts or features.islands: a script adds the frame, the script or the request after the click',
 } as const;
 
-/** The pattern of every mail address in the settings and in `site.json`. */
-export const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-/** Says whether the text is a date `YYYY-MM-DD` that exists in the calendar. */
-export function isRealDate(text: string): boolean {
-  if (!DATE.test(text)) return false;
-  const date = new Date(`${text}T00:00:00Z`);
-  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === text;
-}
+// The pattern of every mail address and the date check live in src/forms/fields.ts, which the Worker loads without
+// this module. They are exported here too, for the other loaders.
+export { EMAIL, isRealDate };
 
 /** The part of a zod refinement context that the checks below use. */
 interface Issues {
@@ -147,24 +140,8 @@ const modesSchema = z
 
 // Forms
 
-const FIELD_TYPES = ['text', 'textarea', 'email', 'tel', 'date', 'number', 'choice', 'consent'] as const;
-
-export type FieldType = (typeof FIELD_TYPES)[number];
-
-/** The default `maxLength` of each string type. Only these types take a `maxLength`. */
-const MAX_LENGTH: ReadonlyMap<FieldType, number> = new Map([
-  ['text', 200],
-  ['textarea', 5000],
-  ['email', 254],
-  ['tel', 32],
-]);
-
-/** The default `autocomplete` by field name. Every other name gets `off`. */
-const AUTOCOMPLETE: ReadonlyMap<string, string> = new Map([
-  ['name', 'name'],
-  ['email', 'email'],
-  ['tel', 'tel'],
-]);
+// The field types and their defaults live in src/forms/fields.ts.
+export type { FieldType };
 
 /** The endpoint uses these names itself (9.1). */
 const RESERVED_FIELD_NAMES: readonly string[] = ['return', 'website', 'form', 'mode'];

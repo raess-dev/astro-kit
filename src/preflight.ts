@@ -9,7 +9,7 @@ import { loadDesign } from './design/parse.ts';
 import { checkDesign } from './design/rules.ts';
 import { checkTokens } from './design/tokens.ts';
 import { loadGlossary, loadSchedule, loadSite } from './facts.ts';
-import { checkWrangler } from './hosts/cloudflare.ts';
+import { checkFormsBinding, checkWrangler } from './hosts/cloudflare.ts';
 import { checkModeThemes } from './modes.ts';
 import { checkProcessing, checkWaivers, loadOptions, type Options } from './options.ts';
 import {
@@ -25,15 +25,15 @@ import {
 } from './project.ts';
 import { loadRedirects } from './redirects.ts';
 import type { Report } from './registry.ts';
-import { checkShims } from './shims.ts';
+import { checkFormsShim, checkShims } from './shims.ts';
 
 /**
  * Runs the config-stage checks and adds each finding to the report. Returns the settings, or `undefined` when
  * `astro-kit.json` is missing or not valid.
  *
  * **The settings rule.** A check that reads the settings runs only with valid settings: `config-waiver`,
- * `legal-processing`, `config-dep-allowlist`, the text comparison of `config-wrangler`, `modes-themes`,
- * `design-tokens` and `modes-media` at this milestone. Every other check always runs, so a run without valid
+ * `legal-processing`, the forms part of `config-shim`, `config-dep-allowlist`, the text comparison of `config-wrangler`, `forms-binding`,
+ * `modes-themes`, `design-tokens` and `modes-media` at this milestone. Every other check always runs, so a run without valid
  * settings still reports the facts files, the shims, the package, the sources, `public/`, the images, the wrangler
  * files, the redirects, the design document and the other CSS source halves.
  *
@@ -54,8 +54,9 @@ export function preflight(root: string, report: Report): Options | undefined {
   }
   loadSchedule(root, report);
 
-  // 2. Shims: `config-shim`.
+  // 2. Shims: `config-shim`. With valid settings and forms, the forms shim too.
   checkShims(root, report);
+  if (options?.features.forms === true) checkFormsShim(root, report);
   // M9: the rest of `config-shim` runs here, with valid settings only: the rendered protected files, the kit block
   // of `AGENTS.md` and the line of `CLAUDE.md`.
 
@@ -77,10 +78,10 @@ export function preflight(root: string, report: Report): Options | undefined {
   // 6. `images-original`.
   checkImageOriginals(root, report);
 
-  // 7. `config-wrangler`. The files are checked in every run. The text is compared with valid settings only, and
-  // at this milestone for a static site only.
+  // 7. `config-wrangler`, `forms-binding`. The files are checked in every run. The text is compared with valid
+  // settings only, and `forms-binding` runs with valid settings and forms only.
   checkWrangler(root, options, report);
-  // M7: the text of `config-wrangler` for a forms site, and `forms-binding`.
+  if (options !== undefined) checkFormsBinding(root, options, report);
 
   // 8. `routes-redirects`, the source half.
   loadRedirects(root, report);

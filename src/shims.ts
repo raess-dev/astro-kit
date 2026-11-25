@@ -54,6 +54,16 @@ export default defineConfig({ integrations: [astroKit()] });
 
 export type ShimFile = keyof typeof SHIMS;
 
+/** The feature shim of forms (9.1): the one on-demand route of a forms site. */
+export const FORMS_SHIM_FILE = 'src/pages/api/forms/[form].ts';
+
+/** The exact text of the forms shim, as `templates/features/forms/` holds it. */
+export const FORMS_SHIM = `import { createFormEndpoint } from '@raess/astro-kit/forms';
+
+export const prerender = false;
+export const POST = createFormEndpoint();
+`;
+
 /** The form in which two texts are compared: CRLF becomes LF, and the text ends with exactly one newline. */
 export const normalize = (text: string): string => `${text.replace(/\r\n/g, '\n').trimEnd()}\n`;
 
@@ -101,6 +111,15 @@ function checkFile(root: string, file: string, expected: string, report: Report)
   const difference = firstDifference(readFileSync(path, 'utf8'), expected);
   if (!difference) return;
   report.add(RULE, `${file}:${difference.line}`, describe(difference));
+}
+
+/**
+ * The forms part of `config-shim` (from M7): with `features.forms`, `src/pages/api/forms/[form].ts` equals the
+ * forms shim, compared like the other shims. The build then proves the endpoint that the test server stub stands
+ * for. The other feature shim (`eslint.config.mjs`) is compared in `check` (M9).
+ */
+export function checkFormsShim(root: string, report: Report): void {
+  checkFile(root, FORMS_SHIM_FILE, FORMS_SHIM, report);
 }
 
 /** The names in the project root, sorted. A root that is not a folder has none. */

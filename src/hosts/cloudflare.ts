@@ -693,30 +693,58 @@ export function workerName(site: string): string {
 }
 
 /**
- * The exact text of `wrangler.jsonc` for the settings (10.4). It has full-line `//` comments only and no trailing
- * commas, because the deploy job reads it with `jq`.
- *
- * This milestone renders the static site. With `features.forms` the function throws: milestone M7 adds that text.
+ * The destination set of `forms-binding` (8): `contact.to`, the `to` of each form and `contact.probe`, sorted. Each
+ * form has its `to` filled in already: its own, or `contact.to`.
+ */
+export function destinations(options: Options): string[] {
+  const set = new Set<string>();
+  if (options.contact !== undefined) set.add(options.contact.to);
+  for (const form of Object.values(options.forms ?? {})) set.add(form.to);
+  if (options.contact?.probe !== undefined) set.add(options.contact.probe);
+  return [...set].sort();
+}
+
+/**
+ * The exact text of `wrangler.jsonc` for the settings (10.4): the text of a static site, or of a forms site. It has
+ * full-line `//` comments only and no trailing commas, because the deploy job reads it with `jq`. Each address is
+ * written as a JSON string, so a quote or a backslash in an address cannot change the structure of the file.
  */
 export function renderWrangler(options: Options): string {
-  if (options.features.forms) {
-    throw new Error('astro-kit: renderWrangler has no text for a site with forms yet; milestone M7 adds it.');
-  }
   const worker = workerName(options.site);
-  return `// Managed by @raess/astro-kit. A protected file: the kit renders it, and only the protected task changes it.
+  const head = `// Managed by @raess/astro-kit. A protected file: the kit renders it, and only the protected task changes it.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "${worker}",
   "compatibility_date": "${COMPATIBILITY_DATE}",
-  "assets": { "directory": "./dist", "not_found_handling": "404-page", "html_handling": "auto-trailing-slash" },
-  "workers_dev": false,
-  "preview_urls": false,
-  "routes": [{ "pattern": "${hostOf(options.site)}", "custom_domain": true }],
-  "env": {
-    "preview": { "name": "${worker}-preview", "routes": [], "workers_dev": true, "preview_urls": true }
+`;
+  const route = `  "routes": [{ "pattern": "${hostOf(options.site)}", "custom_domain": true }],
+`;
+  const preview = `    "preview": { "name": "${worker}-preview", "routes": [], "workers_dev": true, "preview_urls": true }
   }
 }
 `;
+  if (!options.features.forms) {
+    return `${head}  "assets": { "directory": "./dist", "not_found_handling": "404-page", "html_handling": "auto-trailing-slash" },
+  "workers_dev": false,
+  "preview_urls": false,
+${route}  "env": {
+${preview}`;
+  }
+  const addresses = destinations(options)
+    .map((address) => JSON.stringify(address))
+    .join(', ');
+  return `${head}  "assets": { "directory": "./dist/client", "not_found_handling": "404-page", "html_handling": "auto-trailing-slash", "run_worker_first": ["/api/forms/*"] },
+  "workers_dev": false,
+  "preview_urls": false,
+${route}  "send_email": [{ "name": "EMAIL", "allowed_destination_addresses": [${addresses}] }],
+  "ratelimits": [
+    { "name": "FORM_RATE_LIMIT", "namespace_id": "1001", "simple": { "limit": 3, "period": 60 } },
+    { "name": "FORM_RATE_LIMIT_ALL", "namespace_id": "1002", "simple": { "limit": 20, "period": 60 } }
+  ],
+  "observability": { "enabled": true },
+  "env": {
+    // Bindings are not inherited: a preview never sends mail.
+${preview}`;
 }
 
 const WRANGLER_RULE = 'config-wrangler';
@@ -727,7 +755,7 @@ const WRANGLER_RULE = 'config-wrangler';
  * - The file part always runs: `wrangler.jsonc` exists, and the root holds no `wrangler.json` and no
  *   `wrangler.toml`.
  * - The settings part runs with valid settings: the file equals `renderWrangler(options)` after CRLF→LF and
- *   trimEnd + newline. The finding names the first line that differs. This milestone compares a static site only.
+ *   trimEnd + newline, for a static site and for a forms site. The finding names the first line that differs.
  */
 export function checkWrangler(root: string, options: Options | undefined, report: Report): void {
   for (const name of OTHER_WRANGLER_FILES) {
@@ -745,7 +773,7 @@ export function checkWrangler(root: string, options: Options | undefined, report
     report.add(WRANGLER_RULE, WRANGLER_FILE, 'this is not a file');
     return;
   }
-  if (options === undefined || options.features.forms) return;
+  if (options === undefined) return;
   const difference = firstDifference(readFileSync(path, 'utf8'), renderWrangler(options));
   if (difference === undefined) return;
   const expected =
@@ -753,4 +781,92 @@ export function checkWrangler(root: string, options: Options | undefined, report
       ? 'the text of the kit ends before this line'
       : `the kit renders \`${difference.expected}\` here`;
   report.add(WRANGLER_RULE, `${WRANGLER_FILE}:${difference.line}`, expected);
+}
+
+// `forms-binding`
+
+const BINDING_RULE = 'forms-binding';
+
+/** The two rate limits of a forms site (9.1, 10.4), by binding name. */
+export const FORM_RATE_LIMITS: ReadonlyMap<string, { limit: number; period: number }> = new Map([
+  ['FORM_RATE_LIMIT', { limit: 3, period: 60 }],
+  ['FORM_RATE_LIMIT_ALL', { limit: 20, period: 60 }],
+]);
+
+/** A member of a value that may be anything, or `undefined`. It reads own members only. */
+function own(value: unknown, name: string): unknown {
+  return typeof value === 'object' && value !== null && Object.hasOwn(value, name)
+    ? Reflect.get(value, name)
+    : undefined;
+}
+
+/** The entries of a list whose `name` is the given name. A value that is not a list has none. */
+function named(list: unknown, name: string): unknown[] {
+  return Array.isArray(list) ? list.filter((entry: unknown) => own(entry, 'name') === name) : [];
+}
+
+/**
+ * Reads a JSONC text as the deploy job reads it: the full-line `//` comments are dropped, and the rest must be
+ * JSON. Gives `{ ok: false }` for any other text. It never throws.
+ */
+export function parseJsonc(text: string): { ok: true; value: unknown } | { ok: false } {
+  const json = text
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('//'))
+    .join('\n');
+  try {
+    const value: unknown = JSON.parse(json);
+    return { ok: true, value };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/** Says whether two lists hold the same set of texts. */
+const sameSet = (list: readonly string[], want: readonly string[]): boolean => {
+  const got = new Set(list);
+  return got.size === new Set(want).size && want.every((item) => got.has(item));
+};
+
+/**
+ * The rule `forms-binding`, with forms: `wrangler.jsonc` has one `send_email` binding `EMAIL` whose
+ * `allowed_destination_addresses` is exactly the destination set, and one `ratelimits` binding for each of
+ * `FORM_RATE_LIMIT` (`simple {limit: 3, period: 60}`) and `FORM_RATE_LIMIT_ALL` (`simple {limit: 20, period: 60}`).
+ * A missing file is left to `config-wrangler`, so it reports once. A text that is not JSON with full-line comments
+ * fails.
+ */
+export function checkFormsBinding(root: string, options: Options, report: Report): void {
+  if (!options.features.forms) return;
+  const path = join(root, WRANGLER_FILE);
+  if (statSync(path, { throwIfNoEntry: false })?.isFile() !== true) return;
+  const parsed = parseJsonc(readFileSync(path, 'utf8'));
+  if (!parsed.ok) {
+    report.add(BINDING_RULE, WRANGLER_FILE, 'the file is not JSON with full-line // comments');
+    return;
+  }
+  const want = destinations(options);
+  const email = named(own(parsed.value, 'send_email'), 'EMAIL');
+  const list = own(email[0], 'allowed_destination_addresses');
+  if (email.length !== 1) {
+    report.add(BINDING_RULE, `${WRANGLER_FILE}: send_email`, 'needs exactly one binding named EMAIL');
+  } else if (!Array.isArray(list) || !list.every((item) => typeof item === 'string') || !sameSet(list, want)) {
+    report.add(
+      BINDING_RULE,
+      `${WRANGLER_FILE}: send_email`,
+      `allowed_destination_addresses of EMAIL must be exactly ${want.join(', ')}`,
+    );
+  }
+  for (const [name, limit] of FORM_RATE_LIMITS) {
+    const entries = named(own(parsed.value, 'ratelimits'), name);
+    const simple = own(entries[0], 'simple');
+    if (entries.length === 1 && own(simple, 'limit') === limit.limit && own(simple, 'period') === limit.period) {
+      continue;
+    }
+    report.add(
+      BINDING_RULE,
+      `${WRANGLER_FILE}: ratelimits`,
+      `needs one binding ${name} with simple {limit: ${limit.limit}, period: ${limit.period}}`,
+    );
+  }
 }
