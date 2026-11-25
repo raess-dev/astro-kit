@@ -521,7 +521,7 @@ export const cls: BrowserRule = {
 export const OVERSIZE_FACTOR = 1.5;
 
 /** One `img` as `perf-image-oversize` reads it. */
-interface LoadedImage {
+export interface LoadedImage {
   /** The number of the element in this tab: the same element keeps its number in each read. */
   id: number;
   name: string;
@@ -735,13 +735,14 @@ function loadLazyImages(page: Page, ms: number): Promise<void> {
 /**
  * The images that `perf-image-oversize` judges: the first `img` in document order of each loaded file, among the
  * images that had loaded on their own; else, when the file came only with the lazy images, the first one of those,
- * and only when the page sent a request for the file after the switch. So an image that shows a file that another
- * image of the page loaded, from the memory cache, adds nothing to the transfer and is not judged.
+ * when the page has a resource timing entry for the file. So an image that shows a file that another image of the
+ * page loaded on its own, from the memory cache, adds nothing to the transfer and is not judged. A fetch by anything
+ * else (a preload, a style sheet) does not exempt an image: whether Chromium then loads a lazy image on its own
+ * depends on which of the two ends first, and the verdict must not.
  */
 export function judged(
   early: readonly LoadedImage[],
   late: readonly LoadedImage[],
-  before: ReadonlyMap<string, number>,
   after: ReadonlyMap<string, number>,
 ): LoadedImage[] {
   const chosen: LoadedImage[] = [];
@@ -751,7 +752,7 @@ export function judged(
     if (!image.raster || seen.has(image.href)) continue;
     const wasEarly = early.some((other) => other.id === image.id && other.raster && other.href === image.href);
     if (earlyFiles.has(image.href) && !wasEarly) continue;
-    if (!wasEarly && (before.has(image.href) || !after.has(image.href))) continue;
+    if (!wasEarly && !after.has(image.href)) continue;
     seen.add(image.href);
     chosen.push(image);
   }
@@ -798,7 +799,7 @@ export const imageOversize: BrowserRule = {
       await imagesLoaded(page, CLS_IMAGES_MS);
       const late = await readImages(page);
       const after = await resources(page);
-      for (const image of judged(early, late, before, after)) {
+      for (const image of judged(early, late, after)) {
         if (!image.shown) continue;
         const needed = image.rendered * device.scale;
         if (image.smallest || image.loaded <= OVERSIZE_FACTOR * needed + 1e-6) continue;

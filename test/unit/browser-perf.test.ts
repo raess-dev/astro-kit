@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { crc32, deflateSync } from 'node:zlib';
 import type { BrowserRule } from '../../src/browser/harness.ts';
+import type { LoadedImage } from '../../src/browser/perf.ts';
 import {
   BFCACHE_IDLE_MS,
   BFCACHE_QUERY,
@@ -24,6 +25,7 @@ import {
   cut,
   deviceText,
   imageOversize,
+  judged,
   LCP_CPU_RATE,
   LCP_ENTRY_WAIT_MS,
   LCP_IMAGE_WAIT_MS,
@@ -425,6 +427,53 @@ test('perf-image-oversize judges what an image adds to the transfer', async () =
     'a1600.png': png(1600, 40),
   };
   assert.deepEqual(await detailsOf(files, imageOversize), []);
+});
+
+/** An image of `judged`: complete (`raster`) or still loading, with a box, 1600 px for a box of 100 px. */
+const loadedImage = (id: number, path: string, raster: boolean): LoadedImage => ({
+  id,
+  name: `img#${id}`,
+  href: `http://127.0.0.1${path}`,
+  url: path,
+  raster,
+  box: true,
+  shown: true,
+  loaded: 1600,
+  rendered: 100,
+  smallest: false,
+});
+
+test('perf-image-oversize judges a lazy image that finished its own load between the reads of the rule', () => {
+  // The image was not complete when the rule read the images, and its resource timing entry was there a moment
+  // later: about 1 run in 50 under load, before the fix, lost the finding. The image is judged all the same.
+  const late = [loadedImage(1, '/b1600.png', true)];
+  const entry = new Map([['http://127.0.0.1/b1600.png', 1_000]]);
+  assert.deepEqual(judged([loadedImage(1, '/b1600.png', false)], late, entry), late);
+  // A lazy copy of a file that another image loaded on its own is not judged; the first image is.
+  const copy = [loadedImage(1, '/b1600.png', true), loadedImage(2, '/b1600.png', true)];
+  assert.deepEqual(judged([loadedImage(1, '/b1600.png', true), loadedImage(2, '/b1600.png', false)], copy, entry), [
+    copy[0],
+  ]);
+  // A file with no resource timing entry was never requested by the page: not judged.
+  assert.deepEqual(judged([], late, new Map()), []);
+});
+
+test('perf-image-oversize judges a lazy image whose file a preload fetched, in every run', async () => {
+  // Chromium loads a lazy image at once when its file is in the memory cache, so the image loads on its own when
+  // the preload ends first, and after the switch when it does not. Before the fix, only the first case was judged.
+  const files: Files = {
+    'index.html': page(
+      [
+        '<link rel="preload" as="image" href="/w1600.png">',
+        '<div style="block-size:6000px"></div><img src="/w1600.png" width="100" height="6" alt="Klein" loading="lazy">',
+      ].join(''),
+    ),
+    'w1600.png': png(1600, 100),
+  };
+  assert.deepEqual(await detailsOf(files, imageOversize), [
+    '/ 390×844@3: img loads /w1600.png at 1600 px for a box of 100.0 px × 3 (5.33×, at most 1.5×)',
+    '/ 1440×900@1: img loads /w1600.png at 1600 px for a box of 100.0 px × 1 (16.00×, at most 1.5×)',
+  ]);
 });
 
 test('perf-image-oversize fails an image that loads and shows nowhere', async () => {
