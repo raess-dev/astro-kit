@@ -1,6 +1,6 @@
 /**
  * The forms cases of milestone M7 (specification, 14, M7, and 13.1 items 63 and 78): the test site with forms, built
- * with the packed kit and `@astrojs/cloudflare` 14.4.7, and its Worker run by `wrangler dev` in local mode with the
+ * with the packed kit and `@astrojs/cloudflare` 14.4.9, and its Worker run by `wrangler dev` in local mode with the
  * Worker config that the adapter wrote. No case reaches the network: `send_email` writes the mail into the case
  * folder, and the rate limits count in memory.
  *

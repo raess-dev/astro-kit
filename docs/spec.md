@@ -199,7 +199,7 @@ Each pin follows the pinning rule above: the latest stable release that every pe
 | Runtime | Node | engines `>=22.23.4`; `.node-version` `24` | Kit and sites. The unit tests and the acceptance suite run `.ts` through type stripping. |
 | Package manager | npm | the npm bundled with Node 24; the release job needs npm ≥ 11.15 and installs `npm@11.21.2` when older | Every install is `npm ci --ignore-scripts` |
 | Framework | `astro` | `7.4.8`; peer range `>=7.4.8 <8` | Static output; the integration API |
-| Bundler (transitive) | `vite` / `lightningcss` | `8.3.7` / `1.33.0`, through Astro | Never a direct dependency |
+| Bundler (transitive) | `vite` / `lightningcss` | `8.3.8` / `1.33.0`, through Astro (with Astro 7.4.13, which bundles with `rolldown` 1.3.3) | Never a direct dependency |
 | Schema | `zod` | `4.6.7`, imported as `astro/zod` | Every schema; JSON Schema through `z.toJSONSchema` |
 | Lint and format | `@biomejs/biome` | `2.6.6` | Kit repo and sites (preset `config/biome.json`); its own `solid` domain stays off (12.2) |
 | Types | `typescript` | `6.0.3` | Strict; erasable syntax only |
@@ -219,11 +219,11 @@ Each pin follows the pinning rule above: the latest stable release that every pe
 
 **Which browser.** When `CHROME_PATH` is set, the kit takes that file and tries no other. Else it takes the Chromium that `playwright-core` installed, when that file exists. Else it takes `/usr/bin/google-chrome`. The kit does not test that `CHROME_PATH` or `/usr/bin/google-chrome` names a file. When the browser does not start, the command prints the error of the launch and exits 1 (6.4). The Playwright build changes only with the `playwright-core` pin, in a kit release. The system Chrome changes with no commit, so a green site could turn red by itself. Every workflow that runs a browser check therefore installs the Playwright build first (10.1, 11.1, 11.2).
 
-**The pins.** Milestone M0 set them on 2026-11-13, each the latest version in its line. M8 moved the islands and lint pins on 2026-11-26, under the pinning rule. Where the table gives no other value, the pin equals the floor.
+**The pins.** Milestone M0 set them on 2026-11-13, each the latest version in its line. M8 moved the islands and lint pins on 2026-11-26, under the pinning rule, and the stack PR after 8a moved `astro`, `@astrojs/cloudflare` and `wrangler` the same day. Where the table gives no other value, the pin equals the floor.
 
 | Package | Pin |
 |---|---|
-| `astro` | `7.4.11` |
+| `astro` | `7.4.13` |
 | `@biomejs/biome` | `2.6.7` |
 | `html-validate` | `11.21.1` |
 | `solid-js` | `1.9.19` |
@@ -231,8 +231,8 @@ Each pin follows the pinning rule above: the latest stable release that every pe
 | `eslint` | `10.15.0` |
 | `eslint-plugin-solid` | `0.20.0` |
 | `typescript-eslint` | `8.73.0` |
-| `@astrojs/cloudflare` | `14.4.7` |
-| `wrangler` | `4.160.1` |
+| `@astrojs/cloudflare` | `14.4.9` |
+| `wrangler` | `4.165.0` |
 
 ### 2.2 Pinned GitHub Actions
 

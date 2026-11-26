@@ -9,10 +9,10 @@
     "ci": "astro-kit ci"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "14.4.7",
-    "astro": "7.4.11"
+    "@astrojs/cloudflare": "14.4.9",
+    "astro": "7.4.13"
   },
   "devDependencies": {
-    "wrangler": "4.160.1"
+    "wrangler": "4.165.0"
   }
 }
