@@ -105,8 +105,12 @@ const WORKER_ARGUMENT = new RegExp(
   'y',
 );
 
-/** The arguments of an `importScripts(` call that the kit can measure: literals of `.js` files only, to the `)`. */
-const IMPORT_SCRIPTS_ARGUMENTS = new RegExp(String.raw`\s*${JS_LITERAL}(?:\s*,\s*${JS_LITERAL})*\s*\)`, 'y');
+/**
+ * The arguments of an `importScripts(` call that the kit can measure: literals of `.js` files whose paths start with
+ * `/` (`ROOT_JS_LITERAL`), to the `)`. `importScripts` resolves against the URL of the worker, and a file that a
+ * worker loads can call it too, so the kit does not know that base.
+ */
+const IMPORT_SCRIPTS_ARGUMENTS = new RegExp(String.raw`\s*${ROOT_JS_LITERAL}(?:\s*,\s*${ROOT_JS_LITERAL})*\s*\)`, 'y');
 
 /** Every literal of a `.js` file in a text, with its specifier in the group that matched. */
 const JS_LITERALS = new RegExp(

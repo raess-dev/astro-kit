@@ -1130,6 +1130,14 @@ test('js-budget: a preloaded script loads at once, and a worker file loads later
       { '_astro/s.js': 'navigator.serviceWorker.register("sw.js")', '_astro/sw.js': small },
       ['js-budget'],
     ],
+    // importScripts resolves against the worker, which the kit does not know, so it must start with / (Codex, #27).
+    [
+      'a relative importScripts URL cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'importScripts("./big.js")', '_astro/big.js': small },
+      ['js-budget'],
+    ],
     // importScripts loads each of its arguments, so each one counts (Codex, #27).
     [
       'every file of importScripts counts',
