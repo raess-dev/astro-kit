@@ -148,6 +148,14 @@ test('routes-404 fails a form on /404.html that posts to /api/forms/, and a cont
     siteWith({ '404.html': notFoundPage(OPTIONS, { main: form('action="api/forms/contact"') }) }),
   );
   assert.deepEqual(ids(relative), ['routes-404']);
+  // The prefix compares in any letter case, as forms-declared reads it, and a backslash reads as a slash.
+  for (const action of ['/API/Forms/contact/', '\\api\\forms\\contact\\']) {
+    const report = run(
+      auditRoutes404,
+      siteWith({ '404.html': notFoundPage(OPTIONS, { main: form(`action="${action}"`) }) }),
+    );
+    assert.deepEqual(ids(report), ['routes-404'], action);
+  }
   const control = `<h1>x</h1> <a href="/">Start</a> <a href="/fr/">Accueil</a> <form method="post" action="/kontakt/"><button formaction="/api/forms/contact">Senden</button></form>`;
   assert.deepEqual(ids(run(auditRoutes404, siteWith({ '404.html': notFoundPage(OPTIONS, { main: control }) }))), [
     'routes-404',

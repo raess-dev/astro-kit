@@ -127,12 +127,20 @@ One spike alone: `node --test test/acceptance/spikes/s05.ts`.
 - `planted-build.test.ts`: the `build` set of the planted sets of M5. One copy of the site gets every plant of the
   set, one plant for each id, and `build` runs once. The test asserts the exact sorted ids, status 1 and no passed
   line. A plant on the shared layout or the header acts on one page only. The ids of later rules join with them:
-  the forms ids at M7, `legal-origins` and `origins-third-party` at M8, `legal-approved` at M9.
-- `planted.test.ts`: the planted sets `css`, `design` and `modes` of M5, and the five typical agent mistakes. A set
+  the forms ids joined at M7; `legal-origins` and `origins-third-party` join at M8, `legal-approved` at M9.
+- `planted.test.ts`: the planted sets `css`, `design` and `modes` of M5, the `route` set of M7, and the five typical
+  agent mistakes. The `route` set is the `static` variant with an on-demand route of its own. A set
   plants every violation of its list in one copy and runs `build` once; it asserts the exact sorted ids and no
   passed line. The plants of the `css` set are a table, one entry per id. A case that changes `docs/design.md` runs
   `tokens` first. Each mistake is one change on its own copy and gives exactly one id. `js-budget` joins the `css`
   set at M8.
+- `forms.test.ts`: the built Worker of the test site in `wrangler dev`, with the config that the adapter writes to
+  `dist/server/wrangler.json`. A form post reaches the endpoint of the kit, and the mail text is byte-exact. Step 3
+  refuses an empty or an extended file name and another charset in the Worker itself. A planted `public/.dev.vars`
+  passes `edge-private` because the adapter adds its lines to `.assetsignore` before the audit of the kit.
+  The case reads the mails and the output of wrangler only after wrangler has logged both mails and the three
+  `bad_body` codes: miniflare stores a mail after `send()` resolves, so an earlier read would be flaky.
+- `variants.test.ts` and `variants.ts`: the `static` variant of M7, forms off. It runs `build` and `test`.
 - `site-assets.test.ts`: the committed PDF menu equals the one that `site-assets.ts` makes from `site.json`. A
   change of a menu fact in `site.json` without a new PDF fails here.
 - `spikes.test.ts` and `spikes/`: the spikes S1 to S19. `spikes/sNN.ts` holds the tests of one spike. Every other
@@ -206,11 +214,14 @@ npx --no astro-kit tokens --check
 npx --no astro-kit build
 ```
 
-- `build` runs `astro build`. The kit checks the project before the build and the built pages in `dist/` after it.
+- `build` runs `astro build`. The kit checks the project before the build and the built pages after it. The site
+  has forms, so the adapter writes the pages to `dist/client/` and the Worker to `dist/server/`.
   A failing finding is a line that starts with `✗ [<rule id>]`, and the command then ends with status 1. A command
   with no failing finding ends with status 0, and its last line on stdout is `astro-kit: all checks passed.`
 - `tokens` writes `src/styles/tokens.css` from `docs/design.md`. `tokens --check` writes nothing and compares the
   file. Never edit `tokens.css` by hand.
 - The next `npm ci` removes the packed kit again. So does a second `npm install --no-save`.
+- `npx --no wrangler dev --local --config dist/server/wrangler.json` runs the built Worker with no network. A form
+  post then sends no mail: `send_email` writes the text under `dist/server/.wrangler/tmp/email/`.
 - Git ignores `node_modules/`, `dist/`, `.astro/` and `.wrangler/` of the site. The base copy of the suite does not
   take them.

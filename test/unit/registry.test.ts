@@ -192,6 +192,26 @@ test('a warn finding has "!", is not counted and fails nothing', () => {
   assert.deepEqual(failures(findings, rules), []);
 });
 
+test('Report.warn adds a finding of an error rule that has "!" and its own message, is not counted and fails nothing', () => {
+  const report = new Report({ rules });
+  report.warn('head-title', '/es/', 'The kit skips the title check here.', 'the check skips this page');
+  assert.equal(report.ok, true);
+  assert.deepEqual([...report.ids()], []);
+  assert.deepEqual(failures(report.findings, rules), []);
+  // A warning prints its own message, not the failure message of its rule, and no fix (lead decision F6 of 7b).
+  assert.equal(
+    report.format(),
+    [
+      '! [head-title] /es/: The kit skips the title check here. (the check skips this page)',
+      `    rule: ${DOCS_PATH}#head-title`,
+    ].join('\n'),
+  );
+  report.add('head-title', '/de/');
+  assert.equal(report.ok, false);
+  assert.equal(report.format().split('\n')[0], 'astro-kit: 1 finding');
+  assert.throws(() => report.warn('no-such-rule', '/', 'x', 'y'), /unknown rule id no-such-rule/);
+});
+
 test('a waived finding has "~" on one line, is not counted and fails nothing', () => {
   const waiver: Waiver = {
     rule: 'head-title',

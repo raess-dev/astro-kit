@@ -2,7 +2,7 @@
  * The `prefetch` set of the planted violations at milestone M6 (specification, 14.2, "Planted-violation sets"). One
  * copy of the test site gets the settings of the `prefetch-astro` variant: the case writes `prefetch.astroPrefetch`
  * true and `prefetch.speculationRules` false into its `astro-kit.json`. The build passes. Then the two plants go into
- * the built `dist/`, each on one page of the sample. One `test --all` run must report
+ * the built client directory, each on one page of the sample. One `test --all` run must report
  * exactly the ids of the set, and no passed line.
  *
  * - `perf-bfcache`: a `_headers` rule gives the German privacy page `Cache-Control: no-store`, and a module script on
@@ -20,22 +20,24 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { edit, passedLine, read, run, siteCase, write } from './harness.ts';
+import { CLIENT, edit, passedLine, read, run, siteCase, write } from './harness.ts';
 
 /** The ids of the set, sorted. */
 const PREFETCH_IDS = ['perf-bfcache', 'perf-prefetch'];
 
-/** Adds a module script of its own to `dist/` and links it from the head of one built page. */
+/** Adds a module script of its own to the client directory and links it from the head of one built page. */
 function script(dir: string, path: string, name: string, js: string): void {
-  write(dir, { [`dist/${name}.js`]: js });
-  edit(dir, `dist${path}index.html`, '</head>', `<script type="module" src="/${name}.js"></script></head>`);
+  write(dir, { [`${CLIENT}/${name}.js`]: js });
+  edit(dir, `${CLIENT}${path}index.html`, '</head>', `<script type="module" src="/${name}.js"></script></head>`);
 }
 
 const PLANTS: readonly { id: string; plant: (dir: string) => void }[] = [
   {
     id: 'perf-bfcache',
     plant: (dir) => {
-      write(dir, { 'dist/_headers': `${read(dir, 'dist/_headers')}\n/datenschutz/\n  Cache-Control: no-store\n` });
+      write(dir, {
+        [`${CLIENT}/_headers`]: `${read(dir, `${CLIENT}/_headers`)}\n/datenschutz/\n  Cache-Control: no-store\n`,
+      });
       script(dir, '/datenschutz/', 'plant-fetch', "fetch('/datenschutz/', { cache: 'no-store' });\n");
     },
   },
@@ -79,7 +81,7 @@ test('M6 planted: the prefetch set gives exactly its ids', () => {
   });
   const built = run(dir, 'build');
   assert.equal(built.status, 0, tail(built.output));
-  assert.ok(!read(dir, 'dist/index.html').includes('speculationrules'), 'the speculation block is off');
+  assert.ok(!read(dir, `${CLIENT}/index.html`).includes('speculationrules'), 'the speculation block is off');
   for (const plant of PLANTS) if (plant.id !== drop) plant.plant(dir);
   const result = run(dir, ['test', '--all']);
   assert.deepEqual(

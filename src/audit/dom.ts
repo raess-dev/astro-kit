@@ -784,7 +784,9 @@ export type HrefTarget =
   | { kind: 'invalid' };
 
 /** An href without the C0 controls and spaces at both ends, which a URL parser strips. */
-function strip(text: string): string {
+function strip(raw: string): string {
+  // The URL parser removes every tab and line break first, wherever it stands (URL standard, basic URL parser).
+  const text = raw.replace(/[\t\n\r]/g, '');
   let start = 0;
   let end = text.length;
   while (start < end && text.charCodeAt(start) <= 0x20) start += 1;
@@ -823,15 +825,27 @@ function splitPath(rest: string): { path: string; query: string; fragment: strin
 const SCHEME = /^([A-Za-z][A-Za-z0-9+.-]*):/;
 
 /**
+ * An href with each backslash before its query and its fragment read as a slash. The URL standard reads an `http`
+ * or `https` URL, and a relative URL on such a page, this way: `\\api\\forms\\x\\` asks for `/api/forms/x/`.
+ */
+function withSlashes(text: string): string {
+  const end = text.search(/[?#]/);
+  const head = end < 0 ? text : text.slice(0, end);
+  return head.includes('\\') ? `${head.replaceAll('\\', '/')}${end < 0 ? '' : text.slice(end)}` : text;
+}
+
+/**
  * Where an `href` of the page at `base` (a page path such as `/fr/kontakt/` or `/404.html`) leads, for the site on
- * `host` (lower case, no port). It never throws.
+ * `host` (lower case, no port). A tab or line break anywhere is removed, and a backslash before the query reads as a
+ * slash (`withSlashes`), as in the URL parser. It never throws.
  */
 export function resolveHref(href: string, base: string, host: string): HrefTarget {
-  const text = strip(href);
-  if (text.startsWith('#')) return { kind: 'fragment', fragment: text.slice(1) };
-  const scheme = SCHEME.exec(text)?.[1]?.toLowerCase();
+  const stripped = strip(href);
+  if (stripped.startsWith('#')) return { kind: 'fragment', fragment: stripped.slice(1) };
+  const scheme = SCHEME.exec(stripped)?.[1]?.toLowerCase();
   const isWeb = scheme === 'http' || scheme === 'https';
   if (scheme !== undefined && !isWeb) return { kind: 'external', scheme, host: undefined };
+  const text = withSlashes(stripped);
   const authority = isWeb ? text.slice(scheme.length + 1) : text;
   if (authority.startsWith('//')) {
     let url: URL;

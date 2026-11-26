@@ -111,7 +111,7 @@ function linkedPaths(ctx: BuildContext, page: BuiltPage): ReadonlySet<string> {
  * - Each locale home that no link of `/404.html` reaches is one finding: a link counts when its same-origin target
  *   path is the home or the file of the home (`/fr/index.html`, when it is built), whatever its query or fragment.
  *   Whether the home is built is `links-depth`'s.
- * - Each `form` whose action, resolved like a link, has a path that starts with `/api/forms/` is one finding. A
+ * - Each `form` whose action, resolved like a link, has a path that starts with `/api/forms/` (in any letter case) is one finding. A
  *   `formaction` of a control counts as such an action too, because it replaces the action of its form.
  */
 export function auditRoutes404(ctx: BuildContext): void {
@@ -137,7 +137,8 @@ export function auditRoutes404(ctx: BuildContext): void {
     const action = attr(element, name);
     if (action === undefined) continue;
     const target = resolveHref(action, notFound.path, host);
-    if (target.kind === 'internal' && target.path.startsWith(FORM_ACTION_PREFIX)) {
+    // The prefix compares in any letter case, as `forms-declared` reads a kit form.
+    if (target.kind === 'internal' && target.path.toLowerCase().startsWith(FORM_ACTION_PREFIX)) {
       ctx.report.add('routes-404', NOT_FOUND_PATH, `<${tag} ${name}=${shown(action)}> posts to a kit form`);
     }
   }

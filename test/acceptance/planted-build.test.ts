@@ -1,7 +1,7 @@
 /**
  * The `build` set of the planted violations at milestone M5 (specification, 14.2, "Planted-violation sets"). One copy
  * of the test site gets every plant of the list, and one `build` run must report exactly the ids of the set, and no
- * passed line. The ids of the forms rules join at M7, `legal-origins` and `origins-third-party` at M8, and
+ * passed line. The ids of the forms rules joined at M7; `legal-origins` and `origins-third-party` join at M8, and
  * `legal-approved` at M9, each with its rule.
  *
  * Each plant is the smallest violation of its rule, on a page or a file that no other plant needs, so that one plant
@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { edit, passedLine, read, run, siteCase, write } from './harness.ts';
 
-/** The ids of the set at M5, with `edge-private` of M6, sorted. */
+/** The ids of the set at M5, with `edge-private` of M6 and the forms rules of M7, sorted. */
 const BUILD_IDS = [
   'content-copied',
   'content-glossary',
@@ -28,6 +28,9 @@ const BUILD_IDS = [
   'content-stale',
   'edge-private',
   'facts-value',
+  'forms-declared',
+  'forms-fields',
+  'forms-safety',
   'head-canonical',
   'head-description',
   'head-icons',
@@ -177,6 +180,40 @@ const PLANTS: readonly Plant[] = [
     id: 'facts-value',
     plant: (dir) =>
       after(dir, 'src/pages/404.astro', '<p class="lede">{text.notFoundText}</p>', '<p>Notfall: +41 81 555 99 99</p>'),
+  },
+  {
+    // A form of the kit that posts to an undeclared id, on the German contact page, which has `#sent` and
+    // `#not-sent`. It has no field, and it links the privacy page, so no other forms rule reads it.
+    id: 'forms-declared',
+    plant: (dir) =>
+      edit(
+        dir,
+        'src/pages/kontakt.astro',
+        '<h2>Tisch im Restaurant</h2>',
+        '<form action="/api/forms/newsletter/" method="post"><p>Den Newsletter senden wir nach der <a href="/datenschutz/">Erklärung zum Datenschutz</a>.</p><button type="submit">Newsletter bestellen</button></form>\n    <h2>Tisch im Restaurant</h2>',
+      ),
+  },
+  {
+    // A text field outside any form whose label lacks the optional word of French (`facultatif`).
+    id: 'forms-fields',
+    plant: (dir) =>
+      after(
+        dir,
+        'src/pages/fr/acces.astro',
+        '<h1>Accès</h1>',
+        '<label>Votre gare de départ <input type="text" name="depart" autocomplete="off"></label>',
+      ),
+  },
+  {
+    // A checkbox that is checked before the visitor chooses. Its label has the optional word, so it is a valid field.
+    id: 'forms-safety',
+    plant: (dir) =>
+      after(
+        dir,
+        'src/pages/en/rooms.astro',
+        '<h1>Rooms and prices</h1>',
+        '<label><input type="checkbox" name="news" checked> Send me the winter news (optional)</label>',
+      ),
   },
   {
     // The canonical of the English sitemap page uses http: it no longer equals `${site}${path}`.

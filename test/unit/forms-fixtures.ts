@@ -2,7 +2,7 @@
  * Shared inputs of the form tests (specification, 9.1 and 14.2): the settings of the test site with its two forms,
  * the fake Worker env with per-key counters, and the requests. A helper here never asserts.
  */
-import type { Mail, RateLimit, SendEmail } from '../../src/forms/index.ts';
+import { bodyCap, type Mail, type RateLimit, type SendEmail } from '../../src/forms/index.ts';
 import type { Options } from '../../src/options.ts';
 import { optionsOf } from './fixtures.ts';
 
@@ -50,6 +50,9 @@ export const SITE_FORMS = {
 } as const;
 
 export const SETTINGS: Options = optionsOf(SITE_FORMS);
+
+/** The body cap of the contact form of the test site (9.1, step 2): 52,315 B. */
+export const CONTACT_CAP = bodyCap(SETTINGS.forms?.contact?.fields ?? []);
 
 /** The test site with a probe inbox. */
 export const PROBE_ADDRESS = `probe@${HOST}`;

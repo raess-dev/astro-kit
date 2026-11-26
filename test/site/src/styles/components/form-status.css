@@ -1,0 +1,14 @@
+@layer components {
+  /* A note is hidden until the address of the page names it: the endpoint redirects to `#sent` or `#not-sent`. */
+  .form-status {
+    display: none;
+    max-inline-size: var(--size-measure);
+    padding: var(--space-4);
+    border: var(--line-thick) solid var(--color-line);
+    border-radius: var(--radius-m);
+  }
+
+  .form-status:target {
+    display: block;
+  }
+}

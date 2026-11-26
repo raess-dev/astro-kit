@@ -9,9 +9,8 @@ import { request as httpRequest, type IncomingHttpHeaders } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { MAX_BODY_BYTES } from '../../src/forms/index.ts';
 import { formIdOf, type Served, type ServeOptions, serveDist } from '../../src/serve.ts';
-import { BOOKING, CONTACT, FIVE_HEADERS, SETTINGS, URLENCODED } from './forms-fixtures.ts';
+import { BOOKING, CONTACT, CONTACT_CAP, FIVE_HEADERS, SETTINGS, URLENCODED } from './forms-fixtures.ts';
 
 const FILES: Readonly<Record<string, string>> = {
   'dist/index.html': '<!doctype html><title>Home</title>',
@@ -234,9 +233,9 @@ test('the stub runs the same return and field validation as the endpoint, with n
   });
 });
 
-test('the stub caps the body: a declared length and a chunked body past 32,768 B give too_large', async () => {
+test('the stub caps the body: a declared length and a chunked body past the cap of the form give too_large', async () => {
   await withServer(async (server) => {
-    const big = form({ ...CONTACT, message: 'x'.repeat(MAX_BODY_BYTES) });
+    const big = form({ ...CONTACT, message: 'x'.repeat(CONTACT_CAP) });
     const declared = await send(
       server.origin,
       '/api/forms/contact/',

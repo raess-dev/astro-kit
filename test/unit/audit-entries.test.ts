@@ -66,6 +66,9 @@ const PART_5B_5C = [
 /** The build half that part 5d adds: `routes-slug` reads the built page paths. */
 const PART_5D = ['routes-slug'];
 
+/** The build rules that part 7b adds to the page audit: the forms rules. */
+const PART_7B = ['forms-declared', 'forms-fields', 'forms-safety'];
+
 /** The ids in the order of the registry, which is the order of section 8. */
 const inRegistryOrder = (list: readonly string[]): string[] =>
   RULES.map((rule) => rule.id).filter((id) => list.includes(id));
@@ -77,12 +80,16 @@ test('each audit runs its rules in the order of section 8', () => {
   }
 });
 
-test('the audits hold every build rule of parts 5b, 5c and 5d once, html-validate in the html audit', () => {
+test('the audits hold every build rule of parts 5b, 5c, 5d and 7b once, html-validate in the html audit', () => {
   const all = [...PAGE_RULES, ...SITE_RULES, ...BUDGET_RULES].map((rule) => rule.id);
   assert.equal(new Set(all).size, all.length);
-  assert.deepEqual([...all, 'html-validate'].sort(), [...PART_5B_5C, ...PART_5D].sort());
+  assert.deepEqual([...all, 'html-validate'].sort(), [...PART_5B_5C, ...PART_5D, ...PART_7B].sort());
   assert.equal(PART_5B_5C.length, 48);
-  for (const id of [...PART_5B_5C, ...PART_5D]) {
+  assert.deepEqual(
+    PAGE_RULES.map((rule) => rule.id).filter((id) => id.startsWith('forms-')),
+    PART_7B,
+  );
+  for (const id of [...PART_5B_5C, ...PART_5D, ...PART_7B]) {
     const stage = RULE_BY_ID.get(id)?.stage;
     assert.ok(stage === 'build' || stage === 'config + build', id);
   }

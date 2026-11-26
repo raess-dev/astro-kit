@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { mock, test } from 'node:test';
 import {
+  bodyCap,
   checkForm,
   FORM_ACTION_PREFIX,
   FORM_HEADERS,
@@ -14,7 +15,7 @@ import {
   hasFilePart,
   isValidReturn,
   isValidValue,
-  MAX_BODY_BYTES,
+  MAX_FORM_BODY,
   MAX_RETURN_CHARS,
   mailSubject,
   mailText,
@@ -34,13 +35,27 @@ import {
 import { HSTS } from '../../src/hosts/cloudflare.ts';
 import type { FormField } from '../../src/options.ts';
 import { optionsOf } from './fixtures.ts';
-import { BOOKING, CONTACT, FIVE_HEADERS, post, SETTINGS, SITE_FORMS, streamed, URLENCODED } from './forms-fixtures.ts';
+import {
+  BOOKING,
+  CONTACT,
+  CONTACT_CAP,
+  FIVE_HEADERS,
+  post,
+  SETTINGS,
+  SITE_FORMS,
+  streamed,
+  URLENCODED,
+} from './forms-fixtures.ts';
 import { SPEC, specBlock } from './spec.ts';
 
 test('the fixed values of 9.1', () => {
   assert.equal(FORM_ACTION_PREFIX, '/api/forms/');
   assert.equal(formAction('booking'), '/api/forms/booking/');
-  assert.equal(MAX_BODY_BYTES, 32_768);
+  // The flat cap of 32,768 B is replaced by a cap for each form (owner decision F15 of 7b): `bodyCap`, at most
+  // `MAX_FORM_BODY`.
+  assert.equal(MAX_FORM_BODY, 131_072);
+  assert.equal(CONTACT_CAP, 52_315);
+  assert.equal(bodyCap(SETTINGS.forms?.booking?.fields ?? []), 9_429);
   assert.equal(HONEYPOT, 'website');
   assert.equal(RETURN_FIELD, 'return');
   assert.equal(MAX_RETURN_CHARS, 512);
@@ -253,24 +268,28 @@ test('step 7: a required field needs a value after the trim, and an empty option
 
 // Steps 1 to 5
 
-test('readCapped holds at most 32,768 B and cancels the stream past them', async () => {
+test('readCapped holds at most the cap and cancels the stream past it', async () => {
   const exact = { bytes: 0, cancelled: false };
-  const body = await readCapped(streamed('contact', MAX_BODY_BYTES, exact));
-  assert.equal(body?.byteLength, MAX_BODY_BYTES, 'exactly the cap passes');
+  const body = await readCapped(streamed('contact', CONTACT_CAP, exact), CONTACT_CAP);
+  assert.equal(body?.byteLength, CONTACT_CAP, 'exactly the cap passes');
   assert.equal(exact.cancelled, false);
 
   const over = { bytes: 0, cancelled: false };
-  assert.equal(await readCapped(streamed('contact', 10 * MAX_BODY_BYTES, over)), undefined);
+  assert.equal(await readCapped(streamed('contact', 10 * CONTACT_CAP, over), CONTACT_CAP), undefined);
   assert.equal(over.cancelled, true, 'the stream is cancelled');
   // The reader stops at the chunk that passes the cap: the stream had at most one chunk of 4,096 B queued beyond it.
-  assert.ok(over.bytes <= MAX_BODY_BYTES + 2 * 4_096, `read ${over.bytes} B`);
+  assert.ok(over.bytes <= CONTACT_CAP + 2 * 4_096, `read ${over.bytes} B`);
 
   const one = { bytes: 0, cancelled: false };
-  assert.equal(await readCapped(streamed('contact', MAX_BODY_BYTES + 1, one)), undefined, 'one byte more fails');
+  assert.equal(
+    await readCapped(streamed('contact', CONTACT_CAP + 1, one), CONTACT_CAP),
+    undefined,
+    'one byte more fails',
+  );
   assert.equal(one.cancelled, true);
 
   const empty = new Request('https://x.example/', { method: 'POST' });
-  assert.equal((await readCapped(empty))?.byteLength, 0, 'no body is an empty body');
+  assert.equal((await readCapped(empty, CONTACT_CAP))?.byteLength, 0, 'no body is an empty body');
 
   const failing = new ReadableStream<Uint8Array>({
     pull(controller) {
@@ -278,7 +297,11 @@ test('readCapped holds at most 32,768 B and cancels the stream past them', async
     },
   });
   const init: RequestInit & { duplex: 'half' } = { method: 'POST', body: failing, duplex: 'half' };
-  assert.equal(await readCapped(new Request('https://x.example/', init)), undefined, 'a stream that fails');
+  assert.equal(
+    await readCapped(new Request('https://x.example/', init), CONTACT_CAP),
+    undefined,
+    'a stream that fails',
+  );
 });
 
 const bytes = (text: string): Uint8Array<ArrayBuffer> => new TextEncoder().encode(text);

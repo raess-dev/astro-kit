@@ -5,7 +5,17 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'astro/zod';
-import { AUTOCOMPLETE, DATE, EMAIL, FIELD_TYPES, type FieldType, isRealDate, MAX_LENGTH } from './forms/fields.ts';
+import {
+  AUTOCOMPLETE,
+  bodyCap,
+  DATE,
+  EMAIL,
+  FIELD_TYPES,
+  type FieldType,
+  isRealDate,
+  MAX_LENGTH,
+} from './forms/fields.ts';
+import { MAX_FORM_BODY } from './forms/limits.ts';
 import { isWaivable, type Report } from './registry.ts';
 import { PAGE_PATH, pathSegments, RESERVED_SEGMENTS } from './routes.ts';
 
@@ -257,6 +267,19 @@ const formsSchema = z
   )
   .refine((forms) => Object.keys(forms).length >= 1 && Object.keys(forms).length <= 10, {
     error: 'declare 1 to 10 forms',
+  })
+  .superRefine((forms, ctx) => {
+    // The body cap of each form (9.1, step 2): the largest body that a browser can send for it.
+    for (const [id, form] of Object.entries(forms)) {
+      const cap = bodyCap(form.fields);
+      if (cap > MAX_FORM_BODY) {
+        add(
+          ctx,
+          [id],
+          `the form ${id} needs a body cap of ${cap} B, more than ${MAX_FORM_BODY} B: lower a maxLength or declare fewer fields`,
+        );
+      }
+    }
   });
 
 /** The fields of the form `contact` that a site with forms gets when it declares no form. */

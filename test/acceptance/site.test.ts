@@ -9,7 +9,23 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { cspMeta, edit, type KitRun, kitModule, passedLine, read, run, siteCase, tree, write } from './harness.ts';
+import type * as EdgeModule from '../../src/audit/edge.ts';
+import type * as FullCloudflare from '../../src/hosts/cloudflare.ts';
+import type * as FullOptions from '../../src/options.ts';
+import type * as FullRegistry from '../../src/registry.ts';
+import {
+  CLIENT,
+  cspMeta,
+  edit,
+  type KitRun,
+  kitModule,
+  passedLine,
+  read,
+  run,
+  siteCase,
+  tree,
+  write,
+} from './harness.ts';
 
 /** The settings of `astro-kit.json` after the kit read them. A case uses these members only. */
 interface Options {
@@ -87,7 +103,7 @@ test('M3: the site builds, and every page has the CSP meta, the mode script and 
   const mode = `<script>${modeScript(options)}</script>`;
   const speculation = `<script type="speculationrules">${SPECULATION_JSON}</script>`;
 
-  const pages = tree(join(dir, 'dist')).filter((file) => file.endsWith('.html'));
+  const pages = tree(join(dir, CLIENT)).filter((file) => file.endsWith('.html'));
   // Stage 1 of the site: the home of each locale, each declared legal page, and the one 404 page.
   const homes = options.locales.map(({ code }) => (code === options.defaultLocale ? '' : `${code}/`));
   const legal = Object.values(options.legal).flatMap((paths) =>
@@ -97,7 +113,7 @@ test('M3: the site builds, and every page has the CSP meta, the mode script and 
   assert.ok(pages.includes('404.html'), '/404.html is not built');
 
   for (const page of pages) {
-    const html = read(join(dir, 'dist'), page);
+    const html = read(join(dir, CLIENT), page);
     const metas = [...html.matchAll(CSP_META)];
     assert.equal(metas.length, 1, `${page}: ${metas.length} CSP metas`);
     const meta = metas[0];
@@ -144,7 +160,7 @@ test('M3: tokens --check passes, so tokens.css is the rendering of docs/design.m
 test('M3: the edge files exist, and robots.txt is the text of the kit', async () => {
   const { dir, run: result } = built();
   assert.equal(result.status, 0, `astro-kit build failed in ${dir}:\n${tail(result)}`);
-  const dist = join(dir, 'dist');
+  const dist = join(dir, CLIENT);
   // The files of 6.3.
   for (const file of [
     '_headers',
@@ -155,7 +171,7 @@ test('M3: the edge files exist, and robots.txt is the text of the kit', async ()
     '_kit/release.txt',
     '_kit/routes.txt',
   ]) {
-    assert.ok(existsSync(join(dist, file)), `dist/${file} is missing`);
+    assert.ok(existsSync(join(dist, file)), `${CLIENT}/${file} is missing`);
   }
   const options = await optionsOf(dir);
   const { robotsText } = await kitModule<CloudflareModule>('hosts/cloudflare');
@@ -166,6 +182,27 @@ test('M3: the edge files exist, and robots.txt is the text of the kit', async ()
     robots,
     `User-agent: *\nAllow: /\nContent-Signal: search=yes, ai-input=yes, ai-train=no\n\nSitemap: ${options.site}/sitemap.xml\n`,
   );
+});
+
+test('M7 variant forms: the site as it is has the Worker, one /_astro/* rule, and its final _headers passes', async () => {
+  const { dir, run: result } = built();
+  assert.equal(result.status, 0, `astro-kit build failed in ${dir}:\n${tail(result)}`);
+  assert.ok(existsSync(join(dir, 'dist/server/entry.mjs')), 'dist/server/entry.mjs is missing');
+  const headers = read(dir, `${CLIENT}/_headers`);
+  assert.equal(headers.split('\n').filter((line) => line === '/_astro/*').length, 1, headers);
+  // The adapter writes its rule in its own `build:done`, after the audit of the kit, at the top of the file (13.1
+  // item 18). The audit read the file without it. The final file passes the same check, so the late rule breaks
+  // nothing, and without `astroPrefetch` no rule for `/*` sets Cache-Control.
+  const { IMMUTABLE } = await kitModule<typeof FullCloudflare>('hosts/cloudflare');
+  assert.ok(headers.startsWith(`/_astro/*\n  Cache-Control: ${IMMUTABLE}\n`), headers);
+  const { loadOptions } = await kitModule<typeof FullOptions>('options');
+  const { Report } = await kitModule<typeof FullRegistry>('registry');
+  const { checkHeaders } = await kitModule<typeof EdgeModule>('audit/edge');
+  const options = loadOptions(dir, new Report());
+  assert.ok(options, 'astro-kit.json of the site is valid');
+  const report = new Report();
+  checkHeaders(headers, options, report);
+  assert.deepEqual(report.findings, []);
 });
 
 // The planted cases. Each one fails in the config stage, before Astro builds a page.

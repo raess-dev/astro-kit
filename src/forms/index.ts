@@ -16,8 +16,16 @@
  */
 import type { Form, Options } from '../options.ts';
 import { localeOfPath, PAGE_PATH } from '../routes.ts';
-import { type FieldResult, mailSubject, mailText, normalizeValue, REPLY_TO, validateFields } from './fields.ts';
-import { FORM_HEADERS, HONEYPOT, MAX_BODY_BYTES, MAX_RETURN_CHARS, NO_STORE, RETURN_FIELD } from './limits.ts';
+import {
+  bodyCap,
+  type FieldResult,
+  mailSubject,
+  mailText,
+  normalizeValue,
+  REPLY_TO,
+  validateFields,
+} from './fields.ts';
+import { FORM_HEADERS, HONEYPOT, MAX_RETURN_CHARS, NO_STORE, RETURN_FIELD } from './limits.ts';
 
 export * from './fields.ts';
 export * from './limits.ts';
@@ -129,10 +137,7 @@ export function formAnswer(outcome: Outcome, json: boolean): Response {
  * gives `undefined`, so the endpoint never holds more than `max` bytes of the body. A stream that fails gives
  * `undefined` too. A request with no body gives an empty buffer.
  */
-export async function readCapped(
-  request: Request,
-  max: number = MAX_BODY_BYTES,
-): Promise<Uint8Array<ArrayBuffer> | undefined> {
+export async function readCapped(request: Request, max: number): Promise<Uint8Array<ArrayBuffer> | undefined> {
   if (request.body === null) return new Uint8Array(0);
   const reader = request.body.getReader();
   const buffer = new Uint8Array(max);
@@ -284,9 +289,21 @@ const refused = (code: FormCode, page?: string, fields: readonly string[] = []):
 });
 
 /** Says whether the content length that the request declares is above the cap (step 1). */
-function declaresTooMuch(request: Request): boolean {
+function declaresTooMuch(request: Request, cap: number): boolean {
   const length = request.headers.get('content-length');
-  return length !== null && /^\s*\d+\s*$/.test(length) && Number(length) > MAX_BODY_BYTES;
+  return length !== null && /^\s*\d+\s*$/.test(length) && Number(length) > cap;
+}
+
+/**
+ * The body cap of steps 1 and 2 for a request to the form `id`: the `bodyCap` of that form. An id that names no
+ * declared form gets the largest cap of the declared forms, so the order of the codes stays: such a body still
+ * reaches step 4 and gets `bad_form`.
+ */
+export function capOf(settings: FormSettings, id: string | undefined): number {
+  const forms = formsOf(settings);
+  const form = id === undefined ? undefined : forms.get(id);
+  if (form !== undefined) return bodyCap(form.fields);
+  return Math.max(bodyCap([]), ...[...forms.values()].map((each) => bodyCap(each.fields)));
 }
 
 /**
@@ -299,8 +316,9 @@ export async function checkForm(
   id: string | undefined,
   settings: FormSettings,
 ): Promise<Accepted | Refused> {
-  if (declaresTooMuch(request)) return refused('too_large');
-  const body = await readCapped(request);
+  const cap = capOf(settings, id);
+  if (declaresTooMuch(request, cap)) return refused('too_large');
+  const body = await readCapped(request, cap);
   if (body === undefined) return refused('too_large');
   const values = await parseBody(body, request.headers.get('content-type'));
   if (values === undefined) return refused('bad_body');

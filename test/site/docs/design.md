@@ -217,6 +217,8 @@ The site has one animation: the hero text rises once when the page opens. Nothin
 | `.price-list .price-list__price` | `color` | `--color-title` |
 | `.contact-card` | `background-color` | `--color-surface` |
 | `.contact-card` | `border-radius` | `--radius-l` |
+| `.request-form` | `max-inline-size` | `--size-measure` |
+| `.form-status` | `border-radius` | `--radius-m` |
 | `.page-index .page-index__link` | `min-block-size` | `--size-target` |
 | `.text-section` | `padding-block` | `--space-7` |
 | `.feature-card` | `background-color` | `--color-surface` |

@@ -23,7 +23,7 @@
   ],
   "defaultLocale": "de",
   "features": {
-    "forms": false,
+    "forms": true,
     "islands": false,
     "scripts": false,
     "wasm": false,
@@ -39,6 +39,68 @@
     "dark": true,
     "contrast": true
   },
+  "contact": {
+    "to": "info@laerchenwald.example",
+    "from": "form@laerchenwald.example"
+  },
+  "forms": {
+    "contact": {
+      "fields": [
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "email",
+          "type": "email"
+        },
+        {
+          "name": "message",
+          "type": "textarea"
+        }
+      ]
+    },
+    "booking": {
+      "fields": [
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "email",
+          "type": "email"
+        },
+        {
+          "name": "tel",
+          "type": "tel",
+          "required": false
+        },
+        {
+          "name": "arrival",
+          "type": "date"
+        },
+        {
+          "name": "nights",
+          "type": "number",
+          "min": 1,
+          "max": 14
+        },
+        {
+          "name": "room",
+          "type": "choice",
+          "options": [
+            "single",
+            "double",
+            "family"
+          ]
+        },
+        {
+          "name": "terms",
+          "type": "consent"
+        }
+      ]
+    }
+  },
   "legal": {
     "legalNote": {
       "de": "/impressum/",
@@ -53,7 +115,9 @@
   },
   "processing": [
     "cdn",
-    "previews"
+    "previews",
+    "forms",
+    "server"
   ],
   "securityContact": "mailto:security@laerchenwald.example",
   "dependencies": [],

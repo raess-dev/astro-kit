@@ -272,6 +272,37 @@
     - A failed load of `virtual:astro-kit` or `cloudflare:workers` answers `no_binding` with the five headers.
     - On a forms site, `config-shim` compares `src/pages/api/forms/[form].ts` with the forms shim in every command
       that runs preflight. `css-element-coverage` needs no rule for `input[type=hidden]`.
+- Milestone M7, part 7b: the build rules of the forms and the test site with forms on. The kit has 115 rules.
+  - `forms-declared` compares each form that posts to `/api/forms/` with its declaration: the action with the last
+    slash, `method="post"`, the hidden `return`, the honeypot in its inert wrapper, and exactly the declared fields
+    with their controls and attributes. A page with such a form needs `#sent` and `#not-sent`, and every declared form
+    must stand on a page. `forms-fields` asks every field of a page for a label with the required or the optional
+    word of its language, for `autocomplete` and for no `placeholder`. `forms-safety` refuses a file input and a
+    pre-checked choice, and asks every POST form for a link to the privacy page of its locale.
+  - `forms-declared` also reads every same-origin POST form, which must be a kit form (a fragment-only action posts
+    to the page), and every submit control that changes a post to `/api/forms/`. `method` and `enctype` compare as a browser reads them, without a trim. A kit
+    form has no `novalidate`, no `accept-charset` other than `utf-8`, no constraint that a declaration cannot express
+    and no control that a browser never sends or that the endpoint always refuses, such as a consent `value` of white
+    space only. An email field carries `EMAIL_PATTERN`, which
+    `@raess/astro-kit/forms` exports. The notes `#sent` and `#not-sent` follow the markup pattern of 9.1.
+  - `forms-fields` reads the rendered label text, without the text of controls and hidden parts. A label with both
+    the required and the optional word fails, and a label under a `hidden` or `aria-hidden` wrapper gives no word. A field in a language without words fails on a page whose locale has
+    words. `forms-safety` counts only a privacy link that a
+    visitor can see and reach, and a form that posts by `formmethod` needs it too. An href with a backslash or with a
+    tab or line break resolves as in a browser, and `routes-404` reads `/api/forms/` in any letter case.
+  - Each form has its own body cap, the largest body that a browser can send for it, in place of the flat 32,768 B.
+    `config-options` fails a form whose cap is above 131,072 B.
+  - `a11y-no-js` checks that no note shows before the send, that the form shows its privacy link, and that only
+    `#sent` shows after it. It names a disabled or readonly field and a disabled submit control at once.
+  - A finding can only warn (`Report.warn`), with a message of its own: `forms-fields` warns for a field in a
+    language without words on a page whose locale has none either.
+  - The test site has the `contact` and `booking` forms on its three contact pages, `@astrojs/cloudflare` 14.4.7 in
+    its `package.json`, the feature shim, and the forms text of `wrangler.jsonc`. Its pages are now in
+    `dist/client/`. `test --all` sends both forms through the test server stub.
+  - The acceptance suite runs the built Worker in `wrangler dev`: a form post sends the mail of 9.1, and the Worker
+    refuses the bodies of 13.1 item 78 itself. The adapter adds its lines to `.assetsignore` before the audit of the
+    kit, and the final file hides every private file. New: the `static` variant, the `forms` variant and the `route`
+    set; the `build` set holds the three forms ids.
 - `perf-image-oversize` no longer loses a lazy image that finishes its own load while the rule reads the page (1 run
   in 50 under load lost the finding). A file that a preload or a style sheet fetched exempts no image, so its
   verdict no longer depends on which load ends first.
