@@ -13,7 +13,7 @@
 import type { HTMLElement } from 'node-html-parser';
 import type { BuildContext, BuiltPage } from '../../context.ts';
 import { asciiLower } from '../../css/parse.ts';
-import { EMAIL_PATTERN, NUMBER } from '../../forms/fields.ts';
+import { EMAIL_PATTERN, NUMBER, normalizeValue } from '../../forms/fields.ts';
 import { FORM_ACTION_PREFIX, formAction, HONEYPOT, RETURN_FIELD } from '../../forms/limits.ts';
 import { type Form, type FormField, fieldPlace, OPTIONS_FILE } from '../../options.ts';
 import {
@@ -204,9 +204,17 @@ const postsData = (dom: PageDom, form: HTMLElement): boolean =>
 const isFormPath = (target: HrefTarget): target is Extract<HrefTarget, { kind: 'internal' }> =>
   target.kind === 'internal' && asciiLower(target.path).startsWith(FORM_ACTION_PREFIX);
 
-/** Where a form posts: its action resolved like a link. A missing or empty action is the page itself. */
-const targetOf = (page: BuiltPage, form: HTMLElement, host: string): HrefTarget =>
-  resolveHref(attr(form, 'action') ?? '', page.path, host);
+/**
+ * Where a form posts: its action resolved like a link. A missing or empty action, and a fragment-only one, is the
+ * page itself.
+ */
+function targetOf(page: BuiltPage, form: HTMLElement, host: string): HrefTarget {
+  const target = resolveHref(attr(form, 'action') ?? '', page.path, host);
+  // A fragment-only action submits to the page itself: a browser keeps the fragment, but the request goes to the
+  // path of the page.
+  if (target.kind !== 'fragment') return target;
+  return { kind: 'internal', path: page.path, query: '', fragment: target.fragment, absolute: false, scheme: '' };
+}
 
 // forms-declared
 
@@ -379,8 +387,9 @@ function attributeProblems(field: FormField, control: HTMLElement): string[] {
   if (!hasAttr(control, 'disabled') && isDisabled(control))
     problems.push(`the field ${field.name} is in a disabled fieldset`);
   const type = tagOf(control) === 'input' ? inputType(control) : '';
-  if (type === 'checkbox' && attr(control, 'value') === '')
-    problems.push(`the field ${field.name} has an empty value, so a browser never sends it`);
+  const value = attr(control, 'value');
+  if (type === 'checkbox' && value !== undefined && normalizeValue(value) === '')
+    problems.push(`the field ${field.name} has an empty value, so the endpoint refuses every post`);
   if (type !== 'checkbox' && type !== 'radio') {
     const autocomplete = tokenList(control, 'autocomplete');
     if (autocomplete !== collapse(asciiLower(field.autocomplete))) {
@@ -667,13 +676,18 @@ const FORMS_FIELDS = 'forms-fields';
  * of the legend of its fieldset. The field's own text and the text of other controls are no part of it.
  */
 function labelText(dom: PageDom, field: HTMLElement): string {
-  const parts = labelsOf(dom, field).map(renderedText);
+  const fieldAncestors = new Set(ancestorsOf(field));
+  // A label under `hidden` or `aria-hidden="true"` that does not hide the field too shows the visitor nothing.
+  // `[inert]` alone hides nothing from sight, so a label under it keeps its words.
+  const shown = (element: HTMLElement): boolean =>
+    !ancestorsOf(element).some((ancestor) => isHidden(ancestor) && !fieldAncestors.has(ancestor));
+  const parts = labelsOf(dom, field).filter(shown).map(renderedText);
   if (tagOf(field) === 'input' && inputType(field) === 'radio') {
     const fieldset = ancestorsOf(field).find((ancestor) => tagOf(ancestor) === 'fieldset');
     const legend = fieldset?.childNodes.find(
       (node): node is HTMLElement => node.nodeType === 1 && tagOf(node as HTMLElement) === 'legend',
     );
-    if (legend !== undefined) parts.push(renderedText(legend));
+    if (legend !== undefined && shown(legend)) parts.push(renderedText(legend));
   }
   return parts.join(' ');
 }

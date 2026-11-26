@@ -393,6 +393,15 @@ test('forms-declared: a radio group in place of the select passes, and its value
 
 test('forms-declared: consent is a required checkbox', () => {
   assert.deepEqual(ids(runBooking(auditFormsDeclared, 'name="terms" required', 'name="terms"')), ['forms-declared']);
+  // The endpoint trims each value, so a consent value of white space only is empty too.
+  for (const value of ['', '   ', '\t\r\n']) {
+    const report = runBooking(auditFormsDeclared, 'name="terms" required', `name="terms" required value="${value}"`);
+    assert.deepEqual(ids(report), ['forms-declared'], JSON.stringify(value));
+  }
+  assert.deepEqual(
+    ids(runBooking(auditFormsDeclared, 'name="terms" required', 'name="terms" required value=" ja "')),
+    [],
+  );
 });
 
 test('forms-declared: autocomplete as declared, compared in ASCII lower case; not on a checkbox', () => {
@@ -830,12 +839,32 @@ test('forms-fields: the word comes from the rendered label text, not from contro
   assert.deepEqual(ids(runBooking(auditFormsFields, select, legend)), ['forms-fields']);
 });
 
+test('forms-fields: a second label under a hidden ancestor gives no word; an inert one and a label hidden with its field do', () => {
+  const name =
+    '<label>Name (Pflichtfeld) <input type="text" name="name" required maxlength="200" autocomplete="name"></label>';
+  const field = '<input type="text" name="name" id="n" required maxlength="200" autocomplete="name">';
+  for (const wrapper of ['<div hidden>', '<div aria-hidden="true">']) {
+    const to = `<label for="n">Name</label> ${field} ${wrapper}<label for="n">(Pflichtfeld)</label></div>`;
+    assert.deepEqual(ids(runContact(auditFormsFields, name, to)), ['forms-fields'], wrapper);
+  }
+  const inert = `<label for="n">Name</label> ${field} <div inert><label for="n">(Pflichtfeld)</label></div>`;
+  assert.deepEqual(ids(runContact(auditFormsFields, name, inert)), []);
+  const together = `<div aria-hidden="true"><label>Name (Pflichtfeld) ${field}</label></div>`;
+  assert.deepEqual(ids(runContact(auditFormsFields, name, together)), []);
+});
+
 test('forms-declared: every same-origin POST form posts to /api/forms/<id>/ of a declared form', () => {
   for (const action of ['/API/forms/contact/', 'x/api/forms/contact/', '/kontakt/', '', 'https://example.ch/x/']) {
     assert.deepEqual(ids(runExtra(bareForm(action))), ['forms-declared'], action);
   }
   const noAction = `<form method="post"><button>x</button> ${privacyOf('/')}</form>`;
   assert.deepEqual(ids(runExtra(noAction)), ['forms-declared']);
+  // A fragment-only action posts to the page itself.
+  for (const action of ['#', '#sent']) {
+    const report = runExtra(bareForm(action));
+    assert.deepEqual(ids(report), ['forms-declared'], action);
+    assert.match(findings(report)[0] ?? '', / posts to \/;/, action);
+  }
   // A POST to another origin, and a GET form, are no post of this site.
   assert.deepEqual(ids(runExtra(bareForm('https://news.example/x'))), []);
   assert.deepEqual(ids(runExtra(bareForm('/suche/', 'get'))), []);

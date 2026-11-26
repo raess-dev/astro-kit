@@ -279,13 +279,14 @@
     must stand on a page. `forms-fields` asks every field of a page for a label with the required or the optional
     word of its language, for `autocomplete` and for no `placeholder`. `forms-safety` refuses a file input and a
     pre-checked choice, and asks every POST form for a link to the privacy page of its locale.
-  - `forms-declared` also reads every same-origin POST form, which must be a kit form, and every submit control that
-    changes a post to `/api/forms/`. `method` and `enctype` compare as a browser reads them, without a trim. A kit
+  - `forms-declared` also reads every same-origin POST form, which must be a kit form (a fragment-only action posts
+    to the page), and every submit control that changes a post to `/api/forms/`. `method` and `enctype` compare as a browser reads them, without a trim. A kit
     form has no `novalidate`, no `accept-charset` other than `utf-8`, no constraint that a declaration cannot express
-    and no control that a browser never sends. An email field carries `EMAIL_PATTERN`, which
+    and no control that a browser never sends or that the endpoint always refuses, such as a consent `value` of white
+    space only. An email field carries `EMAIL_PATTERN`, which
     `@raess/astro-kit/forms` exports. The notes `#sent` and `#not-sent` follow the markup pattern of 9.1.
   - `forms-fields` reads the rendered label text, without the text of controls and hidden parts. A label with both
-    the required and the optional word fails. A field in a language without words fails on a page whose locale has
+    the required and the optional word fails, and a label under a `hidden` or `aria-hidden` wrapper gives no word. A field in a language without words fails on a page whose locale has
     words. `forms-safety` counts only a privacy link that a
     visitor can see and reach, and a form that posts by `formmethod` needs it too. An href with a backslash or with a
     tab or line break resolves as in a browser, and `routes-404` reads `/api/forms/` in any letter case.
