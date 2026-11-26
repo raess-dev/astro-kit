@@ -87,10 +87,10 @@
     "typescript": "6.0.3"
   },
   "devDependencies": {
-    "@astrojs/cloudflare": "14.4.7",
+    "@astrojs/cloudflare": "14.4.9",
     "@astrojs/solid-js": "7.1.6",
     "@types/node": "22.20.5",
-    "astro": "7.4.11",
+    "astro": "7.4.13",
     "solid-js": "1.9.19",
     "yaml": "2.9.1"
   }

@@ -350,3 +350,6 @@
     with `/`: the browser resolves them against the page or the worker, which the kit does not know (Codex, #27).
   - A specifier with a backslash cannot be measured, in `import()`, a worker URL and a static import: JavaScript
     decodes the escape, so the file that loads is not the text (Codex, #27).
+- The stack pins move under the pinning rule of 2.1: `astro` 7.4.13 (with `rolldown` 1.3.3 and `vite` 8.3.8),
+  `@astrojs/cloudflare` 14.4.9 and `wrangler` 4.165.0, in the kit and in the test site. The spikes and the whole
+  suite run again on them. `solid-js` 1.9.20 is 7 days old only at 20:54 UTC on 2026-11-26, so it moves in its own PR.
