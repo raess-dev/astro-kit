@@ -327,3 +327,69 @@ test('the prefetch gate is the exact source of 6.2, with the setting of the spec
   );
   assert.equal(prefetchGateScript(on).endsWith('\n}'), true, 'no final newline');
 });
+
+// The five cases of 9.4, byte for byte
+
+/**
+ * The meta directives and the `script-src` resources of each case of 9.4, written out in full. Each case is the
+ * example of 5.1 with `features.scripts` and its own origins (M8, the acceptance column of 14).
+ */
+const FIVE_CASES: readonly [name: string, origins: unknown[], meta: string, scripts: string, header: string][] = [
+  [
+    '1: none',
+    [],
+    "default-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; media-src 'self'; manifest-src 'self'; worker-src 'none'; frame-src 'none'; form-action 'self'; base-uri 'self'; object-src 'none'",
+    "script-src 'self'",
+    "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
+  ],
+  [
+    '2: maps.example.org, frame, gesture',
+    [origin('maps.example.org', ['frame'], { load: 'gesture' })],
+    "default-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; media-src 'self'; manifest-src 'self'; worker-src 'none'; frame-src https://maps.example.org; form-action 'self'; base-uri 'self'; object-src 'none'",
+    "script-src 'self'",
+    "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
+  ],
+  [
+    '3: js.pay.example, script and frame, gesture, payment; api.pay.example, connect',
+    [
+      origin('js.pay.example', ['script', 'frame'], { load: 'gesture', allow: ['payment'] }),
+      origin('api.pay.example', ['connect']),
+    ],
+    "default-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self' https://api.pay.example; media-src 'self'; manifest-src 'self'; worker-src 'none'; frame-src https://js.pay.example; form-action 'self'; base-uri 'self'; object-src 'none'",
+    "script-src 'self' https://js.pay.example",
+    "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
+  ],
+  [
+    '4: stats.example.net, connect, page',
+    [origin('stats.example.net', ['connect'], { load: 'page' })],
+    "default-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self' https://stats.example.net; media-src 'self'; manifest-src 'self'; worker-src 'none'; frame-src 'none'; form-action 'self'; base-uri 'self'; object-src 'none'",
+    "script-src 'self'",
+    "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
+  ],
+  [
+    '5: news.example.com, form',
+    [origin('news.example.com', ['form'])],
+    "default-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; media-src 'self'; manifest-src 'self'; worker-src 'none'; frame-src 'none'; form-action 'self' https://news.example.com; base-uri 'self'; object-src 'none'",
+    "script-src 'self'",
+    "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self' https://news.example.com",
+  ],
+];
+
+test('the five origin cases of 9.4: the meta directives, script-src and the header policy, byte for byte', () => {
+  const seen = FIVE_CASES.map(([name, origins]) => {
+    const options = settings({ scripts: true }, origins);
+    const config = cspConfig(options, []);
+    return [
+      name,
+      config.directives.join('; '),
+      `script-src ${config.scriptDirective.resources.join(' ')}`,
+      headerCsp(options),
+    ];
+  });
+  assert.deepEqual(
+    seen,
+    FIVE_CASES.map(([name, , meta, scripts, header]) => [name, meta, scripts, header]),
+  );
+  // Scripts are on in every case, so no header policy has Trusted Types.
+  for (const [, , , , header] of FIVE_CASES) assert.equal(header.includes('trusted-types'), false);
+});

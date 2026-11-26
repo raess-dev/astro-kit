@@ -364,6 +364,8 @@ export interface ContextSettings {
   glossary?: BuildContext['facts']['glossary'];
   redirects?: RedirectRow[];
   report?: Report;
+  /** The project root. The default is `/site`, a folder that holds no package. */
+  root?: string;
 }
 
 /** A `BuildContext` of a client directory of strings or bytes (`memoryContext`), with a new `Report`. */
@@ -372,9 +374,10 @@ export function contextOf(
   settings: ContextSettings = {},
 ): BuildContext {
   const facts = factsOf(settings.site, settings.schedule);
+  const root = settings.root ?? '/site';
   return memoryContext({
-    root: '/site',
-    dist: '/site/dist',
+    root,
+    dist: `${root}/dist`,
     options: settings.options ?? OPTIONS,
     kitVersion: '0.0.0',
     facts: { ...facts, glossary: settings.glossary ?? {} },

@@ -1,9 +1,10 @@
 /**
  * The page audit (specification, 6.1, `astro:build:done`, step 4, first): the rules that read each page on its
  * own, with the few site-wide facts that they hold (a title unique in its locale, one organization `@id`, the fonts
- * of the site). It runs them in the order of section 8. The rules live in three groups under `./page/`:
+ * of the site). It runs them in the order of section 8. The rules live in five groups under `./page/`:
  *
  * - `head.ts`: `head-*`, `headings-*` and `indexing-noindex`;
+ * - `scripts.ts`: `js-script`, `js-prefetch-attr`, `js-directive` and `origins-third-party`;
  * - `shell.ts`: `speculation-block`, `modes-script`, `modes-switch`, `csp-*` and `html-shell`;
  * - `forms.ts`: `forms-declared`, `forms-fields` and `forms-safety`;
  * - `assets.ts`: `images-*` (but `images-public` and `images-original`, which are config rules), `fonts-limit`,
@@ -37,6 +38,7 @@ import {
   auditHeadTitle,
   auditIndexingNoindex,
 } from './page/head.ts';
+import { auditJsDirective, auditJsPrefetchAttr, auditJsScript, auditOriginsThirdParty } from './page/scripts.ts';
 import {
   auditCspBase,
   auditCspHash,
@@ -50,16 +52,21 @@ import {
 export * from './page/assets.ts';
 export * from './page/forms.ts';
 export * from './page/head.ts';
+export * from './page/scripts.ts';
 export * from './page/shell.ts';
 
 /** The rules of the page audit, in the order of section 8. */
 export const PAGE_RULES: readonly AuditRule[] = [
+  { id: 'js-script', run: auditJsScript },
+  { id: 'js-prefetch-attr', run: auditJsPrefetchAttr },
+  { id: 'js-directive', run: auditJsDirective },
   { id: 'speculation-block', run: auditSpeculationBlock },
   { id: 'images-src', run: auditImagesSrc },
   { id: 'images-attrs', run: auditImagesAttrs },
   { id: 'images-format', run: auditImagesFormat },
   { id: 'images-priority', run: auditImagesPriority },
   { id: 'fonts-limit', run: auditFontsLimit },
+  { id: 'origins-third-party', run: auditOriginsThirdParty },
   { id: 'head-canonical', run: auditHeadCanonical },
   { id: 'head-lang', run: auditHeadLang },
   { id: 'head-title', run: auditHeadTitle },

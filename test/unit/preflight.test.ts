@@ -235,6 +235,10 @@ const ORDER: readonly string[] = [
   'config-suppression',
   'config-imports',
   'config-server',
+  'js-script',
+  'js-prefetch-attr',
+  'js-directive',
+  'csp-hash',
   // 5. public/
   'config-public-shadow',
   'images-public',
@@ -458,6 +462,18 @@ const FAILING: readonly Case[] = [
     ['config-imports'],
   ],
   ['config-server: a middleware file', withFiles({ 'src/middleware.ts': 'export {};\n' }), ['config-server']],
+  ['js-script: a <script> in a page of a static site', withFiles({ [PAGE]: '<script>x()</script>\n' }), ['js-script']],
+  [
+    'js-prefetch-attr: data-astro-prefetch on a link',
+    withFiles({ [PAGE]: '<a href="/" data-astro-prefetch>x</a>\n' }),
+    ['js-prefetch-attr'],
+  ],
+  ['js-directive: client:load on a component', withFiles({ [PAGE]: '<Counter client:load />\n' }), ['js-directive']],
+  [
+    'csp-hash: define:vars on a style',
+    withFiles({ [PAGE]: '<style define:vars={{ a }}>p{}</style>\n' }),
+    ['csp-hash', 'css-sources'],
+  ],
   // 5. public/
   [
     'config-public-shadow: `public/robots.txt`',
@@ -671,7 +687,7 @@ const everyRule = (design: DesignRule): Files => ({
   'biome.json': '{}\n',
   'package.json': json({ overrides: {}, dependencies: { astro: 'github:withastro/astro', 'left-pad': '1.3.0' } }),
   [PAGE]:
-    "---\n// @ts-ignore\nimport { ClientRouter } from 'astro:transitions';\nimport '../styles/pages/index.css';\n---\n<div server:defer></div>\n",
+    "---\n// @ts-ignore\nimport { ClientRouter } from 'astro:transitions';\nimport '../styles/pages/index.css';\n---\n<div server:defer></div>\n<script is:inline data-astro-prefetch client:load>x()</script>\n",
   'public/robots.txt': 'User-agent: *\n',
   'public/photo.png': png(1, 1),
   'src/assets/photo.png': png(LIMITS.imageMaxPx + 1, 1),
@@ -775,8 +791,8 @@ test('every rule of preflight has a failing case, and every one is in the regist
   );
 });
 
-/** The rules of the registry whose source half lands in a later milestone: `csp-hash` has its built half in M5 and its source half in M8. */
-const SOURCE_HALF_LATER: ReadonlySet<string> = new Set(['csp-hash']);
+/** The rules of the registry whose source half lands in a later milestone. Since M8, none. */
+const SOURCE_HALF_LATER: ReadonlySet<string> = new Set();
 
 test('the order of the rules is that of 6.1, step 2', () => {
   const inSpec = specOrder();
@@ -825,6 +841,7 @@ const NEEDS_SETTINGS: readonly string[] = [
   'config-waiver',
   'legal-processing',
   'config-dep-allowlist',
+  'js-script',
   'forms-binding',
   'modes-themes',
   'design-tokens',

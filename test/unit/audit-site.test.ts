@@ -810,6 +810,26 @@ test('legal-statement fails a claim of conformance without accessibilityAudit, o
   }
 });
 
+test('legal-statement reads only text a visitor sees: hidden, aria-hidden, visually-hidden and template content are out', () => {
+  const read = (main: string): string[] => ids(run(auditLegalStatement, statement(main), { options: ACCESSIBILITY }));
+  // A claim that no visitor sees is no claim.
+  for (const hidden of [
+    '<p hidden>Die Website ist konform.</p>',
+    '<p aria-hidden="true">Die Website ist konform.</p>',
+    '<p aria-hidden=" TRUE ">Die Website ist konform.</p>',
+    '<p class="note visually-hidden">Die Website ist konform.</p>',
+    '<div hidden><p>Die Website ist <strong>konform</strong>.</p></div>',
+    '<template><p>Die Website ist konform.</p></template>',
+  ]) {
+    assert.deepEqual(read(hidden), [], hidden);
+  }
+  // A negation that no visitor sees cancels nothing.
+  assert.deepEqual(read('<p>Die Website ist <span class="visually-hidden">nicht</span> konform.</p>'), [
+    'legal-statement',
+  ]);
+  assert.deepEqual(read('<p aria-hidden="false">Die Website ist konform.</p>'), ['legal-statement']);
+});
+
 test('legal-statement passes a claim when site.json has accessibilityAudit', () => {
   const files = statement('<p>Diese Website ist konform mit WCAG 2.1 AA.</p>');
   assert.deepEqual(ids(run(auditLegalStatement, files, { options: ACCESSIBILITY, site: AUDIT })), []);

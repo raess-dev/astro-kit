@@ -64,6 +64,25 @@ export const prerender = false;
 export const POST = createFormEndpoint();
 `;
 
+/** The feature shim of islands (9.2): the ESLint config for the Solid rules that Biome lacks. */
+export const ISLANDS_SHIM_FILE = 'eslint.config.mjs';
+
+/**
+ * The exact text of the islands shim, as `templates/features/islands/` holds it. `check` compares it with the file of
+ * an islands site (M9).
+ */
+export const ISLANDS_SHIM = `import solid from 'eslint-plugin-solid/configs/typescript';
+import tseslint from 'typescript-eslint';
+
+export default [
+  {
+    files: ['src/**/*.tsx'],
+    ...solid,
+    languageOptions: { parser: tseslint.parser, parserOptions: { ecmaFeatures: { jsx: true } } },
+  },
+];
+`;
+
 /** The form in which two texts are compared: CRLF becomes LF, and the text ends with exactly one newline. */
 export const normalize = (text: string): string => `${text.replace(/\r\n/g, '\n').trimEnd()}\n`;
 

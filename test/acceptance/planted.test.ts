@@ -7,7 +7,7 @@
  * - **A mistake** is one change that agents often make, each on its own copy of the site. Its case runs `build` and
  *   asserts exactly one id.
  *
- * The ids of rules that later milestones add join their sets with their rules: `js-budget` joins the `css` set at M8.
+ * The ids of rules that later milestones add join their sets with their rules: `js-budget` joined the `css` set at M8.
  * The `route` set (M7) starts from the `static` variant and adds an on-demand route of the project.
  * `KIT_PLANTED_DROP=<id>` runs the `css` or the `route` set without the plant of that id, and expects the list without
  * that id. The review runs it once for each id, to prove that each plant gives its id alone. CI does not set it.
@@ -27,7 +27,7 @@ const NOT_PASSED = { last: false, count: 0 } as const;
 
 // The members of the built kit modules that the css set uses. The exports map hides the modules (14.2).
 interface OptionsModule {
-  LIMITS: { headBytes: number; documentBytes: number; domElements: number; fontBytes: number };
+  LIMITS: { headBytes: number; documentBytes: number; domElements: number; fontBytes: number; islandJsBytes: number };
 }
 interface BudgetsModule {
   compressedSize(data: string | Uint8Array): number;
@@ -92,6 +92,8 @@ const SIZES = {
   elements: 2_000,
   /** Bytes of the font file that /restaurant/ preloads. */
   font: 150_000,
+  /** Characters of noise in the island file of /fr/restaurant/: about 30,000 B compressed. */
+  island: 40_000,
 } as const;
 
 /** One plant of a set: the id that it plants, and the change to a case folder. */
@@ -204,6 +206,19 @@ const CSS_PLANTS: readonly Plant[] = [
     },
   },
   {
+    // An island on /fr/restaurant/, written as the markup that Astro writes for one, whose component file in
+    // `public/` is over `islandJsBytes` compressed. Its directive is `visible`, so `js-directive` has nothing to say,
+    // and the page has no script, so `js-script` has nothing either: only the budget reads the island's URLs. The
+    // site has no islands, so nothing ever loads the file.
+    id: 'js-budget',
+    plant(dir) {
+      write(dir, { 'public/island-plant.js': `export default () => {};\n/*${noise(SIZES.island)}*/\n` });
+      const island =
+        '<astro-island uid="Plant" component-url="/island-plant.js" component-export="default" renderer-url="/island-plant.js" props="{}" ssr client="visible" opts="{}"></astro-island>';
+      edit(dir, 'src/pages/fr/restaurant.astro', '<h1>Restaurant</h1>', `<h1>Restaurant</h1>\n    ${island}`);
+    },
+  },
+  {
     // A GIF with two frames, imported as a URL and shown on /fr/emplois/. It is 1 × 1 pixel, so `images-original`
     // has nothing to say, and an `img` outside a `picture` is no case of `images-format`.
     id: 'media-animated',
@@ -217,7 +232,7 @@ const CSS_PLANTS: readonly Plant[] = [
   },
 ];
 
-/** The ids of the `css` set at M5. `js-budget` joins at M8. */
+/** The ids of the `css` set at M5, with `js-budget` of M8. */
 const CSS_SET = [
   'budget-document',
   'budget-dom',
@@ -228,6 +243,7 @@ const CSS_SET = [
   'css-layer-order',
   'css-unused',
   'fonts-limit',
+  'js-budget',
   'media-animated',
 ];
 
@@ -263,6 +279,7 @@ test('M5 planted set css: exactly the ids of its list', async () => {
   assert.ok(compressedSize(noise(SIZES.document)) > 1.2 * LIMITS.documentBytes);
   assert.ok(SIZES.elements > 1.2 * LIMITS.domElements);
   assert.ok(SIZES.font > 1.2 * LIMITS.fontBytes);
+  assert.ok(compressedSize(noise(SIZES.island)) > 1.2 * LIMITS.islandJsBytes);
 
   const drop = droppedFrom(CSS_SET);
   const dir = siteCase(drop === undefined ? 'planted-css' : `planted-css-without-${drop}`, (folder) => {

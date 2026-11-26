@@ -5,6 +5,7 @@
  */
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from 'node:fs';
 import { dirname, extname, join, relative, sep } from 'node:path';
+import { asciiLower } from './css/parse.ts';
 import { fieldPlace, LIMITS, type Limits, type Options, readJson } from './options.ts';
 import type { Report } from './registry.ts';
 
@@ -138,14 +139,14 @@ export function listFiles(root: string, folder: string): ProjectFile[] {
 const hasExtension = (path: string, extensions: readonly string[]): boolean => extensions.includes(extname(path));
 
 /** One source file. `text` is `undefined` for a file of more than `SOURCE_MAX_BYTES`, which no check reads. */
-interface Source {
+export interface Source {
   path: string;
   bytes: number;
   text: string | undefined;
 }
 
 /** The files under `src/` with one of the extensions, one at a time. A link to a file outside the root is left out. */
-function* sources(root: string, extensions: readonly string[]): Generator<Source> {
+export function* sources(root: string, extensions: readonly string[]): Generator<Source> {
   for (const file of listFiles(root, 'src')) {
     if (!file.inside || !hasExtension(file.path, extensions)) continue;
     const bytes = statSync(file.file).size;
@@ -395,6 +396,12 @@ export const PUBLIC_SHADOWS: readonly string[] = [
   '_kit',
 ];
 
+/**
+ * The folder of Astro's bundled files, as a name at the top of `public/`, in any ASCII case. `js-script` allows a
+ * module script under `/_astro/` (section 8), so no file of `public/` may stand there.
+ */
+export const PUBLIC_ASSETS = '_astro';
+
 /** `sitemap*.xml`, as a name at the top of `public/`. */
 export const PUBLIC_SITEMAP = /^sitemap.*\.xml$/;
 
@@ -419,7 +426,8 @@ export const isRaster = (path: string): boolean => RASTER_EXTENSIONS.includes(ex
 
 /**
  * `config-public-shadow`: `public/` holds none of `robots.txt`, `_headers`, `_redirects`,
- * `.well-known/security.txt`, `_kit` and `sitemap*.xml`. Each of them names a path at the top of `public/`.
+ * `.well-known/security.txt`, `_kit`, `sitemap*.xml` and a folder `_astro` in any ASCII case (`PUBLIC_ASSETS`). Each
+ * of them names a path at the top of `public/`.
  */
 export function checkPublicShadow(root: string, report: Report): void {
   const folder = openFolder(root, 'public');
@@ -428,7 +436,8 @@ export function checkPublicShadow(root: string, report: Report): void {
     if (existsSync(join(folder.real, path))) report.add('config-public-shadow', `public/${path}`);
   }
   for (const name of folder.names) {
-    if (PUBLIC_SITEMAP.test(name)) report.add('config-public-shadow', `public/${name}`);
+    if (PUBLIC_SITEMAP.test(name) || asciiLower(name) === PUBLIC_ASSETS)
+      report.add('config-public-shadow', `public/${name}`);
   }
 }
 

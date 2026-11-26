@@ -21,7 +21,8 @@
  *   copied insert is also an inline script without its hash, so `csp-hash` reports it too: two facts, two ids.
  * - A skip link whose fragment names no element is `links-resolve`'s; `html-shell` then says nothing about the id.
  */
-import { type HTMLElement, NodeType } from 'node-html-parser';
+import { type HTMLElement, type Node, NodeType } from 'node-html-parser';
+import { parseHtml } from '../../build.ts';
 import type { BuildContext, BuiltPage } from '../../context.ts';
 import {
   isForbiddenSource,
@@ -135,6 +136,12 @@ const MODES_SCRIPT = 'modes-script';
  */
 const MODE_SCRIPT_START = `{\nconst key = '${MODE_STORAGE_KEY}';`;
 
+/**
+ * Says whether a script is a mode script for `modes-script`: its text starts like one (`MODE_SCRIPT_START`). Such a
+ * script is `modes-script`'s alone, also a changed one, so `js-script` skips it.
+ */
+export const isModeScriptLike = (script: HTMLElement): boolean => rawContentOf(script).startsWith(MODE_SCRIPT_START);
+
 /** The elements that the mode script must come before (9.3): every `<style>` and every style sheet link. */
 const isStyleElement = (element: HTMLElement): boolean => {
   const tag = tagOf(element);
@@ -157,9 +164,7 @@ export function auditModesScript(ctx: BuildContext): void {
     const problems: string[] = [];
     const scripts = dom.byTag('script');
     const kit = scripts.filter((script) => attributesOf(script).size === 0 && rawContentOf(script) === text);
-    const lookalike = scripts.find(
-      (script) => !kit.includes(script) && rawContentOf(script).startsWith(MODE_SCRIPT_START),
-    );
+    const lookalike = scripts.find((script) => !kit.includes(script) && isModeScriptLike(script));
     if (!on) {
       const any = kit[0] ?? lookalike;
       if (any !== undefined) problems.push(`a mode script with fewer than two mode options: ${startTag(page, any)}`);
@@ -561,6 +566,43 @@ export function auditCspBase(ctx: BuildContext): void {
   }
 }
 
+/**
+ * The elements of a text parsed as markup, in document order, template content left out. The walk uses a stack,
+ * never recursion. It never throws.
+ */
+export function markupElements(markup: string): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  const stack: Node[] = [...parseHtml(markup).childNodes].reverse();
+  for (let node = stack.pop(); node !== undefined; node = stack.pop()) {
+    if (node.nodeType !== NodeType.ELEMENT_NODE) continue;
+    const element = node as HTMLElement;
+    out.push(element);
+    if (tagOf(element) === 'template') continue;
+    for (let index = element.childNodes.length - 1; index >= 0; index -= 1) {
+      const child = element.childNodes[index];
+      if (child !== undefined) stack.push(child);
+    }
+  }
+  return out;
+}
+
+const NOSCRIPT_ELEMENTS = new WeakMap<BuiltPage, HTMLElement[]>();
+
+/**
+ * The elements of the content of every `noscript` of a page, parsed as markup (`markupElements`): a browser with
+ * scripting off parses it so, and loads what it names. Found once for each page.
+ */
+export function noscriptElements(page: BuiltPage): HTMLElement[] {
+  let found = NOSCRIPT_ELEMENTS.get(page);
+  if (found === undefined) {
+    found = domOf(page)
+      .byTag('noscript')
+      .flatMap((noscript) => markupElements(rawContentOf(noscript)));
+    NOSCRIPT_ELEMENTS.set(page, found);
+  }
+  return found;
+}
+
 // html-shell
 
 const HTML_SHELL = 'html-shell';
@@ -590,6 +632,11 @@ function isFocusable(element: HTMLElement): boolean {
  * `a[href="#<id>"]` with a non-empty id, and the page has exactly one `main`, whose id is that id. The id of `main`
  * may equal the fragment as written or percent-decoded, as `links-resolve` reads a fragment. A fragment that names no
  * element at all is `links-resolve`'s; then this rule does not compare it with `main`.
+ *
+ * No `meta` has an `http-equiv` of `refresh` or a `name` of `referrer`, each trimmed and in any ASCII case, whatever
+ * its `content`: a redirect belongs in `redirects.json`, and the `Referrer-Policy` header of the kit sets the policy
+ * (6.3). A meta refresh sends the visitor to any address with no gesture, and a meta referrer can send the full URL of
+ * the page to another origin. A `meta` inside a `noscript` counts too: a browser without JavaScript reads it.
  */
 export function auditHtmlShell(ctx: BuildContext): void {
   for (const page of ctx.pages) {
@@ -613,6 +660,16 @@ export function auditHtmlShell(ctx: BuildContext): void {
         problems.push(
           `the skip link names #${snippet(fragment)}, but main has ${id === undefined ? 'no id' : `the id ${snippet(id)}`}`,
         );
+      }
+    }
+    const metas = [...dom.byTag('meta'), ...noscriptElements(page).filter((element) => tagOf(element) === 'meta')];
+    for (const meta of metas) {
+      const tag = dom.elements.includes(meta) ? startTag(page, meta) : `${snippet(meta.outerHTML)} in a noscript`;
+      if (asciiLower((attr(meta, 'http-equiv') ?? '').trim()) === 'refresh') {
+        problems.push(`${tag}: a meta refresh; a redirect belongs in redirects.json`);
+      }
+      if (asciiLower((attr(meta, 'name') ?? '').trim()) === 'referrer') {
+        problems.push(`${tag}: a meta referrer; the Referrer-Policy header of the kit sets the policy`);
       }
     }
     reportPage(ctx, HTML_SHELL, page, problems);

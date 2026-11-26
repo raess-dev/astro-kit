@@ -306,3 +306,31 @@
 - `perf-image-oversize` no longer loses a lazy image that finishes its own load while the rule reads the page (1 run
   in 50 under load lost the finding). A file that a preload or a style sheet fetched exempts no image, so its
   verdict no longer depends on which load ends first.
+- Milestone M8, part 8a: the build half of islands, scripts and origins. The kit has 121 rules.
+  - `js-script` allows on a page only JSON-LD, the kit's two inserts, and what the settings allow: `/_astro/` module
+    scripts and inline module scripts with scripts, the prefetch chunk with astroPrefetch, Astro's exact island
+    texts and Solid's exact hydration script with islands, and an `async`, `defer` or module script of a page script
+    origin. A `/_astro/` script must name a file of dist, and its path is read as the browser reads it, `%2e`
+    included. Astro's texts come from the `astro` that the site installed, and Solid's from its `solid-js`.
+    `js-prefetch-attr` refuses `data-astro-prefetch`, and `js-directive` refuses every client directive but
+    `visible`, `idle` and `media`.
+  - The source halves of the three rules and of `csp-hash` (`define:vars`, `is:inline`) read the start tags of every
+    `.astro` file, with file and line, in preflight step 4. A bundled `<script>` needs `features.scripts`.
+  - `js-budget` measures, for each page, the JS that loads at once (islands and module scripts with their static
+    imports, 20,480 B), the JS behind `import()` at any depth (204,800 B) and the prefetch chunk (2,048 B), compressed
+    as the other budgets. It reads the backtick form of `import()` that Rolldown writes, and it fails an `import()`
+    that it cannot measure.
+  - `origins-third-party` refuses a resource of another origin on the elements and attributes of section 8, each
+    `srcset` candidate, each `ping` URL, a `formaction`, SVG `image` and `use`, the content of a `noscript` and the
+    markup of a `srcdoc` included, except the three declared cases of 9.4. `legal-origins` asks the privacy page of
+    each locale to name the processor of each origin, in text that a visitor sees.
+  - `html-shell` refuses a meta refresh and a meta referrer. `config-public-shadow` refuses `public/_astro/`.
+    `config-options` refuses an origin host that is an IP address, and a processor or purpose of white space only.
+    The legal text leaves out hidden and visually hidden parts. html-validate reads Astro's island style element
+    as a comment on an islands site.
+  - The islands shim `templates/features/islands/eslint.config.mjs` holds the text of 9.2. `check` compares it from
+    M9.
+  - The pinning rule of 2.1 is the owner's rule of 2026-11-26. The islands and lint pins are `solid-js` 1.9.19,
+    `@astrojs/solid-js` 7.1.6, `eslint` 10.15.0, `eslint-plugin-solid` 0.20.0 and `typescript-eslint` 8.73.0.
+  - The `build` set holds `origins-third-party` and `legal-origins`, and the `css` set `js-budget`. A real build with
+    a large module behind `import()` proves `js-budget` on the bundler's own output.

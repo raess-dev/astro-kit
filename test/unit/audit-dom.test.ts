@@ -391,6 +391,38 @@ test('resolveHref: a backslash before the query reads as a slash, as the URL sta
   assert.equal(decodePath('/%E0%A4%A/'), undefined);
 });
 
+test('resolveHref: a dot segment written with %2e is a dot segment, in any letter case, as the URL standard reads it', () => {
+  const host = 'example.ch';
+  const pathOf = (href: string, base = '/'): string => {
+    const target = resolveHref(href, base, host);
+    return target.kind === 'internal' ? target.path : '';
+  };
+  const cases: [href: string, path: string][] = [
+    ['/_astro/%2e%2e/x.js', '/x.js'],
+    ['/_astro/%2E%2e/x.js', '/x.js'],
+    ['/_astro/.%2e/x.js', '/x.js'],
+    ['/_astro/%2e./x.js', '/x.js'],
+    ['/_astro/.%2E/x.js', '/x.js'],
+    ['/_astro/%2E./x.js', '/x.js'],
+    ['/_astro/%2e/x.js', '/_astro/x.js'],
+    ['/_astro/%2E/x.js', '/_astro/x.js'],
+    ['/a/b/%2e%2e', '/a/'],
+    ['/a/b/%2e', '/a/b/'],
+    ['%2e%2e/x/', '/x/'],
+    ['https://example.ch/_astro/%2e%2e/vendor/track.js', '/vendor/track.js'],
+    // Not dot segments: more than two dots, another encoding, or a dot with other text.
+    ['/a/%2e%2e%2e/x', '/a/%2e%2e%2e/x'],
+    ['/a/%252e%252e/x', '/a/%252e%252e/x'],
+    ['/a/%2ex/x', '/a/%2ex/x'],
+    ['/a/...', '/a/...'],
+  ];
+  for (const [href, path] of cases) {
+    assert.equal(pathOf(href, '/fr/'), path, href);
+    // The URL parser of Node, which follows the URL standard as browsers do, gives the same path.
+    assert.equal(new URL(href, 'https://example.ch/fr/').pathname, path, href);
+  }
+});
+
 test('resolveHref: a tab or line break anywhere in the href is removed, as the URL standard does', () => {
   const host = 'example.ch';
   for (const href of ['/api/for\tms/contact/', '/api/forms/\ncontact/', '/zim\r\nmer/#a', 'https://exa\tmple.ch/a/']) {

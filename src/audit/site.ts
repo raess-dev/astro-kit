@@ -1,7 +1,8 @@
 /**
  * The site audit (specification, 6.1, `astro:build:done`, step 4, second): the rules that compare pages with each
- * other and with the settings, in the order of section 8. Routes, hreflang, links and depth, and the legal pages are
- * here; the text rules (`facts-value` and `content-*`) are in `./text.ts`, and this audit runs them at their place.
+ * other and with the settings, in the order of section 8. Routes, hreflang, links and depth, and the legal pages (the
+ * processors of the origins included) are here; the text rules (`facts-value` and `content-*`) are in `./text.ts`,
+ * and this audit runs them at their place.
  *
  * **Who reports what.**
  *
@@ -40,6 +41,7 @@ import {
   domOf,
   type HrefTarget,
   isIndexable,
+  legalText,
   linkedPages,
   linksOf,
   localeOf,
@@ -47,10 +49,10 @@ import {
   nameKey,
   type PageDom,
   pageAt,
-  pageText,
   resolveHref,
   runRules,
   sameLang,
+  seenPageText,
   siteOf,
   tagOf,
   tokensOf,
@@ -637,7 +639,7 @@ export function auditLegalStatement(ctx: BuildContext): void {
     const page = pages.get(path);
     if (page === undefined || done.has(path)) continue;
     done.add(path);
-    const text = pageText(page);
+    const text = seenPageText(page);
     const claim = [...text.matchAll(new RegExp(CONFORMANCE, 'giu'))].find(
       (match) => !isNegated(text, match.index ?? 0),
     );
@@ -646,6 +648,39 @@ export function auditLegalStatement(ctx: BuildContext): void {
         'legal-statement',
         page.path,
         `the page claims conformance (${shown(claim[0])}), but site.json has no accessibilityAudit`,
+      );
+    }
+  }
+}
+
+/**
+ * The text of a processor as the legal text holds text: in NFC, with each run of white space as one space, trimmed
+ * (Measurement details, "Legal text and page text"). Without it, a processor with two spaces could never match.
+ */
+const processorText = (processor: string): string => collapse(processor.normalize('NFC'));
+
+/**
+ * `legal-origins`: the legal text (`legalText`, the text of `main`) of the privacy page of each locale holds the
+ * `processor` of each entry of `origins` as an exact substring, in its letter case (9.4). The processor reads as the
+ * legal text does (`processorText`). One finding for each privacy page that lacks a processor, naming every missing
+ * one. A declared privacy page that is not built is `legal-pages`'s.
+ */
+export function auditLegalOrigins(ctx: BuildContext): void {
+  const processors = [...new Set(ctx.options.origins.map((origin) => processorText(origin.processor)))];
+  if (processors.length === 0) return;
+  const { pages } = siteOf(ctx);
+  const done = new Set<string>();
+  for (const path of legalPaths(ctx, 'privacy').values()) {
+    const page = pages.get(path);
+    if (page === undefined || done.has(path)) continue;
+    done.add(path);
+    const text = legalText(page);
+    const missing = processors.filter((processor) => !text.includes(processor));
+    if (missing.length > 0) {
+      ctx.report.add(
+        'legal-origins',
+        page.path,
+        `the privacy text does not name the processor ${missing.map(shown).join(', ')}`,
       );
     }
   }
@@ -673,6 +708,7 @@ export const SITE_RULES: readonly AuditRule[] = [
   { id: 'content-nfc', run: auditContentNfc },
   { id: 'legal-pages', run: auditLegalPages },
   { id: 'legal-statement', run: auditLegalStatement },
+  { id: 'legal-origins', run: auditLegalOrigins },
 ];
 
 /** The site audit: every rule of `SITE_RULES`, in order. */

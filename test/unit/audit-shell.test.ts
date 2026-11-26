@@ -603,6 +603,54 @@ test("html-shell: a fragment that names no element is links-resolve's; a percent
   assert.deepEqual(ids(run(auditHtmlShell, encoded)), []);
 });
 
+test('html-shell: no meta refresh and no meta referrer, in any letter case and with any content', () => {
+  const inHead = (meta: string): string => swap(home(), '</head>', `${meta}</head>`);
+  const cases: readonly [name: string, html: string, ids: string[]][] = [
+    ['the page of the fixtures', home(), []],
+    [
+      'a refresh to another host',
+      inHead('<meta http-equiv="refresh" content="0; url=https://evil.example/">'),
+      ['html-shell'],
+    ],
+    ['a refresh to the site', inHead('<meta http-equiv="refresh" content="0; url=/zimmer/">'), ['html-shell']],
+    ['a refresh with a delay and no URL', inHead('<meta http-equiv="refresh" content="30">'), ['html-shell']],
+    ['a refresh in another case, with spaces', inHead('<meta http-equiv=" ReFresh " content="0">'), ['html-shell']],
+    ['a refresh with no content', inHead('<meta http-equiv="refresh">'), ['html-shell']],
+    [
+      'a refresh in body',
+      swap(home(), '</main>', '<meta http-equiv="refresh" content="0;url=https://evil.example/"></main>'),
+      ['html-shell'],
+    ],
+    [
+      'a refresh in a noscript of head',
+      inHead('<noscript><meta http-equiv="refresh" content="0;url=https://evil.example/"></noscript>'),
+      ['html-shell'],
+    ],
+    ['a refresh in template content', inHead('<template><meta http-equiv="refresh" content="0"></template>'), []],
+    ['a meta referrer unsafe-url', inHead('<meta name="referrer" content="unsafe-url">'), ['html-shell']],
+    ['a meta referrer that is strict', inHead('<meta name="referrer" content="no-referrer">'), ['html-shell']],
+    ['a meta referrer in another case', inHead('<meta name="REFERRER" content="origin">'), ['html-shell']],
+    [
+      'a meta referrer in a noscript of body',
+      swap(home(), '</main>', '<noscript><meta name="referrer" content="unsafe-url"></noscript></main>'),
+      ['html-shell'],
+    ],
+    ['another http-equiv', inHead('<meta http-equiv="content-language" content="de">'), []],
+    ['another name', inHead('<meta name="referrers" content="x">'), []],
+    ['a name that holds the word', inHead('<meta name="theme-color" content="refresh">'), []],
+  ];
+  assert.deepEqual(
+    cases.map(([name, html]) => [name, ids(run(auditHtmlShell, html))]),
+    cases.map(([name, , expected]) => [name, expected]),
+  );
+  assert.deepEqual(
+    findings(run(auditHtmlShell, inHead('<meta http-equiv="refresh" content="0; url=https://evil.example/">'))),
+    [
+      'html-shell / <meta http-equiv="refresh" content="0; url=https://evil.example/">: a meta refresh; a redirect belongs in redirects.json',
+    ],
+  );
+});
+
 // Hostile input
 
 const SHELL_RULES: readonly Rule[] = [
