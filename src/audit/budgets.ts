@@ -17,6 +17,7 @@
 import { brotliCompressSync, constants, zstdCompressSync } from 'node:zlib';
 import type { HTMLElement } from 'node-html-parser';
 import type { BuildContext, BuiltPage } from '../context.ts';
+import { asciiLower } from '../css/parse.ts';
 import {
   type AuditRule,
   attr,
@@ -28,6 +29,7 @@ import {
   rawContentOf,
   runRules,
   scriptKind,
+  tokensOf,
 } from './dom.ts';
 
 const ENCODER = new TextEncoder();
@@ -53,7 +55,7 @@ export const STATIC_IMPORT = /(?:\bimport|\bfrom)\s*["']([^"']+\.js)["']/g;
  * file. A template literal counts only without a substitution (`${`). Astro 7 bundles with Rolldown, which writes the
  * backtick form. The specifier is the group that matched.
  */
-export const DYNAMIC_IMPORT = /\bimport\(\s*(?:"([^"]+\.js)"|'([^']+\.js)'|`([^`$]+\.js)`)\s*\)/g;
+export const DYNAMIC_IMPORT = /\bimport\(\s*(?:"([^"\\]+\.js)"|'([^'\\]+\.js)'|`([^`$\\]+\.js)`)\s*\)/g;
 
 /**
  * The start of every `import(` call: the word `import`, white space, and `(`. A property access (`x.import(`) and a
@@ -62,7 +64,85 @@ export const DYNAMIC_IMPORT = /\bimport\(\s*(?:"([^"]+\.js)"|'([^']+\.js)'|`([^`
  */
 const IMPORT_CALL = /(?<![\w$.])import\s*\(/g;
 
-/** The specifier of a match of `DYNAMIC_IMPORT`: the group that matched. */
+/**
+ * The worker URLs of a JS text, exact (section 8): a string literal of a `.js` file as the first argument of
+ * `new URL(`, `new Worker(`, `new SharedWorker(`, `importScripts(` or `serviceWorker.register(`. Rolldown writes a
+ * worker as ``new Worker(new URL(`/_astro/w.js`, ``+import.meta.url), …)``. The specifier is the group that matched.
+ */
+export const WORKER_URL =
+  /(?:(?<![\w$.])(?:new\s+(?:URL|Worker|SharedWorker)|importScripts)|\bserviceWorker\s*\.\s*register)\s*\(\s*(?:"([^"\\]+\.js)"|'([^'\\]+\.js)'|`([^`$\\]+\.js)`)/g;
+
+/**
+ * The start of every call that starts a worker: `new Worker(`, `new SharedWorker(`, `importScripts(` and
+ * `serviceWorker.register(`. Each one must take a whole argument that the kit can read (`WORKER_ARGUMENT`,
+ * `IMPORT_SCRIPTS_ARGUMENTS`), or the JS cannot be measured.
+ */
+const WORKER_CALL =
+  /(?:(?<![\w$.])(?:new\s+(?:Worker|SharedWorker)|importScripts)|\bserviceWorker\s*\.\s*register)\s*\(/g;
+
+/** A backtick, for the regex sources below. */
+const BACKTICK = '`';
+
+/** A string literal of a `.js` file: in quotes, or a template literal without a substitution. */
+const JS_LITERAL = String.raw`(?:"[^"\\]+\.js"|'[^'\\]+\.js'|${BACKTICK}[^${BACKTICK}$\\]+\.js${BACKTICK})`;
+
+/**
+ * A string literal of a `.js` file whose path starts with `/`: its URL is the same whatever the base. A bare worker
+ * URL resolves against the document that runs the script, not against the script, and one script can run on many
+ * pages.
+ */
+const ROOT_JS_LITERAL = String.raw`(?:"/[^"\\]+\.js"|'/[^'\\]+\.js'|${BACKTICK}/[^${BACKTICK}$\\]+\.js${BACKTICK})`;
+
+/**
+ * The first argument of a worker call that the kit can measure, whole: a literal of a `.js` file whose path starts
+ * with `/` (`ROOT_JS_LITERAL`), or `new URL(` of any literal of a `.js` file with no base, `import.meta.url` or
+ * Rolldown's ``` ``+import.meta.url ```; then the end of the argument (`,` or `)`). So `"/_astro/a.js" + suffix` is no
+ * such argument, because the browser loads another URL than the literal, and neither is `"./w.js"`, which the
+ * browser resolves against the page.
+ */
+const WORKER_ARGUMENT = new RegExp(
+  String.raw`\s*(?:${ROOT_JS_LITERAL}|new\s+URL\s*\(\s*${JS_LITERAL}\s*(?:,\s*(?:${BACKTICK}${BACKTICK}\s*\+\s*)?import\.meta\.url\s*)?\))\s*[,)]`,
+  'y',
+);
+
+/**
+ * The arguments of an `importScripts(` call that the kit can measure: literals of `.js` files whose paths start with
+ * `/` (`ROOT_JS_LITERAL`), to the `)`. `importScripts` resolves against the URL of the worker, and a file that a
+ * worker loads can call it too, so the kit does not know that base.
+ */
+const IMPORT_SCRIPTS_ARGUMENTS = new RegExp(String.raw`\s*${ROOT_JS_LITERAL}(?:\s*,\s*${ROOT_JS_LITERAL})*\s*\)`, 'y');
+
+/** Every literal of a `.js` file in a text, with its specifier in the group that matched. */
+const JS_LITERALS = new RegExp(
+  String.raw`"([^"\\]+\.js)"|'([^'\\]+\.js)'|${BACKTICK}([^${BACKTICK}$\\]+\.js)${BACKTICK}`,
+  'g',
+);
+
+/**
+ * The scripts of every `importScripts(` call whose arguments the kit can read: each argument counts, because the
+ * browser loads each one.
+ */
+function importScriptsSpecifiers(text: string): string[] {
+  const out: string[] = [];
+  for (const match of text.matchAll(WORKER_CALL)) {
+    if (!match[0].includes('importScripts')) continue;
+    const start = match.index + match[0].length;
+    IMPORT_SCRIPTS_ARGUMENTS.lastIndex = start;
+    const list = IMPORT_SCRIPTS_ARGUMENTS.exec(text);
+    if (list === null) continue;
+    for (const one of list[0].matchAll(JS_LITERALS)) out.push(dynamicSpecifier(one));
+  }
+  return out;
+}
+
+/**
+ * A static import (`import "…"`, `from "…"`) whose specifier holds a backslash. JavaScript decodes an escape such as
+ * `\x77` in a string, so the file that loads is not the text that `STATIC_IMPORT` reads. The bundler writes no such
+ * specifier, so the kit cannot measure one.
+ */
+const ESCAPED_STATIC_IMPORT = /(?:\bimport|\bfrom)\s*(?:"[^"\n]*\\|'[^'\n]*\\)/;
+
+/** The specifier of a match of `DYNAMIC_IMPORT` or `WORKER_URL`: the group that matched. */
 const dynamicSpecifier = (match: RegExpMatchArray): string => match[1] ?? match[2] ?? match[3] ?? '';
 
 /** The prefetch chunk of `injectScript('page', …)`, by its path (13.1, item 8). */
@@ -70,9 +150,6 @@ export const PREFETCH_CHUNK = /^\/_astro\/page(\.[\w-]+)?\.js$/;
 
 /** The attributes of an `astro-island` that name the JS that loads at once. */
 export const ISLAND_URLS: readonly string[] = ['component-url', 'renderer-url', 'before-hydration-url'];
-
-/** The folder of Astro's bundled assets. */
-const ASSETS = '/_astro/';
 
 /** What `js-budget` reads of the JS files of a build, each file once. */
 interface JsIndex {
@@ -82,7 +159,7 @@ interface JsIndex {
   imports: (file: string) => readonly string[];
   /** The files that a JS text names in its static imports; `base` is the URL path of the text. */
   staticOf: (text: string, base: string) => string[];
-  /** The files under `/_astro/` that a JS text names in `import()`; `base` is the URL path of the text. */
+  /** The dist files that a JS text names in `import()` or as a worker URL; `base` is the URL path of the text. */
   dynamic: (text: string, base: string) => string[];
   /** The text of a dist file, as UTF-8. */
   text: (file: string) => string;
@@ -136,8 +213,12 @@ function jsIndexOf(ctx: BuildContext): JsIndex {
     },
     staticOf,
     dynamic: (source, base) =>
-      named([...source.matchAll(DYNAMIC_IMPORT)].map(dynamicSpecifier), base).filter((file) =>
-        `/${file}`.startsWith(ASSETS),
+      named(
+        [
+          ...[...source.matchAll(DYNAMIC_IMPORT), ...source.matchAll(WORKER_URL)].map(dynamicSpecifier),
+          ...importScriptsSpecifiers(source),
+        ],
+        base,
       ),
     text,
     size: (file) => {
@@ -155,13 +236,23 @@ function jsIndexOf(ctx: BuildContext): JsIndex {
 
 /**
  * Says whether a JS text holds an `import(` that `DYNAMIC_IMPORT` does not read: its argument is no string literal
- * of a `.js` file (`import(url)`, a template literal with `${`), or white space stands before the parenthesis. The
- * kit cannot know what such a call loads, so the JS cannot be measured.
+ * of a `.js` file without a backslash (`import(url)`, a template literal with `${`, an escape such as `\x77`), or
+ * white space stands before the parenthesis. It also holds for a static import with an escape
+ * (`ESCAPED_STATIC_IMPORT`). It
+ * also holds when a worker call (`WORKER_CALL`) takes an argument that the kit cannot read whole (`WORKER_ARGUMENT`,
+ * `IMPORT_SCRIPTS_ARGUMENTS`). The kit cannot
+ * know what such a call loads, so the JS cannot be measured.
  */
 export function hasUnmeasuredImport(text: string): boolean {
   const read = new Set<number>();
   for (const match of text.matchAll(DYNAMIC_IMPORT)) read.add(match.index);
   for (const match of text.matchAll(IMPORT_CALL)) if (!read.has(match.index)) return true;
+  if (ESCAPED_STATIC_IMPORT.test(text)) return true;
+  for (const match of text.matchAll(WORKER_CALL)) {
+    const argument = match[0].includes('importScripts') ? IMPORT_SCRIPTS_ARGUMENTS : WORKER_ARGUMENT;
+    argument.lastIndex = match.index + match[0].length;
+    if (!argument.test(text)) return true;
+  }
   return false;
 }
 
@@ -178,8 +269,8 @@ function closureOf(index: JsIndex, start: Iterable<string>): Set<string> {
 }
 
 /**
- * The JS that loads later: every `/_astro/*.js` file that a file of `start` or one of the inline `texts` names in
- * `import()`, with its static closure, and again for the `import()` of each new file, until nothing is added; minus
+ * The JS that loads later: every dist file that a file of `start` or one of the inline `texts` names in `import()` or
+ * as a worker URL, with its static closure, and again for the `import()` of each new file, until nothing is added; minus
  * the files of `atOnce`. Each file is read once, so the search ends.
  */
 function laterOf(
@@ -261,13 +352,13 @@ function moduleScripts(index: JsIndex, dom: PageDom): ModuleScript[] {
  *
  * - **At once:** the static-import closure (`STATIC_IMPORT`) of the files that the `component-url`, `renderer-url`
  *   and `before-hydration-url` of every `astro-island` of the page name, and of every module script of the page: the
- *   file of its `src`, or the files that its inline text imports. The sum of their compressed sizes is at most
- *   `islandJsBytes`.
- * - **Later:** every `/_astro/*.js` file that an at-once file or an inline module script names in `import()`
- *   (`DYNAMIC_IMPORT`), with the static-import closure of each, and again for the `import()` of each new file, until
+ *   file of its `src`, or the files that its inline text imports; and of the file of every `link` whose `rel` holds
+ *   `modulepreload`, or `preload` with `as="script"`. The sum of their compressed sizes is at most `islandJsBytes`.
+ * - **Later:** every dist file that an at-once file or an inline module script names in `import()`
+ *   (`DYNAMIC_IMPORT`) or as a worker URL (`WORKER_URL`), with the static-import closure of each, and again for the `import()` of each new file, until
  *   nothing is added (`laterOf`); minus the at-once files. The sum is at most `lazyJsBytes`.
  * - **Cannot be measured:** an at-once or later file, or an inline module script, with an `import(` that
- *   `DYNAMIC_IMPORT` does not read (`hasUnmeasuredImport`).
+ *   `DYNAMIC_IMPORT` does not read, or a worker call with no literal URL (`hasUnmeasuredImport`).
  * - **Prefetch:** a module script of the page whose `src` is the prefetch chunk (`PREFETCH_CHUNK`), with its
  *   static-import closure, is at most `prefetchJsBytes`. With astroPrefetch on, a page without that chunk, or whose
  *   chunk names no dist file, fails.
@@ -288,6 +379,15 @@ export function auditJsBudget(ctx: BuildContext): void {
         const file = url === undefined ? undefined : index.fileOf(url, page.path);
         if (file !== undefined) start.push(file);
       }
+    }
+    for (const link of dom.byTag('link')) {
+      const rel = tokensOf(link, 'rel');
+      const script =
+        rel.includes('modulepreload') ||
+        (rel.includes('preload') && asciiLower(attr(link, 'as') ?? '').trim() === 'script');
+      const href = attr(link, 'href');
+      const file = script && href !== undefined ? index.fileOf(href, page.path) : undefined;
+      if (file !== undefined) start.push(file);
     }
     const scripts = moduleScripts(index, dom);
     const inline = scripts.filter((script) => script.inline);
@@ -311,7 +411,7 @@ export function auditJsBudget(ctx: BuildContext): void {
       ctx.report.add(
         'js-budget',
         page.path,
-        `the JS that loads later through import() has ${bytes(lazy)} compressed; at most ${bytes(lazyJsBytes)} (${largest(index, later)})`,
+        `the JS that loads later through import() or a worker has ${bytes(lazy)} compressed; at most ${bytes(lazyJsBytes)} (${largest(index, later)})`,
       );
     }
     const unmeasured = [
@@ -322,7 +422,7 @@ export function auditJsBudget(ctx: BuildContext): void {
       ctx.report.add(
         'js-budget',
         page.path,
-        `the JS cannot be measured: an import() whose argument is no string literal of a .js file (${firstNames(unmeasured)})`,
+        `the JS cannot be measured: an import() or a worker whose argument is no string literal of a .js file (${firstNames(unmeasured)})`,
       );
     }
     const chunks = scripts

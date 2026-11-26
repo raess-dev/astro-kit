@@ -348,6 +348,32 @@ test('one route that breaks routes-on-demand or the endpoint clause gives exactl
       ['routes-slug'],
       ['routes-slug src/pages/x/index.html.ts: /x/index.html: the extension .html is that of a page'],
     ],
+    // A script comes from the bundler, so js-script and js-budget see it (owner decision of 2026-11-26).
+    [
+      endpoint('/island.js'),
+      STATIC,
+      ['routes-slug'],
+      [
+        'routes-slug src/pages/island.js.ts: /island.js: the extension .js is that of a script; a script comes from the bundler',
+      ],
+    ],
+    [
+      endpoint('/feeds/a.mjs'),
+      STATIC,
+      ['routes-slug'],
+      [
+        'routes-slug src/pages/feeds/a.mjs.ts: /feeds/a.mjs: the extension .mjs is that of a script; a script comes from the bundler',
+      ],
+    ],
+    [
+      endpoint('/a.cjs'),
+      STATIC,
+      ['routes-slug'],
+      [
+        'routes-slug src/pages/a.cjs.ts: /a.cjs: the extension .cjs is that of a script; a script comes from the bundler',
+      ],
+    ],
+    [endpoint('/data.json'), STATIC, [], []],
     [
       endpoint('/fr/[file].json'),
       STATIC,

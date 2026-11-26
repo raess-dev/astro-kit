@@ -427,7 +427,7 @@ export const isRaster = (path: string): boolean => RASTER_EXTENSIONS.includes(ex
 /**
  * `config-public-shadow`: `public/` holds none of `robots.txt`, `_headers`, `_redirects`,
  * `.well-known/security.txt`, `_kit`, `sitemap*.xml` and a folder `_astro` in any ASCII case (`PUBLIC_ASSETS`). Each
- * of them names a path at the top of `public/`.
+ * of them names a path at the top of `public/`. It holds no JS file at any depth either (`PUBLIC_SCRIPT_EXTENSIONS`).
  */
 export function checkPublicShadow(root: string, report: Report): void {
   const folder = openFolder(root, 'public');
@@ -439,7 +439,18 @@ export function checkPublicShadow(root: string, report: Report): void {
     if (PUBLIC_SITEMAP.test(name) || asciiLower(name) === PUBLIC_ASSETS)
       report.add('config-public-shadow', `public/${name}`);
   }
+  for (const file of listFiles(root, 'public')) {
+    if (PUBLIC_SCRIPT_EXTENSIONS.includes(asciiLower(extname(file.path))))
+      report.add('config-public-shadow', file.path);
+  }
 }
+
+/**
+ * The extensions of a JS file, in lower case. `public/` holds none at any depth: every script comes from the bundler
+ * into `/_astro/`, so `js-script` and `js-budget` see all of it, and an `import()` or a worker cannot load a file of
+ * `public/` that no budget counts.
+ */
+export const PUBLIC_SCRIPT_EXTENSIONS: readonly string[] = ['.js', '.mjs', '.cjs'];
 
 /** `images-public`: `public/` holds no raster file except the four allowed files at its top. */
 export function checkPublicImages(root: string, report: Report): void {

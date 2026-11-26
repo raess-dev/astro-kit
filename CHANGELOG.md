@@ -336,3 +336,17 @@
     `@astrojs/solid-js` 7.1.6, `eslint` 10.15.0, `eslint-plugin-solid` 0.20.0 and `typescript-eslint` 8.73.0.
   - The `build` set holds `origins-third-party` and `legal-origins`, and the `css` set `js-budget`. A real build with
     a large module behind `import()` proves `js-budget` on the bundler's own output.
+- Two holes after 8a, closed as the owner decided on 2026-11-26:
+  - `html-shell` fails a page that the kit's parser cannot read in full, and so does the content of a `noscript` or
+    the markup of a `srcdoc` that it cannot read: the parser drops an element that is left open, such as
+    `<script src="/x.js">` with no end tag, and then no rule sees it. `html-shell` cannot be waived.
+  - All JS comes from the bundler. `public/` holds no `.js`, `.mjs` or `.cjs` file (`config-public-shadow`), and a
+    static endpoint writes none (`routes-slug`). `js-budget` counts a `modulepreload` and a `preload` of a script as
+    JS that loads at once, and a worker file (`new URL(`, `new Worker(`, `new SharedWorker(`, `importScripts(`,
+    `serviceWorker.register(`) as JS that loads later. A worker call without a literal URL cannot be measured, and
+    a file outside `/_astro/` counts too.
+  - A worker URL counts only when the whole argument is a literal (or `new URL(` of one on the file's own base), and
+    each argument of `importScripts(` counts. A bare worker URL and each `importScripts(` argument must start
+    with `/`: the browser resolves them against the page or the worker, which the kit does not know (Codex, #27).
+  - A specifier with a backslash cannot be measured, in `import()`, a worker URL and a static import: JavaScript
+    decodes the escape, so the file that loads is not the text (Codex, #27).

@@ -13,6 +13,7 @@ import {
   hasUnmeasuredImport,
   PREFETCH_CHUNK,
   STATIC_IMPORT,
+  WORKER_URL,
 } from '../../src/audit/budgets.ts';
 import {
   auditJsDirective,
@@ -699,6 +700,7 @@ test('js-budget uses the exact regexes of section 8 for the static and the dynam
   assert.ok(line.includes(`(\`/${STATIC_IMPORT.source.replaceAll('|', '\\|')}/g\`)`), line);
   // The dynamic regex holds backticks, so the row writes it in a code span of two backticks.
   assert.ok(line.includes(`(\`\`/${DYNAMIC_IMPORT.source.replaceAll('|', '\\|')}/g\`\``), line);
+  assert.ok(line.includes(`(\`\`/${WORKER_URL.source.replaceAll('|', '\\|')}/g\`\``), line);
   assert.ok(line.includes(`(\`${PREFETCH_CHUNK.source.replaceAll('\\/', '/')}\`)`), line);
   const statics = (text: string): string[] => [...text.matchAll(STATIC_IMPORT)].map((match) => match[1] ?? '');
   assert.deepEqual(statics('import{a as b}from"./web.js";import "./side.js";export{x}from \'./re.js\''), [
@@ -870,12 +872,15 @@ test('js-budget: the JS that loads later through import() is at most lazyJsBytes
       { '_astro/big.js': big },
       ['js-budget'],
     ],
+    // Owner decision of 2026-11-26: every dist .js file that import() names counts, also one outside /_astro/
+    // (such as a static endpoint's file). This replaces the case 'import() of a file outside /_astro/ is no later
+    // file'.
     [
-      'import() of a file outside /_astro/ is no later file',
+      'import() of a file outside /_astro/ counts too',
       SCRIPTS,
       '<script type="module">import("/big.js")</script>',
       { 'big.js': big },
-      [],
+      ['js-budget'],
     ],
     [
       'import() with a template literal without ${ counts, as Rolldown writes it',
@@ -980,6 +985,239 @@ test('js-budget: the static closure of every module script loads at once and joi
   assert.deepEqual(
     cases.map(([name, options, markup, js]) => [name, budgetIds(options, markup, js)]),
     cases.map(([name, , , , ids]) => [name, ids]),
+  );
+});
+
+test('js-budget: a preloaded script loads at once, and a worker file loads later (owner decision of 2026-11-26)', () => {
+  const small = jsOf(1_000);
+  const big = jsOf(210_000);
+  const module = (src: string): string => `<script type="module" src="${src}"></script>`;
+  const head = (link: string): string => `${link}${module('/_astro/s.js')}`;
+  const worker = (call: string): Files => ({ '_astro/s.js': call, '_astro/w.js': big });
+  const cases: readonly [name: string, options: Options, markup: string, js: Files, ids: string[]][] = [
+    [
+      'a large modulepreload',
+      SCRIPTS,
+      head('<link rel="modulepreload" href="/_astro/p.js">'),
+      { '_astro/s.js': small, '_astro/p.js': jsOf(25_000) },
+      ['js-budget'],
+    ],
+    [
+      'a modulepreload in another letter case, among other rel tokens',
+      SCRIPTS,
+      head('<link rel="prefetch MODULEPRELOAD" href="/_astro/p.js">'),
+      { '_astro/s.js': small, '_astro/p.js': jsOf(25_000) },
+      ['js-budget'],
+    ],
+    [
+      'a large preload as script',
+      SCRIPTS,
+      head('<link rel="preload" as=" Script " href="/_astro/p.js">'),
+      { '_astro/s.js': small, '_astro/p.js': jsOf(25_000) },
+      ['js-budget'],
+    ],
+    [
+      'a preload as font is no script',
+      SCRIPTS,
+      head('<link rel="preload" as="font" href="/_astro/p.js">'),
+      { '_astro/s.js': small, '_astro/p.js': jsOf(25_000) },
+      [],
+    ],
+    [
+      'a small modulepreload',
+      SCRIPTS,
+      head('<link rel="modulepreload" href="/_astro/p.js">'),
+      { '_astro/s.js': small, '_astro/p.js': small },
+      [],
+    ],
+    // Rolldown writes a worker so: new Worker(new URL(`/_astro/w.js`, ``+import.meta.url), {type: `module`}).
+    [
+      'the worker form of Rolldown',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      worker('new Worker(new URL(`/_astro/w.js`,``+import.meta.url),{type:`module`})'),
+      ['js-budget'],
+    ],
+    [
+      'a SharedWorker',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      worker('new SharedWorker(new URL("./w.js",import.meta.url))'),
+      ['js-budget'],
+    ],
+    ['a worker with a string', SCRIPTS, module('/_astro/s.js'), worker("new Worker('/_astro/w.js')"), ['js-budget']],
+    [
+      'a worker with white space',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      worker('new Worker ( "/_astro/w.js" )'),
+      ['js-budget'],
+    ],
+    ['importScripts', SCRIPTS, module('/_astro/s.js'), worker('importScripts("/_astro/w.js")'), ['js-budget']],
+    [
+      'a service worker',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      worker('navigator.serviceWorker.register("/_astro/w.js")'),
+      ['js-budget'],
+    ],
+    [
+      'a large file that a worker imports',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      {
+        '_astro/s.js': 'new Worker("/_astro/w.js",{type:"module"})',
+        '_astro/w.js': 'import"./h.js";',
+        '_astro/h.js': big,
+      },
+      ['js-budget'],
+    ],
+    [
+      'a small worker',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'new Worker(new URL(`/_astro/w.js`,``+import.meta.url))', '_astro/w.js': small },
+      [],
+    ],
+    [
+      'a worker of a variable cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'new Worker(url)' },
+      ['js-budget'],
+    ],
+    [
+      'a worker of a URL of a variable cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'new Worker(new URL(u,import.meta.url))' },
+      ['js-budget'],
+    ],
+    [
+      'a service worker of a variable cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'navigator.serviceWorker.register(u)' },
+      ['js-budget'],
+    ],
+    // The whole argument must be a literal: a suffix or another base changes the URL that loads (Codex, #27).
+    [
+      'a worker URL that a suffix changes cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'new Worker("/_astro/a.js"+suffix)' },
+      ['js-budget'],
+    ],
+    [
+      'a worker URL on another base cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'new Worker(new URL("/_astro/w.js",location.href))', '_astro/w.js': small },
+      ['js-budget'],
+    ],
+    // A bare worker URL resolves against the page, not the script, so it must start with / (Codex, #27).
+    [
+      'a relative bare worker URL cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'new Worker("./_astro/w.js",{type:"module"})', '_astro/w.js': small },
+      ['js-budget'],
+    ],
+    [
+      'a relative service worker URL cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'navigator.serviceWorker.register("sw.js")', '_astro/sw.js': small },
+      ['js-budget'],
+    ],
+    // JavaScript decodes an escape in a string, so the file that loads is not the text: it cannot be measured
+    // (Codex, #27).
+    [
+      'an escape in a worker URL cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'new Worker("/_astro/\\x77.js")', '_astro/w.js': small },
+      ['js-budget'],
+    ],
+    [
+      'an escape in an importScripts URL cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'importScripts("/_astro/\\x77.js")', '_astro/w.js': small },
+      ['js-budget'],
+    ],
+    [
+      'an escape in import() cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'import("/_astro/\\x77.js")', '_astro/w.js': small },
+      ['js-budget'],
+    ],
+    [
+      'an escape in a static import cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'import"./\\x77.js";', '_astro/w.js': small },
+      ['js-budget'],
+    ],
+    [
+      'an escape in a static from cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': "export{a}from'./w\\u002ejs';", '_astro/w.js': small },
+      ['js-budget'],
+    ],
+    [
+      'a backslash in a string that is no specifier is no escape here',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'import"./w.js";const p="a\\\\b";', '_astro/w.js': small },
+      [],
+    ],
+    // importScripts resolves against the worker, which the kit does not know, so it must start with / (Codex, #27).
+    [
+      'a relative importScripts URL cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'importScripts("./big.js")', '_astro/big.js': small },
+      ['js-budget'],
+    ],
+    // importScripts loads each of its arguments, so each one counts (Codex, #27).
+    [
+      'every file of importScripts counts',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'importScripts("/_astro/a.js","/_astro/w.js")', '_astro/a.js': small, '_astro/w.js': big },
+      ['js-budget'],
+    ],
+    [
+      'importScripts with a variable among its arguments cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'importScripts("/_astro/a.js",u)', '_astro/a.js': small },
+      ['js-budget'],
+    ],
+    [
+      'a property named Worker is no worker',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'x.Worker(u);new URL(location.href)' },
+      [],
+    ],
+  ];
+  assert.deepEqual(
+    cases.map(([name, options, markup, js]) => [name, budgetIds(options, markup, js)]),
+    cases.map(([name, , , , ids]) => [name, ids]),
+  );
+  // The finding names the worker as a way of loading later.
+  const lines = findingsOf(
+    auditJsBudget,
+    contextOf(budgetSite(SCRIPTS, module('/_astro/s.js'), worker("new Worker('/_astro/w.js')")), { options: SCRIPTS }),
+    'js-budget',
+  );
+  assert.ok(
+    lines.some((line) => line.includes('the JS that loads later through import() or a worker has')),
+    lines.join('\n'),
   );
 });
 

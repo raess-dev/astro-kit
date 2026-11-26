@@ -772,11 +772,25 @@ test('config-public-shadow: public/ holds no file that the kit writes', () => {
     ],
     ['the names outside public/', icons({ 'robots.txt': '', _headers: '', 'src/sitemap.xml': '' }), []],
     // Astro writes its bundled files to /_astro/, and js-script allows a module script there (section 8).
-    ['the folder _astro', icons({ 'public/_astro/evil.js': '' }), ['public/_astro']],
+    // A JS file in public/ fails too (owner decision of 2026-11-26), so these cases also name the file.
+    ['the folder _astro', icons({ 'public/_astro/evil.js': '' }), ['public/_astro', 'public/_astro/evil.js']],
     ['an empty folder _astro', icons({ 'public/_astro': FOLDER }), ['public/_astro']],
-    ['the folder _Astro in another letter case', icons({ 'public/_ASTRO/x.js': '' }), ['public/_ASTRO']],
+    [
+      'the folder _Astro in another letter case',
+      icons({ 'public/_ASTRO/x.js': '' }),
+      ['public/_ASTRO', 'public/_ASTRO/x.js'],
+    ],
     ['a file named _astro', icons({ 'public/_astro': '' }), ['public/_astro']],
-    ['_astro below the top of public/', icons({ 'public/docs/_astro/x.js': '' }), []],
+    ['_astro below the top of public/', icons({ 'public/docs/_astro/x.css': '' }), []],
+    // Every script comes from the bundler into /_astro/, so js-script and js-budget see all of it.
+    ['a JS file in public/', icons({ 'public/track.js': '' }), ['public/track.js']],
+    [
+      'an mjs and a cjs file deep in public/',
+      icons({ 'public/a/b/m.mjs': '', 'public/c.cjs': '' }),
+      ['public/a/b/m.mjs', 'public/c.cjs'],
+    ],
+    ['a JS file in another letter case', icons({ 'public/X.JS': '' }), ['public/X.JS']],
+    ['names that only look like JS', icons({ 'public/a.json': '', 'public/js.txt': '', 'public/a.js.map': '' }), []],
   ];
   const { actual, expected } = run('config-public-shadow', checkPublicShadow, cases);
   assert.deepEqual(actual, expected);

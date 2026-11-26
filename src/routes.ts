@@ -138,6 +138,12 @@ const FILE_EXTENSION = /\.([a-z0-9]+)$/;
 /** The extensions of a page. An endpoint with one of them could write the file of a page. */
 const PAGE_EXTENSIONS: readonly string[] = ['html', 'htm'];
 
+/**
+ * The extensions of a script. Every script comes from the bundler into `/_astro/`, so `js-script` and `js-budget` see
+ * all of it: an endpoint may not write one, as `public/` may not hold one (`config-public-shadow`).
+ */
+const SCRIPT_EXTENSIONS: readonly string[] = ['js', 'mjs', 'cjs'];
+
 /** The files in the root of the client directory that the kit writes, and that have a fixed name (6.3). */
 const KIT_ROOT_FILES: readonly string[] = ['/robots.txt', '/_headers', '/_redirects'];
 
@@ -178,6 +184,9 @@ function endpointProblems(pattern: string, options: RouteSettings): string[] {
   const extension = FILE_EXTENSION.exec(pattern)?.[1];
   if (extension === undefined) problems.push('the pattern does not end with a literal file extension');
   else if (PAGE_EXTENSIONS.includes(extension)) problems.push(`the extension .${extension} is that of a page`);
+  else if (SCRIPT_EXTENSIONS.includes(extension)) {
+    problems.push(`the extension .${extension} is that of a script; a script comes from the bundler`);
+  }
 
   const [first, second] = pathSegments(pattern);
   problems.push(segmentProblem(first, 'the first segment'));

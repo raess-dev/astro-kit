@@ -651,6 +651,57 @@ test('html-shell: no meta refresh and no meta referrer, in any letter case and w
   );
 });
 
+test('html-shell: the parser reads the whole page and its nested markup; an element left open fails', () => {
+  const inMain = (markup: string): string => swap(home(), '</main>', `${markup} </main>`);
+  const drops = (html: string): string[] =>
+    findings(run(auditHtmlShell, html)).filter((line) => line.includes('the parser drops'));
+  const cases: readonly [name: string, html: string, place: string | undefined][] = [
+    ['the page of the fixtures', home(), undefined],
+    // The parser drops each of these with its open ancestors, so js-script and every other rule were blind to it.
+    ['a script with no end tag', inMain('<script src="/x.js">'), ''],
+    ['an iframe with no end tag', inMain('<iframe title="x" src="https://cdn.example.org/">'), ''],
+    ['a link with no end tag', inMain('<a href="https://cdn.example.org/">x'), ''],
+    ['a form with no end tag', inMain('<form action="https://cdn.example.org/"><input name="a">'), ''],
+    ['a span with no end tag', inMain('<div><span>x</div>'), ''],
+    // Valid HTML, but this parser drops it: the fix text asks for the end tag of each option.
+    ['an option with no end tag', inMain('<select name="a"><option>a<option>b</select>'), ''],
+    [
+      'an open element in a srcdoc',
+      inMain('<iframe title="x" srcdoc="<div><iframe src=https://cdn.example.org/a></div>"></iframe>'),
+      ' in an iframe srcdoc',
+    ],
+    [
+      'an open element in a noscript',
+      inMain('<noscript><p><a href="https://cdn.example.org/">x</p></noscript>'),
+      ' in a noscript',
+    ],
+    // HTML closes these by itself, and the parser keeps them.
+    [
+      'p, li, td, dt and dd with no end tag',
+      inMain('<p>a<p>b<ul><li>a<li>b</ul><table><tr><td>a<td>b</table><dl><dt>a<dd>b</dl>'),
+      undefined,
+    ],
+    ['a stray end tag', inMain('<p>a</div></p>'), undefined],
+    ['a > in a quoted attribute', inMain('<p title="a > b">x</p>'), undefined],
+    ['a < in a script', inMain('<script type="application/ld+json">{"a":"<b"}</script>'), undefined],
+    [
+      'a closed srcdoc and noscript',
+      inMain('<iframe title="x" srcdoc="<p>a</p>"></iframe><noscript><p>a</p></noscript>'),
+      undefined,
+    ],
+  ];
+  assert.deepEqual(
+    cases.map(([name, html]) => [
+      name,
+      drops(html).map((line) => /drops \d+ elements?( in an? [a-z ]+)?:/.exec(line)?.[1] ?? ''),
+    ]),
+    cases.map(([name, , place]) => [name, place === undefined ? [] : [place]]),
+  );
+  assert.deepEqual(drops(inMain('<script src="/x.js">')), [
+    'html-shell / the parser drops 3 elements: an element is not closed, so no rule can read the page in full',
+  ]);
+});
+
 // Hostile input
 
 const SHELL_RULES: readonly Rule[] = [
