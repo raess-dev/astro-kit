@@ -14,6 +14,8 @@ import {
   FORMS_SHIM,
   FORMS_SHIM_FILE,
   firstDifference,
+  ISLANDS_SHIM,
+  ISLANDS_SHIM_FILE,
   normalize,
   otherBiomeConfigs,
   SHIMS,
@@ -484,6 +486,13 @@ test('the forms shim is the file of templates/features/forms and the block of 9.
   assert.equal(readFileSync(fileURLToPath(template), 'utf8'), FORMS_SHIM);
   assert.equal(FORMS_SHIM_FILE, 'src/pages/api/forms/[form].ts');
   assert.equal(SPEC.includes(`\n  \`\`\`ts\n${FORMS_SHIM.replace(/^(?=.)/gm, '  ')}  \`\`\`\n`), true);
+});
+
+test('the islands shim is the file of templates/features/islands and the block of 9.2', () => {
+  const template = new URL('../../templates/features/islands/eslint.config.mjs', import.meta.url);
+  assert.equal(readFileSync(fileURLToPath(template), 'utf8'), ISLANDS_SHIM);
+  assert.equal(ISLANDS_SHIM_FILE, 'eslint.config.mjs');
+  assert.equal(SPEC.includes(`\n  \`\`\`js\n${ISLANDS_SHIM.replace(/^(?=.)/gm, '  ')}  \`\`\`\n`), true);
 });
 
 test('config-shim: the forms shim passes when equal, also with CRLF; it fails when missing or edited', () => {

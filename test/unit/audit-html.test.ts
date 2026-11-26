@@ -5,11 +5,20 @@
  */
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { type ConfigData, HtmlValidate, StaticConfigLoader } from 'html-validate';
-import { auditHtml, auditHtmlValidate, HTML_VALIDATE_CONFIG, sizeOf, withoutDirectives } from '../../src/audit/html.ts';
+import {
+  auditHtml,
+  auditHtmlValidate,
+  HTML_VALIDATE_CONFIG,
+  ISLAND_STYLE_ELEMENT,
+  sizeOf,
+  withoutDirectives,
+  withoutIslandStyle,
+} from '../../src/audit/html.ts';
 import { modeInsert, speculationInsert } from '../../src/inject.ts';
 import type { Options } from '../../src/options.ts';
 import type { Report } from '../../src/registry.ts';
@@ -25,6 +34,7 @@ import {
   site,
 } from './audit-fixtures.ts';
 import { optionsOf, origin, TWO_LOCALES } from './fixtures.ts';
+import { SPEC } from './spec.ts';
 
 // Inputs
 
@@ -344,6 +354,57 @@ test('withoutDirectives: a directive becomes a plain comment of the same length'
     plain,
     '<p>a</p><!-- \n [html-validate_disable-next x] --><!--html-validate_enable y--><p>html-validate-x</p>',
   );
+});
+
+test('html-validate: on an islands site, only the exact island style element of Astro may stand in the body', async () => {
+  const islands = optionsOf({ ...TWO_LOCALES, features: { islands: true } });
+  const island =
+    '<astro-island uid="Z1" component-url="/_astro/C.js" renderer-url="/_astro/client.js" ssr client="visible" opts="{}"><button type="button">0</button></astro-island>';
+  const inDiv = (style: string): string => `<div>${style}${island}</div>`;
+  // The text of 7.1 is the island style of the installed Astro.
+  const runtime = createRequire(createRequire(import.meta.url).resolve('astro/package.json'))(
+    '@astrojs/runtime/_internal/server/astro-island-styles.js',
+  ) as { ISLAND_STYLES: string };
+  assert.equal(ISLAND_STYLE_ELEMENT, `<style>${runtime.ISLAND_STYLES}</style>`);
+  assert.ok(SPEC.includes(`The island style is the one rule \`${runtime.ISLAND_STYLES}\``));
+  const cases: readonly [name: string, main: string, options: Options, ids: string[]][] = [
+    ['the island style in a div with islands', inDiv(ISLAND_STYLE_ELEMENT), islands, []],
+    [
+      'the island style in a section and a list item',
+      `<section><ul><li>${ISLAND_STYLE_ELEMENT}${island}</li></ul></section>`,
+      islands,
+      [],
+    ],
+    ['the island style without islands', inDiv(ISLAND_STYLE_ELEMENT), OPTIONS, ['html-validate']],
+    ['another style in the body with islands', inDiv('<style>p{color:red}</style>'), islands, ['html-validate']],
+    [
+      'the island style with an attribute',
+      inDiv(ISLAND_STYLE_ELEMENT.replace('<style>', '<style media="all">')),
+      islands,
+      ['html-validate'],
+    ],
+    [
+      'the island style with one more rule',
+      inDiv(ISLAND_STYLE_ELEMENT.replace('}</style>', '}p{color:red}</style>')),
+      islands,
+      ['html-validate'],
+    ],
+  ];
+  const seen: [string, string[]][] = [];
+  for (const [name, main, options] of cases) seen.push([name, ids(await run(home(main, options), options))]);
+  assert.deepEqual(
+    seen,
+    cases.map(([name, , , wanted]) => [name, wanted]),
+  );
+  // The comment keeps every place: a later message has the line and column of the page.
+  const later = home(`${inDiv(ISLAND_STYLE_ELEMENT)}<p id="content">x</p>`, islands);
+  assert.equal(withoutIslandStyle(later).length, later.length);
+  const expected = await oracleMessages(withoutIslandStyle(later));
+  assert.ok(
+    expected.some((message) => message.startsWith('no-dup-id: ')),
+    expected.join('\n'),
+  );
+  assert.deepEqual(placesOf(await run(later, islands)), expected);
 });
 
 test('html-validate: a config file of the project is not read', async () => {

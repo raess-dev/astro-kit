@@ -25,6 +25,7 @@ import {
 } from './project.ts';
 import { loadRedirects } from './redirects.ts';
 import type { Report } from './registry.ts';
+import { checkScriptSources } from './scripts.ts';
 import { checkFormsShim, checkShims } from './shims.ts';
 
 /**
@@ -32,8 +33,9 @@ import { checkFormsShim, checkShims } from './shims.ts';
  * `astro-kit.json` is missing or not valid.
  *
  * **The settings rule.** A check that reads the settings runs only with valid settings: `config-waiver`,
- * `legal-processing`, the forms part of `config-shim`, `config-dep-allowlist`, the text comparison of `config-wrangler`, `forms-binding`,
- * `modes-themes`, `design-tokens` and `modes-media` at this milestone. Every other check always runs, so a run without valid
+ * `legal-processing`, the forms part of `config-shim`, `config-dep-allowlist`, the source half of `js-script`, the
+ * text comparison of `config-wrangler`, `forms-binding`, `modes-themes`, `design-tokens` and `modes-media` at this
+ * milestone. Every other check always runs, so a run without valid
  * settings still reports the facts files, the shims, the package, the sources, `public/`, the images, the wrangler
  * files, the redirects, the design document and the other CSS source halves.
  *
@@ -65,11 +67,13 @@ export function preflight(root: string, report: Report): Options | undefined {
   checkDepSpecs(root, report);
   if (options !== undefined) checkDepAllowlist(root, options, report);
 
-  // 4. Sources: `config-suppression`, `config-imports`, `config-server`.
+  // 4. Sources: `config-suppression`, `config-imports`, `config-server`, then the source halves of `js-script`,
+  // `js-prefetch-attr`, `js-directive` and `csp-hash`. The half of `js-script` reads the settings, so it runs only
+  // with valid settings.
   checkSuppression(root, report);
   checkImports(root, report);
   checkServer(root, report);
-  // M8: the source halves of `js-script`, `js-prefetch-attr`, `js-directive` and `csp-hash`.
+  checkScriptSources(root, options, report);
 
   // 5. `public/`: `config-public-shadow`, `images-public`.
   checkPublicShadow(root, report);

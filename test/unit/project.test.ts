@@ -30,6 +30,7 @@ import {
   KIT_PACKAGE,
   listFiles,
   PACKAGE_FILE,
+  PUBLIC_ASSETS,
   PUBLIC_RASTER_ALLOWED,
   PUBLIC_SHADOWS,
   PUBLIC_SITEMAP,
@@ -167,6 +168,9 @@ test('the fixed values are those of the rule tables of section 8', () => {
   assert.ok(specRow('images-public').includes(`(${code(RASTER_EXTENSIONS.join(' '))})`));
   assert.ok(specRow('images-public').includes(`except ${list(PUBLIC_RASTER_ALLOWED)}.`));
   assert.ok(specRow('config-public-shadow').includes(`none of ${list([...PUBLIC_SHADOWS, 'sitemap*.xml'])}.`));
+  assert.ok(
+    specRow('config-public-shadow').includes(`no folder or file ${code(PUBLIC_ASSETS)} either, in any letter case`),
+  );
   assert.equal(PUBLIC_SITEMAP.source, '^sitemap.*\\.xml$');
 
   const number = (value: number): string => value.toLocaleString('en-US');
@@ -767,6 +771,12 @@ test('config-public-shadow: public/ holds no file that the kit writes', () => {
       [],
     ],
     ['the names outside public/', icons({ 'robots.txt': '', _headers: '', 'src/sitemap.xml': '' }), []],
+    // Astro writes its bundled files to /_astro/, and js-script allows a module script there (section 8).
+    ['the folder _astro', icons({ 'public/_astro/evil.js': '' }), ['public/_astro']],
+    ['an empty folder _astro', icons({ 'public/_astro': FOLDER }), ['public/_astro']],
+    ['the folder _Astro in another letter case', icons({ 'public/_ASTRO/x.js': '' }), ['public/_ASTRO']],
+    ['a file named _astro', icons({ 'public/_astro': '' }), ['public/_astro']],
+    ['_astro below the top of public/', icons({ 'public/docs/_astro/x.js': '' }), []],
   ];
   const { actual, expected } = run('config-public-shadow', checkPublicShadow, cases);
   assert.deepEqual(actual, expected);

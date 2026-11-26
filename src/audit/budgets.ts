@@ -1,11 +1,11 @@
 /**
- * The budgets audit (specification, 6.1, `astro:build:done`, step 4, third; section 8): `budget-head`,
- * `budget-document`, `budget-dom` and `budget-fonts`. `js-budget` joins it in M8.
+ * The budgets audit (specification, 6.1, `astro:build:done`, step 4, third; section 8): `js-budget`, `budget-head`,
+ * `budget-document`, `budget-dom` and `budget-fonts`.
  *
  * **Compressed size** is the larger of zstd level 3 (`ZSTD_c_compressionLevel`) and brotli quality 5
  * (`BROTLI_PARAM_QUALITY`) of the bytes (section 8): `compressedSize`.
  *
- * **Scopes** (Measurement details): `budget-head`, `budget-document` and `budget-dom` hold for each page, and report
+ * **Scopes** (Measurement details): `js-budget`, `budget-head`, `budget-document` and `budget-dom` hold for each page, and report
  * at the page path. `budget-fonts` holds for the site as a whole, and reports once, at `/` (the place of a waiver for
  * it).
  *
@@ -19,8 +19,10 @@ import type { HTMLElement } from 'node-html-parser';
 import type { BuildContext, BuiltPage } from '../context.ts';
 import {
   type AuditRule,
+  attr,
   cspMetasOf,
   decodePath,
+  distFileOf,
   domOf,
   type PageDom,
   rawContentOf,
@@ -40,6 +42,312 @@ export function compressedSize(data: string | Uint8Array): number {
 
 /** A size for a detail: `14,512 B`. */
 const bytes = (size: number): string => `${size.toLocaleString('en-US')} B`;
+
+// js-budget
+
+/** The static imports of a JS text, exact (section 8): `import "…"`, `from "…"`, for a `.js` file. */
+export const STATIC_IMPORT = /(?:\bimport|\bfrom)\s*["']([^"']+\.js)["']/g;
+
+/**
+ * The dynamic imports of a JS text, exact (section 8): `import("…")`, `import('…')` or ``import(`…`)`` of a `.js`
+ * file. A template literal counts only without a substitution (`${`). Astro 7 bundles with Rolldown, which writes the
+ * backtick form. The specifier is the group that matched.
+ */
+export const DYNAMIC_IMPORT = /\bimport\(\s*(?:"([^"]+\.js)"|'([^']+\.js)'|`([^`$]+\.js)`)\s*\)/g;
+
+/**
+ * The start of every `import(` call: the word `import`, white space, and `(`. A property access (`x.import(`) and a
+ * longer name (`reimport(`) are no such call. Each one must be a match of `DYNAMIC_IMPORT`, or the JS cannot be
+ * measured.
+ */
+const IMPORT_CALL = /(?<![\w$.])import\s*\(/g;
+
+/** The specifier of a match of `DYNAMIC_IMPORT`: the group that matched. */
+const dynamicSpecifier = (match: RegExpMatchArray): string => match[1] ?? match[2] ?? match[3] ?? '';
+
+/** The prefetch chunk of `injectScript('page', …)`, by its path (13.1, item 8). */
+export const PREFETCH_CHUNK = /^\/_astro\/page(\.[\w-]+)?\.js$/;
+
+/** The attributes of an `astro-island` that name the JS that loads at once. */
+export const ISLAND_URLS: readonly string[] = ['component-url', 'renderer-url', 'before-hydration-url'];
+
+/** The folder of Astro's bundled assets. */
+const ASSETS = '/_astro/';
+
+/** What `js-budget` reads of the JS files of a build, each file once. */
+interface JsIndex {
+  /** The dist file of a URL of the page or of the file at `base`, or `undefined` when dist has no such file. */
+  fileOf: (url: string, base: string) => string | undefined;
+  /** The files that a file names in its static imports. */
+  imports: (file: string) => readonly string[];
+  /** The files that a JS text names in its static imports; `base` is the URL path of the text. */
+  staticOf: (text: string, base: string) => string[];
+  /** The files under `/_astro/` that a JS text names in `import()`; `base` is the URL path of the text. */
+  dynamic: (text: string, base: string) => string[];
+  /** The text of a dist file, as UTF-8. */
+  text: (file: string) => string;
+  /** The compressed size of a dist file. */
+  size: (file: string) => number;
+}
+
+const JS_INDEXES = new WeakMap<BuildContext, JsIndex>();
+
+const DECODER = new TextDecoder();
+
+/** The JS index of a build, made once for each context. */
+function jsIndexOf(ctx: BuildContext): JsIndex {
+  const known = JS_INDEXES.get(ctx);
+  if (known !== undefined) return known;
+  const texts = new Map<string, string>();
+  const sizes = new Map<string, number>();
+  const statics = new Map<string, readonly string[]>();
+  const fileOf = (url: string, base: string): string | undefined => distFileOf(ctx, url, base);
+  const text = (file: string): string => {
+    let found = texts.get(file);
+    if (found === undefined) {
+      const content = ctx.read(file);
+      found = content === undefined ? '' : DECODER.decode(content);
+      texts.set(file, found);
+    }
+    return found;
+  };
+  const named = (specifiers: Iterable<string>, base: string): string[] => {
+    const out: string[] = [];
+    for (const specifier of specifiers) {
+      const file = fileOf(specifier, base);
+      if (file !== undefined) out.push(file);
+    }
+    return out;
+  };
+  const staticOf = (source: string, base: string): string[] =>
+    named(
+      [...source.matchAll(STATIC_IMPORT)].map((match) => match[1] ?? ''),
+      base,
+    );
+  const index: JsIndex = {
+    fileOf,
+    imports: (file) => {
+      let found = statics.get(file);
+      if (found === undefined) {
+        found = staticOf(text(file), `/${file}`);
+        statics.set(file, found);
+      }
+      return found;
+    },
+    staticOf,
+    dynamic: (source, base) =>
+      named([...source.matchAll(DYNAMIC_IMPORT)].map(dynamicSpecifier), base).filter((file) =>
+        `/${file}`.startsWith(ASSETS),
+      ),
+    text,
+    size: (file) => {
+      let found = sizes.get(file);
+      if (found === undefined) {
+        found = compressedSize(ctx.read(file) ?? new Uint8Array());
+        sizes.set(file, found);
+      }
+      return found;
+    },
+  };
+  JS_INDEXES.set(ctx, index);
+  return index;
+}
+
+/**
+ * Says whether a JS text holds an `import(` that `DYNAMIC_IMPORT` does not read: its argument is no string literal
+ * of a `.js` file (`import(url)`, a template literal with `${`), or white space stands before the parenthesis. The
+ * kit cannot know what such a call loads, so the JS cannot be measured.
+ */
+export function hasUnmeasuredImport(text: string): boolean {
+  const read = new Set<number>();
+  for (const match of text.matchAll(DYNAMIC_IMPORT)) read.add(match.index);
+  for (const match of text.matchAll(IMPORT_CALL)) if (!read.has(match.index)) return true;
+  return false;
+}
+
+/** The static-import closure of some files: the files and every file that they import, at any depth, once each. */
+function closureOf(index: JsIndex, start: Iterable<string>): Set<string> {
+  const seen = new Set<string>();
+  const stack = [...start];
+  for (let file = stack.pop(); file !== undefined; file = stack.pop()) {
+    if (seen.has(file)) continue;
+    seen.add(file);
+    for (const next of index.imports(file)) if (!seen.has(next)) stack.push(next);
+  }
+  return seen;
+}
+
+/**
+ * The JS that loads later: every `/_astro/*.js` file that a file of `start` or one of the inline `texts` names in
+ * `import()`, with its static closure, and again for the `import()` of each new file, until nothing is added; minus
+ * the files of `atOnce`. Each file is read once, so the search ends.
+ */
+function laterOf(
+  index: JsIndex,
+  atOnce: ReadonlySet<string>,
+  texts: readonly { text: string; base: string }[],
+): Set<string> {
+  const later = new Set<string>();
+  const queue: string[] = [];
+  const add = (named: readonly string[]): void => {
+    for (const file of closureOf(index, named)) {
+      if (atOnce.has(file) || later.has(file)) continue;
+      later.add(file);
+      queue.push(file);
+    }
+  };
+  for (const { text, base } of texts) add(index.dynamic(text, base));
+  for (const file of atOnce) add(index.dynamic(index.text(file), `/${file}`));
+  for (let file = queue.pop(); file !== undefined; file = queue.pop()) add(index.dynamic(index.text(file), `/${file}`));
+  return later;
+}
+
+/** The sum of the compressed sizes of some files. */
+function sizeOf(index: JsIndex, files: Iterable<string>): number {
+  let total = 0;
+  for (const file of files) total += index.size(file);
+  return total;
+}
+
+/** The largest files of a set as a detail: `/_astro/a.js 12,000 B, /_astro/b.js 900 B`, at most five. */
+function largest(index: JsIndex, files: ReadonlySet<string>): string {
+  const list = [...files]
+    .map((file) => [file, index.size(file)] as const)
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  const shown = list.slice(0, 5).map(([file, size]) => `/${file} ${bytes(size)}`);
+  return list.length > 5 ? `${shown.join(', ')}, and ${list.length - 5} more` : shown.join(', ');
+}
+
+/** The first five names of a list as a detail, with the number of the others. */
+function firstNames(names: readonly string[]): string {
+  const shown = names.slice(0, 5).join(', ');
+  return names.length > 5 ? `${shown}, and ${names.length - 5} more` : shown;
+}
+
+/** One module script of a page: the dist file of its `src`, or its inline text. */
+interface ModuleScript {
+  /** The URL path of the text: the file of `src`, or the page for an inline script. */
+  base: string;
+  text: string;
+  /** The dist file of `src`, or `undefined` for an inline script and for a `src` that names no dist file. */
+  file: string | undefined;
+  /** Says whether the script is inline: it has no `src`. */
+  inline: boolean;
+}
+
+/** The module scripts of a page (`type="module"`), with `src` or inline. */
+function moduleScripts(index: JsIndex, dom: PageDom): ModuleScript[] {
+  const out: ModuleScript[] = [];
+  for (const script of dom.byTag('script')) {
+    if (scriptKind(script) !== 'module') continue;
+    const src = attr(script, 'src');
+    if (src === undefined) {
+      out.push({ base: dom.page.path, text: rawContentOf(script), file: undefined, inline: true });
+      continue;
+    }
+    const file = index.fileOf(src, dom.page.path);
+    out.push({
+      base: file === undefined ? dom.page.path : `/${file}`,
+      text: file === undefined ? '' : index.text(file),
+      file,
+      inline: false,
+    });
+  }
+  return out;
+}
+
+/**
+ * `js-budget` (section 8), for each page.
+ *
+ * - **At once:** the static-import closure (`STATIC_IMPORT`) of the files that the `component-url`, `renderer-url`
+ *   and `before-hydration-url` of every `astro-island` of the page name, and of every module script of the page: the
+ *   file of its `src`, or the files that its inline text imports. The sum of their compressed sizes is at most
+ *   `islandJsBytes`.
+ * - **Later:** every `/_astro/*.js` file that an at-once file or an inline module script names in `import()`
+ *   (`DYNAMIC_IMPORT`), with the static-import closure of each, and again for the `import()` of each new file, until
+ *   nothing is added (`laterOf`); minus the at-once files. The sum is at most `lazyJsBytes`.
+ * - **Cannot be measured:** an at-once or later file, or an inline module script, with an `import(` that
+ *   `DYNAMIC_IMPORT` does not read (`hasUnmeasuredImport`).
+ * - **Prefetch:** a module script of the page whose `src` is the prefetch chunk (`PREFETCH_CHUNK`), with its
+ *   static-import closure, is at most `prefetchJsBytes`. With astroPrefetch on, a page without that chunk, or whose
+ *   chunk names no dist file, fails.
+ *
+ * A URL resolves against the page, and a specifier of a JS file against the URL of that file (`resolveHref`). A URL
+ * that names no dist file adds nothing: the browser loads nothing from it. One finding for each limit that a page
+ * breaks, with its largest files.
+ */
+export function auditJsBudget(ctx: BuildContext): void {
+  const index = jsIndexOf(ctx);
+  const { islandJsBytes, lazyJsBytes, prefetchJsBytes } = ctx.limits;
+  for (const page of ctx.pages) {
+    const dom = domOf(page);
+    const start: string[] = [];
+    for (const island of dom.byTag('astro-island')) {
+      for (const name of ISLAND_URLS) {
+        const url = attr(island, name);
+        const file = url === undefined ? undefined : index.fileOf(url, page.path);
+        if (file !== undefined) start.push(file);
+      }
+    }
+    const scripts = moduleScripts(index, dom);
+    const inline = scripts.filter((script) => script.inline);
+    for (const script of scripts) {
+      if (script.file !== undefined) start.push(script.file);
+      if (script.inline) start.push(...index.staticOf(script.text, script.base));
+    }
+    const atOnce = closureOf(index, start);
+    const later = laterOf(index, atOnce, inline);
+
+    const now = sizeOf(index, atOnce);
+    if (now > islandJsBytes) {
+      ctx.report.add(
+        'js-budget',
+        page.path,
+        `the JS that loads at once has ${bytes(now)} compressed; at most ${bytes(islandJsBytes)} (${largest(index, atOnce)})`,
+      );
+    }
+    const lazy = sizeOf(index, later);
+    if (lazy > lazyJsBytes) {
+      ctx.report.add(
+        'js-budget',
+        page.path,
+        `the JS that loads later through import() has ${bytes(lazy)} compressed; at most ${bytes(lazyJsBytes)} (${largest(index, later)})`,
+      );
+    }
+    const unmeasured = [
+      ...[...atOnce, ...later].filter((file) => hasUnmeasuredImport(index.text(file))).map((file) => `/${file}`),
+      ...(inline.some((script) => hasUnmeasuredImport(script.text)) ? ['an inline module script'] : []),
+    ];
+    if (unmeasured.length > 0) {
+      ctx.report.add(
+        'js-budget',
+        page.path,
+        `the JS cannot be measured: an import() whose argument is no string literal of a .js file (${firstNames(unmeasured)})`,
+      );
+    }
+    const chunks = scripts
+      .map((script) => script.file)
+      .filter((file): file is string => file !== undefined && PREFETCH_CHUNK.test(`/${file}`));
+    for (const chunk of new Set(chunks)) {
+      const closure = closureOf(index, [chunk]);
+      const size = sizeOf(index, closure);
+      if (size > prefetchJsBytes) {
+        ctx.report.add(
+          'js-budget',
+          page.path,
+          `the prefetch chunk has ${bytes(size)} compressed with its imports; at most ${bytes(prefetchJsBytes)} (${largest(index, closure)})`,
+        );
+      }
+    }
+    if (ctx.options.prefetch.astroPrefetch && chunks.length === 0) {
+      ctx.report.add(
+        'js-budget',
+        page.path,
+        'astroPrefetch is on, but the page loads no prefetch chunk /_astro/page.<hash>.js',
+      );
+    }
+  }
+}
 
 // budget-head
 
@@ -246,6 +554,7 @@ export function auditBudgetFonts(ctx: BuildContext): void {
 
 /** The rules of the budgets audit, in the order of section 8. */
 export const BUDGET_RULES: readonly AuditRule[] = [
+  { id: 'js-budget', run: auditJsBudget },
   { id: 'budget-head', run: auditBudgetHead },
   { id: 'budget-document', run: auditBudgetDocument },
   { id: 'budget-dom', run: auditBudgetDom },

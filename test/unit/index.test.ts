@@ -1984,6 +1984,25 @@ test('build:done inserts only what the settings ask for, and release.txt says lo
   );
 });
 
+test('build:done with islands: the header policy of _headers has no Trusted Types, and the build passes', async () => {
+  const seen = await inSite(
+    { settings: ISLANDS, prepare: linkSolid, files: distFiles('dist', ISLANDS) },
+    async (site) => ({
+      setup: site.error,
+      error: await buildDone(site),
+      headers: textOf(join(site.root, 'dist/_headers')),
+    }),
+  );
+  const policy = "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'";
+  assert.deepEqual(seen, {
+    setup: undefined,
+    error: undefined,
+    headers: HEADERS.replace(HEADER_POLICY, policy),
+  });
+  assert.equal(HEADERS.includes(HEADER_POLICY), true);
+  assert.equal(seen.headers.includes('trusted-types'), false);
+});
+
 /**
  * The forms settings of the fake site: the example of 5.1 with a contact form of two fields, so that every control
  * of the form is an `input` or the `button`, which `ELEMENTS_CSS` covers (`css-element-coverage`).

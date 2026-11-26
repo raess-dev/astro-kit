@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { sha256 } from '../../src/csp.ts';
-import { ISLANDS_MISSING, SOLID_SERVER, solidHydrationHash } from '../../src/islands.ts';
+import { ISLANDS_MISSING, SOLID_SERVER, solidHydrationHash, solidHydrationText } from '../../src/islands.ts';
 import { type Files, inTempAsync, json, resolvedFrom } from './fixtures.ts';
 import { SPEC } from './spec.ts';
 
@@ -84,4 +84,27 @@ test('a solid-js that gives no hydration script throws a message that says so', 
   ];
   for (const [name, server, outcome] of cases)
     assert.equal(await inTempAsync(fakeSolid(server), outcomeOf), outcome, name);
+});
+
+test('solidHydrationText gives the text that solidHydrationHash hashes, read without await, and never throws', async () => {
+  const text = solidHydrationText(KIT_ROOT);
+  assert.equal(typeof text, 'string');
+  assert.equal(sha256(text ?? ''), await solidHydrationHash(KIT_ROOT));
+  assert.equal(sha256(text ?? ''), ITEM_11?.[3]);
+  const output = '<script>window.fake||(window.fake=1);</script><!--xs-->';
+  const fake = `export function generateHydrationScript() { return ${JSON.stringify(output)}; }\n`;
+  assert.equal(
+    await inTempAsync(fakeSolid(fake), async (root) => solidHydrationText(root)),
+    'window.fake||(window.fake=1);',
+  );
+  const cases: [name: string, server: string][] = [
+    ['no <script> in the output', "export function generateHydrationScript() { return '<!--xs-->'; }\n"],
+    ['no function generateHydrationScript', 'export const generateHydrationScript = 1;\n'],
+    ['a function that throws', "export function generateHydrationScript() { throw new Error('x'); }\n"],
+    ['a module that does not load', 'export const = ;\n'],
+  ];
+  for (const [name, server] of cases) {
+    assert.equal(await inTempAsync(fakeSolid(server), async (root) => solidHydrationText(root)), undefined, name);
+  }
+  assert.equal(solidHydrationText('/nowhere'), undefined);
 });
