@@ -302,3 +302,6 @@
     refuses the bodies of 13.1 item 78 itself. The adapter adds its lines to `.assetsignore` before the audit of the
     kit, and the final file hides every private file. New: the `static` variant, the `forms` variant and the `route`
     set; the `build` set holds the three forms ids.
+- `perf-image-oversize` no longer loses a lazy image that finishes its own load while the rule reads the page (1 run
+  in 50 under load lost the finding). A file that a preload or a style sheet fetched exempts no image, so its
+  verdict no longer depends on which load ends first.
