@@ -784,7 +784,9 @@ export type HrefTarget =
   | { kind: 'invalid' };
 
 /** An href without the C0 controls and spaces at both ends, which a URL parser strips. */
-function strip(text: string): string {
+function strip(raw: string): string {
+  // The URL parser removes every tab and line break first, wherever it stands (URL standard, basic URL parser).
+  const text = raw.replace(/[\t\n\r]/g, '');
   let start = 0;
   let end = text.length;
   while (start < end && text.charCodeAt(start) <= 0x20) start += 1;
@@ -834,7 +836,8 @@ function withSlashes(text: string): string {
 
 /**
  * Where an `href` of the page at `base` (a page path such as `/fr/kontakt/` or `/404.html`) leads, for the site on
- * `host` (lower case, no port). A backslash before the query reads as a slash (`withSlashes`). It never throws.
+ * `host` (lower case, no port). A tab or line break anywhere is removed, and a backslash before the query reads as a
+ * slash (`withSlashes`), as in the URL parser. It never throws.
  */
 export function resolveHref(href: string, base: string, host: string): HrefTarget {
   const stripped = strip(href);

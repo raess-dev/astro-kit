@@ -725,10 +725,17 @@ export function auditFormsFields(ctx: BuildContext): void {
       }
       const required = hasAttr(field, 'required');
       const wanted = required ? words.required : words.optional;
+      const other = required ? words.optional : words.required;
       const found = wordsOf(labelText(dom, field).toLowerCase());
       if (!found.some((word) => wanted.has(word))) {
         problems.push(
           `the label of ${shown} has no ${required ? 'required' : 'optional'} word (${[...wanted].join(', ')})`,
+        );
+      }
+      const wrong = found.filter((word) => other.has(word));
+      if (wrong.length > 0) {
+        problems.push(
+          `the label of ${shown} has the ${required ? 'optional' : 'required'} word ${JSON.stringify(wrong[0])}; the field is ${required ? 'required' : 'optional'}`,
         );
       }
     }

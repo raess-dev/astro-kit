@@ -284,10 +284,11 @@
     form has no `novalidate`, no `accept-charset` other than `utf-8`, no constraint that a declaration cannot express
     and no control that a browser never sends. An email field carries `EMAIL_PATTERN`, which
     `@raess/astro-kit/forms` exports. The notes `#sent` and `#not-sent` follow the markup pattern of 9.1.
-  - `forms-fields` reads the rendered label text, without the text of controls and hidden parts. A field in a
-    language without words fails on a page whose locale has words. `forms-safety` counts only a privacy link that a
-    visitor can see and reach, and a form that posts by `formmethod` needs it too. An href with a backslash resolves
-    as in a browser, and `routes-404` reads `/api/forms/` in any letter case.
+  - `forms-fields` reads the rendered label text, without the text of controls and hidden parts. A label with both
+    the required and the optional word fails. A field in a language without words fails on a page whose locale has
+    words. `forms-safety` counts only a privacy link that a
+    visitor can see and reach, and a form that posts by `formmethod` needs it too. An href with a backslash or with a
+    tab or line break resolves as in a browser, and `routes-404` reads `/api/forms/` in any letter case.
   - Each form has its own body cap, the largest body that a browser can send for it, in place of the flat 32,768 B.
     `config-options` fails a form whose cap is above 131,072 B.
   - `a11y-no-js` checks that no note shows before the send, that the form shows its privacy link, and that only

@@ -523,6 +523,15 @@ test('forms-fields: a required label needs a required word, an optional label an
   assert.deepEqual(ids(runBooking(auditFormsFields, 'Telefon (optional)', 'Telefon (freiwillig)')), []);
 });
 
+test('forms-fields: a label that holds both words fails, whichever the field is', () => {
+  const both = runContact(auditFormsFields, 'Name (Pflichtfeld)', 'Name (optional, Pflichtfeld)');
+  assert.deepEqual(ids(both), ['forms-fields']);
+  assert.match(both.findings[0]?.detail ?? '', /has the optional word "optional"; the field is required/);
+  const optional = runBooking(auditFormsFields, 'Telefon (optional)', 'Telefon (freiwillig, erforderlich)');
+  assert.deepEqual(ids(optional), ['forms-fields']);
+  assert.match(optional.findings[0]?.detail ?? '', /has the required word "erforderlich"; the field is optional/);
+});
+
 test('forms-fields: the language of the field picks the words; a radio reads the legend of its fieldset', () => {
   assert.deepEqual(
     ids(runContact(auditFormsFields, '<label>Name (Pflichtfeld)', '<label lang="fr">Nom (obligatoire)')),

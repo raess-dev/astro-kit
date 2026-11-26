@@ -391,6 +391,16 @@ test('resolveHref: a backslash before the query reads as a slash, as the URL sta
   assert.equal(decodePath('/%E0%A4%A/'), undefined);
 });
 
+test('resolveHref: a tab or line break anywhere in the href is removed, as the URL standard does', () => {
+  const host = 'example.ch';
+  for (const href of ['/api/for\tms/contact/', '/api/forms/\ncontact/', '/zim\r\nmer/#a', 'https://exa\tmple.ch/a/']) {
+    const url = new URL(href, 'https://example.ch/');
+    const target = resolveHref(href, '/', host);
+    assert.equal(target.kind, 'internal', JSON.stringify(href));
+    assert.equal(target.kind === 'internal' ? target.path : '', url.pathname, JSON.stringify(href));
+  }
+});
+
 test('linksOf resolves each a[href] and area[href] once, and linkedPages keeps the built pages', () => {
   const ctx = contextOf(site());
   const home = siteOf(ctx).pages.get('/');
