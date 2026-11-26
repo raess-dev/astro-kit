@@ -1100,6 +1100,36 @@ test('js-budget: a preloaded script loads at once, and a worker file loads later
       { '_astro/s.js': 'navigator.serviceWorker.register(u)' },
       ['js-budget'],
     ],
+    // The whole argument must be a literal: a suffix or another base changes the URL that loads (Codex, #27).
+    [
+      'a worker URL that a suffix changes cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'new Worker("/_astro/a.js"+suffix)' },
+      ['js-budget'],
+    ],
+    [
+      'a worker URL on another base cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'new Worker(new URL("/_astro/w.js",location.href))', '_astro/w.js': small },
+      ['js-budget'],
+    ],
+    // importScripts loads each of its arguments, so each one counts (Codex, #27).
+    [
+      'every file of importScripts counts',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'importScripts("/_astro/a.js","/_astro/w.js")', '_astro/a.js': small, '_astro/w.js': big },
+      ['js-budget'],
+    ],
+    [
+      'importScripts with a variable among its arguments cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'importScripts("/_astro/a.js",u)', '_astro/a.js': small },
+      ['js-budget'],
+    ],
     [
       'a property named Worker is no worker',
       SCRIPTS,

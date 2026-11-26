@@ -74,14 +74,53 @@ export const WORKER_URL =
 
 /**
  * The start of every call that starts a worker: `new Worker(`, `new SharedWorker(`, `importScripts(` and
- * `serviceWorker.register(`. Each one must take a literal of a `.js` file (`WORKER_ARGUMENT`), or the JS cannot be
- * measured.
+ * `serviceWorker.register(`. Each one must take a whole argument that the kit can read (`WORKER_ARGUMENT`,
+ * `IMPORT_SCRIPTS_ARGUMENTS`), or the JS cannot be measured.
  */
 const WORKER_CALL =
   /(?:(?<![\w$.])(?:new\s+(?:Worker|SharedWorker)|importScripts)|\bserviceWorker\s*\.\s*register)\s*\(/g;
 
-/** The first argument of a worker call that the kit can measure: a literal of a `.js` file, or `new URL(` of one. */
-const WORKER_ARGUMENT = /\s*(?:new\s+URL\s*\(\s*)?(?:"[^"]+\.js"|'[^']+\.js'|`[^`$]+\.js`)/y;
+/** A backtick, for the regex sources below. */
+const BACKTICK = '`';
+
+/** A string literal of a `.js` file: in quotes, or a template literal without a substitution. */
+const JS_LITERAL = String.raw`(?:"[^"]+\.js"|'[^']+\.js'|${BACKTICK}[^${BACKTICK}$]+\.js${BACKTICK})`;
+
+/**
+ * The first argument of a worker call that the kit can measure, whole: a literal of a `.js` file, or `new URL(` of
+ * one with no base, `import.meta.url` or Rolldown's ``` ``+import.meta.url ```; then the end of the argument (`,` or
+ * `)`). So `"/_astro/a.js" + suffix` is no such argument: the browser loads another URL than the literal.
+ */
+const WORKER_ARGUMENT = new RegExp(
+  String.raw`\s*(?:${JS_LITERAL}|new\s+URL\s*\(\s*${JS_LITERAL}\s*(?:,\s*(?:${BACKTICK}${BACKTICK}\s*\+\s*)?import\.meta\.url\s*)?\))\s*[,)]`,
+  'y',
+);
+
+/** The arguments of an `importScripts(` call that the kit can measure: literals of `.js` files only, to the `)`. */
+const IMPORT_SCRIPTS_ARGUMENTS = new RegExp(String.raw`\s*${JS_LITERAL}(?:\s*,\s*${JS_LITERAL})*\s*\)`, 'y');
+
+/** Every literal of a `.js` file in a text, with its specifier in the group that matched. */
+const JS_LITERALS = new RegExp(
+  String.raw`"([^"]+\.js)"|'([^']+\.js)'|${BACKTICK}([^${BACKTICK}$]+\.js)${BACKTICK}`,
+  'g',
+);
+
+/**
+ * The scripts of every `importScripts(` call whose arguments the kit can read: each argument counts, because the
+ * browser loads each one.
+ */
+function importScriptsSpecifiers(text: string): string[] {
+  const out: string[] = [];
+  for (const match of text.matchAll(WORKER_CALL)) {
+    if (!match[0].includes('importScripts')) continue;
+    const start = match.index + match[0].length;
+    IMPORT_SCRIPTS_ARGUMENTS.lastIndex = start;
+    const list = IMPORT_SCRIPTS_ARGUMENTS.exec(text);
+    if (list === null) continue;
+    for (const one of list[0].matchAll(JS_LITERALS)) out.push(dynamicSpecifier(one));
+  }
+  return out;
+}
 
 /** The specifier of a match of `DYNAMIC_IMPORT` or `WORKER_URL`: the group that matched. */
 const dynamicSpecifier = (match: RegExpMatchArray): string => match[1] ?? match[2] ?? match[3] ?? '';
@@ -154,7 +193,13 @@ function jsIndexOf(ctx: BuildContext): JsIndex {
     },
     staticOf,
     dynamic: (source, base) =>
-      named([...source.matchAll(DYNAMIC_IMPORT), ...source.matchAll(WORKER_URL)].map(dynamicSpecifier), base),
+      named(
+        [
+          ...[...source.matchAll(DYNAMIC_IMPORT), ...source.matchAll(WORKER_URL)].map(dynamicSpecifier),
+          ...importScriptsSpecifiers(source),
+        ],
+        base,
+      ),
     text,
     size: (file) => {
       let found = sizes.get(file);
@@ -172,7 +217,8 @@ function jsIndexOf(ctx: BuildContext): JsIndex {
 /**
  * Says whether a JS text holds an `import(` that `DYNAMIC_IMPORT` does not read: its argument is no string literal
  * of a `.js` file (`import(url)`, a template literal with `${`), or white space stands before the parenthesis. It
- * also holds when a worker call (`WORKER_CALL`) takes no literal of a `.js` file (`WORKER_ARGUMENT`). The kit cannot
+ * also holds when a worker call (`WORKER_CALL`) takes an argument that the kit cannot read whole (`WORKER_ARGUMENT`,
+ * `IMPORT_SCRIPTS_ARGUMENTS`). The kit cannot
  * know what such a call loads, so the JS cannot be measured.
  */
 export function hasUnmeasuredImport(text: string): boolean {
@@ -180,8 +226,9 @@ export function hasUnmeasuredImport(text: string): boolean {
   for (const match of text.matchAll(DYNAMIC_IMPORT)) read.add(match.index);
   for (const match of text.matchAll(IMPORT_CALL)) if (!read.has(match.index)) return true;
   for (const match of text.matchAll(WORKER_CALL)) {
-    WORKER_ARGUMENT.lastIndex = match.index + match[0].length;
-    if (!WORKER_ARGUMENT.test(text)) return true;
+    const argument = match[0].includes('importScripts') ? IMPORT_SCRIPTS_ARGUMENTS : WORKER_ARGUMENT;
+    argument.lastIndex = match.index + match[0].length;
+    if (!argument.test(text)) return true;
   }
   return false;
 }

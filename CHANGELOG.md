@@ -345,3 +345,5 @@
     JS that loads at once, and a worker file (`new URL(`, `new Worker(`, `new SharedWorker(`, `importScripts(`,
     `serviceWorker.register(`) as JS that loads later. A worker call without a literal URL cannot be measured, and
     a file outside `/_astro/` counts too.
+  - A worker URL counts only when the whole argument is a literal (or `new URL(` of one on the file's own base), and
+    each argument of `importScripts(` counts (Codex, #27).
