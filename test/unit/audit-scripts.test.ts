@@ -1115,6 +1115,21 @@ test('js-budget: a preloaded script loads at once, and a worker file loads later
       { '_astro/s.js': 'new Worker(new URL("/_astro/w.js",location.href))', '_astro/w.js': small },
       ['js-budget'],
     ],
+    // A bare worker URL resolves against the page, not the script, so it must start with / (Codex, #27).
+    [
+      'a relative bare worker URL cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'new Worker("./_astro/w.js",{type:"module"})', '_astro/w.js': small },
+      ['js-budget'],
+    ],
+    [
+      'a relative service worker URL cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'navigator.serviceWorker.register("sw.js")', '_astro/sw.js': small },
+      ['js-budget'],
+    ],
     // importScripts loads each of its arguments, so each one counts (Codex, #27).
     [
       'every file of importScripts counts',

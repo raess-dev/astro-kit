@@ -87,12 +87,21 @@ const BACKTICK = '`';
 const JS_LITERAL = String.raw`(?:"[^"]+\.js"|'[^']+\.js'|${BACKTICK}[^${BACKTICK}$]+\.js${BACKTICK})`;
 
 /**
- * The first argument of a worker call that the kit can measure, whole: a literal of a `.js` file, or `new URL(` of
- * one with no base, `import.meta.url` or Rolldown's ``` ``+import.meta.url ```; then the end of the argument (`,` or
- * `)`). So `"/_astro/a.js" + suffix` is no such argument: the browser loads another URL than the literal.
+ * A string literal of a `.js` file whose path starts with `/`: its URL is the same whatever the base. A bare worker
+ * URL resolves against the document that runs the script, not against the script, and one script can run on many
+ * pages.
+ */
+const ROOT_JS_LITERAL = String.raw`(?:"/[^"]+\.js"|'/[^']+\.js'|${BACKTICK}/[^${BACKTICK}$]+\.js${BACKTICK})`;
+
+/**
+ * The first argument of a worker call that the kit can measure, whole: a literal of a `.js` file whose path starts
+ * with `/` (`ROOT_JS_LITERAL`), or `new URL(` of any literal of a `.js` file with no base, `import.meta.url` or
+ * Rolldown's ``` ``+import.meta.url ```; then the end of the argument (`,` or `)`). So `"/_astro/a.js" + suffix` is no
+ * such argument, because the browser loads another URL than the literal, and neither is `"./w.js"`, which the
+ * browser resolves against the page.
  */
 const WORKER_ARGUMENT = new RegExp(
-  String.raw`\s*(?:${JS_LITERAL}|new\s+URL\s*\(\s*${JS_LITERAL}\s*(?:,\s*(?:${BACKTICK}${BACKTICK}\s*\+\s*)?import\.meta\.url\s*)?\))\s*[,)]`,
+  String.raw`\s*(?:${ROOT_JS_LITERAL}|new\s+URL\s*\(\s*${JS_LITERAL}\s*(?:,\s*(?:${BACKTICK}${BACKTICK}\s*\+\s*)?import\.meta\.url\s*)?\))\s*[,)]`,
   'y',
 );
 
