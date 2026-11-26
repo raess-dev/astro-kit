@@ -35,7 +35,7 @@ import {
   tokensOf,
 } from '../dom.ts';
 import { srcsetCandidates } from './assets.ts';
-import { isModeScriptLike, listed, markupElements, noscriptElements, startTag } from './shell.ts';
+import { isModeScriptLike, listed, nestedOf, noscriptElements, startTag } from './shell.ts';
 
 // Shared
 
@@ -367,58 +367,11 @@ function urlsOf(name: string, value: string): string[] {
   return [value];
 }
 
-/**
- * How deep the kit reads nested markup that is no part of the page tree: the markup of an `iframe` `srcdoc`, and the
- * content of a `noscript` inside such markup or inside the content of a page `noscript`. A deeper one is read as no
- * markup.
- */
-const NESTED_DEPTH = 8;
-
 /** One element that `origins-third-party` reads, with the words that say where it stands. */
 interface ReadElement {
   element: HTMLElement;
   /** `''` for an element of the page; else ` in a noscript` or ` in an iframe srcdoc`. */
   place: string;
-}
-
-/**
- * The markup that an element holds outside the page tree, with the words that say where it stands: the `srcdoc` of
- * an `iframe`, or the content of a `noscript` (the parser keeps it as text). `undefined` for any other element.
- */
-function nestedMarkupOf(element: HTMLElement): { markup: string; place: string } | undefined {
-  const tag = tagOf(element);
-  if (tag === 'iframe') {
-    const srcdoc = attr(element, 'srcdoc');
-    return srcdoc === undefined ? undefined : { markup: srcdoc, place: ' in an iframe srcdoc' };
-  }
-  if (tag === 'noscript') return { markup: rawContentOf(element), place: ' in a noscript' };
-  return undefined;
-}
-
-/**
- * The elements of the nested markup of a page, at any depth up to `NESTED_DEPTH`: the markup of every `iframe`
- * `srcdoc` of the page or of the content of its `noscript` elements, and inside that markup again each `srcdoc` and
- * each `noscript`. The browser renders a `srcdoc` in the frame, and a visitor without JavaScript (or a frame without
- * `allow-scripts`) gets the `noscript` content, so each loads what it names. The page's own `noscript` elements are
- * read by `noscriptElements`, so the walk starts from the page's frames and the content of those `noscript`
- * elements. It uses a queue, never recursion.
- */
-function nestedElements(pageElements: readonly HTMLElement[], hidden: readonly HTMLElement[]): ReadElement[] {
-  const out: ReadElement[] = [];
-  let level: HTMLElement[] = [...pageElements.filter((element) => tagOf(element) === 'iframe'), ...hidden];
-  for (let depth = 0; depth < NESTED_DEPTH && level.length > 0; depth += 1) {
-    const next: HTMLElement[] = [];
-    for (const holder of level) {
-      const nested = nestedMarkupOf(holder);
-      if (nested === undefined) continue;
-      for (const element of markupElements(nested.markup)) {
-        out.push({ element, place: nested.place });
-        if (nestedMarkupOf(element) !== undefined) next.push(element);
-      }
-    }
-    level = next;
-  }
-  return out;
 }
 
 /** The start tag of an element of a `noscript` or a `srcdoc`, which has no place in the page: its tag and attributes. */
@@ -434,7 +387,7 @@ function looseTag(element: HTMLElement): string {
  * `area` in `ping`, and no SVG `image` or `use` in `href` or `xlink:href`; but for the three exceptions of 9.4
  * (`isException`). A `srcset` counts each candidate, and a `ping` each URL. The elements inside a `noscript` count
  * too, as a visitor without JavaScript loads them, and so do the elements of the markup of an `iframe` `srcdoc`, with
- * the `srcdoc` and `noscript` markup nested inside it (`nestedElements`). An
+ * the `srcdoc` and `noscript` markup nested inside it (`nestedOf`). An
  * `a` or `area` `href` may name any address: this rule does not read links. One finding for each element, attribute
  * and URL.
  */
@@ -451,7 +404,7 @@ export function auditOriginsThirdParty(ctx: BuildContext): void {
     const found: ReadElement[] = [
       ...elements.map((element) => ({ element, place: '' })),
       ...hidden.map((element) => ({ element, place: ' in a noscript' })),
-      ...nestedElements(elements, hidden),
+      ...nestedOf(page).elements,
     ];
     for (const { element, place } of found) {
       for (const name of urlAttributesOf(element)) {

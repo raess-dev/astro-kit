@@ -206,16 +206,20 @@ const CSS_PLANTS: readonly Plant[] = [
     },
   },
   {
-    // An island on /fr/restaurant/, written as the markup that Astro writes for one, whose component file in
-    // `public/` is over `islandJsBytes` compressed. Its directive is `visible`, so `js-directive` has nothing to say,
-    // and the page has no script, so `js-script` has nothing either: only the budget reads the island's URLs. The
-    // site has no islands, so nothing ever loads the file.
+    // An island on /fr/restaurant/, written as the markup that Astro writes for one, whose component file is over
+    // `islandJsBytes` compressed. The page imports the file with `?url`, so Vite writes it to `/_astro/` (it is over
+    // the 4 KB that Vite inlines as a `data:` URL): `public/` may hold no JS file (`config-public-shadow`). Its
+    // directive is `visible`, so `js-directive` has nothing to say, and the page has no script, so `js-script` has
+    // nothing either: only the budget reads the island's URLs. The site has no islands, so nothing ever loads the file.
     id: 'js-budget',
     plant(dir) {
-      write(dir, { 'public/island-plant.js': `export default () => {};\n/*${noise(SIZES.island)}*/\n` });
+      write(dir, { 'src/assets/island-plant.js': `export default () => {};\n/*${noise(SIZES.island)}*/\n` });
+      const page = 'src/pages/fr/restaurant.astro';
+      const first = "import restaurant from '../../assets/photos/restaurant.jpg';";
+      edit(dir, page, first, `import plant from '../../assets/island-plant.js?url';\n${first}`);
       const island =
-        '<astro-island uid="Plant" component-url="/island-plant.js" component-export="default" renderer-url="/island-plant.js" props="{}" ssr client="visible" opts="{}"></astro-island>';
-      edit(dir, 'src/pages/fr/restaurant.astro', '<h1>Restaurant</h1>', `<h1>Restaurant</h1>\n    ${island}`);
+        '<astro-island uid="Plant" component-url={plant} component-export="default" renderer-url={plant} props="{}" ssr client="visible" opts="{}"></astro-island>';
+      edit(dir, page, '<h1>Restaurant</h1>', `<h1>Restaurant</h1>\n    ${island}`);
     },
   },
   {

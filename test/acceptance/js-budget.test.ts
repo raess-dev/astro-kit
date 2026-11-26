@@ -54,7 +54,7 @@ test('M8 js-budget: a large module behind import() of a bundled script fails the
   assert.notEqual(built.status, 0, tail(built));
   const findings = built.output.split('\n').filter((line) => line.includes('[js-budget]'));
   assert.equal(findings.length, 1, tail(built));
-  assert.match(findings[0] ?? '', /\/anreise\/: .*the JS that loads later through import\(\) has [\d,]+ B compressed/);
+  assert.match(findings[0] ?? '', /\/anreise\/: .*the JS that loads later through import\(\) or a worker has [\d,]+ B compressed/);
   // The finding rests on the backtick form that Rolldown writes.
   const assets = join(dir, CLIENT, '_astro');
   const texts = readdirSync(assets)

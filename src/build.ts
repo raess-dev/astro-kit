@@ -37,10 +37,25 @@ import { localeOfPath } from './routes.ts';
  * of them see the same document.
  */
 export function parseHtml(html: string): HTMLElement {
-  return parse(html, {
-    comment: false,
-    blockTextElements: { script: true, noscript: true, style: true, textarea: true, title: true },
-  });
+  return parse(html, PARSE_OPTIONS);
+}
+
+/** The options of `parseHtml`. */
+const PARSE_OPTIONS = {
+  comment: false,
+  blockTextElements: { script: true, noscript: true, style: true, textarea: true, title: true },
+} as const;
+
+/**
+ * How many elements `parseHtml` drops from some markup. The parser drops an element that is left open (with its
+ * open ancestors), such as `<script src="/x.js">` with no end tag, so no rule would see it. It keeps an element that
+ * HTML closes by itself, such as `<p>` or `<li>`. The count is the number of elements that the parser finds when it
+ * keeps every open element, less the number that `parseHtml` keeps. `root` is the `parseHtml` result when the caller
+ * has it.
+ */
+export function droppedElements(html: string, root: HTMLElement = parseHtml(html)): number {
+  const kept = parse(html, { ...PARSE_OPTIONS, parseNoneClosedTags: true });
+  return kept.querySelectorAll('*').length - root.querySelectorAll('*').length;
 }
 
 // Files

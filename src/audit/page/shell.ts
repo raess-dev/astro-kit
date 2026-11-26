@@ -22,7 +22,7 @@
  * - A skip link whose fragment names no element is `links-resolve`'s; `html-shell` then says nothing about the id.
  */
 import { type HTMLElement, type Node, NodeType } from 'node-html-parser';
-import { parseHtml } from '../../build.ts';
+import { droppedElements, parseHtml } from '../../build.ts';
 import type { BuildContext, BuiltPage } from '../../context.ts';
 import {
   isForbiddenSource,
@@ -603,6 +603,79 @@ export function noscriptElements(page: BuiltPage): HTMLElement[] {
   return found;
 }
 
+/**
+ * How deep the kit reads nested markup inside the content of the page's `noscript` elements and the `srcdoc` of its
+ * frames: the markup of an `iframe` `srcdoc`, and the content of a `noscript` inside such markup or inside the
+ * content of a page `noscript`. A deeper one is read as no markup.
+ */
+const NESTED_DEPTH = 8;
+
+/** Where nested markup stands, in the words of a finding. */
+type NestedPlace = ' in a noscript' | ' in an iframe srcdoc';
+
+/** One piece of markup that is no part of the page tree, and where it stands. */
+export interface NestedMarkup {
+  markup: string;
+  place: NestedPlace;
+}
+
+/** One element of nested markup, and where it stands. */
+export interface NestedElement {
+  element: HTMLElement;
+  place: NestedPlace;
+}
+
+/**
+ * The markup that an element holds outside the page tree: the `srcdoc` of an `iframe`, or the content of a
+ * `noscript` (the parser keeps it as text). `undefined` for any other element.
+ */
+function nestedMarkupOf(element: HTMLElement): NestedMarkup | undefined {
+  const tag = tagOf(element);
+  if (tag === 'iframe') {
+    const srcdoc = attr(element, 'srcdoc');
+    return srcdoc === undefined ? undefined : { markup: srcdoc, place: ' in an iframe srcdoc' };
+  }
+  if (tag === 'noscript') return { markup: rawContentOf(element), place: ' in a noscript' };
+  return undefined;
+}
+
+const NESTED = new WeakMap<BuiltPage, { markups: NestedMarkup[]; elements: NestedElement[] }>();
+
+/**
+ * The nested markup of a page, found once: the content of each page `noscript`, and, at any depth up to
+ * `NESTED_DEPTH`, the `srcdoc` of every frame of the page or of that content, and inside such markup again each
+ * `srcdoc` and each `noscript`. The browser renders a `srcdoc` in its frame, and a visitor without JavaScript (or a
+ * frame without `allow-scripts`) gets the `noscript` content, so each loads what it names. `elements` holds the
+ * elements of the nested markup but not those of the page `noscript` elements, which `noscriptElements` gives. The
+ * walk uses a queue, never recursion.
+ */
+export function nestedOf(page: BuiltPage): { markups: readonly NestedMarkup[]; elements: readonly NestedElement[] } {
+  const known = NESTED.get(page);
+  if (known !== undefined) return known;
+  const dom = domOf(page);
+  const markups: NestedMarkup[] = dom
+    .byTag('noscript')
+    .map((noscript) => ({ markup: rawContentOf(noscript), place: ' in a noscript' }));
+  const elements: NestedElement[] = [];
+  let level: HTMLElement[] = [...dom.byTag('iframe'), ...noscriptElements(page)];
+  for (let depth = 0; depth < NESTED_DEPTH && level.length > 0; depth += 1) {
+    const next: HTMLElement[] = [];
+    for (const holder of level) {
+      const nested = nestedMarkupOf(holder);
+      if (nested === undefined) continue;
+      markups.push(nested);
+      for (const element of markupElements(nested.markup)) {
+        elements.push({ element, place: nested.place });
+        if (nestedMarkupOf(element) !== undefined) next.push(element);
+      }
+    }
+    level = next;
+  }
+  const found = { markups, elements };
+  NESTED.set(page, found);
+  return found;
+}
+
 // html-shell
 
 const HTML_SHELL = 'html-shell';
@@ -640,6 +713,12 @@ function isFocusable(element: HTMLElement): boolean {
  */
 export function auditHtmlShell(ctx: BuildContext): void {
   for (const page of ctx.pages) {
+    // A page that the parser cannot read in full gives no other finding here: its tree is not the page.
+    const dropped = droppedElements(page.html, page.root);
+    if (dropped > 0) {
+      reportPage(ctx, HTML_SHELL, page, [`the parser drops ${dropped} ${elementsWord(dropped)}: ${UNCLOSED}`]);
+      continue;
+    }
     const dom = domOf(page);
     const problems: string[] = [];
     const first = dom.elements.find(isFocusable);
@@ -672,6 +751,15 @@ export function auditHtmlShell(ctx: BuildContext): void {
         problems.push(`${tag}: a meta referrer; the Referrer-Policy header of the kit sets the policy`);
       }
     }
+    for (const { markup, place } of nestedOf(page).markups) {
+      const lost = droppedElements(markup);
+      if (lost > 0) problems.push(`the parser drops ${lost} ${elementsWord(lost)}${place}: ${UNCLOSED}`);
+    }
     reportPage(ctx, HTML_SHELL, page, problems);
   }
 }
+
+const elementsWord = (count: number): string => (count === 1 ? 'element' : 'elements');
+
+/** The cause of dropped elements, in a finding of `html-shell`. */
+const UNCLOSED = 'an element is not closed, so no rule can read the page in full';
