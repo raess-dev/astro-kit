@@ -106,6 +106,7 @@ export function findingsOf(
       all: parts.all ?? true,
       rules,
       browser,
+      env: process.env,
       ...(parts.navigationLimitMs === undefined ? {} : { navigationLimitMs: parts.navigationLimitMs }),
     });
     return report.findings;

@@ -37,6 +37,7 @@ import {
   type TestRun,
   VIEWPORTS,
 } from './browser/harness.ts';
+import { answerOtherOrigins, proxyOption, startRefusingProxy } from './browser/network.ts';
 import { BROWSER_RULES } from './browser/rules.ts';
 import { listDist, parseHtml } from './build.ts';
 import type { Env, ToolIo } from './ci.ts';
@@ -68,25 +69,89 @@ export function browserPath(env: Env): string {
   return installed !== '' && existsSync(installed) ? installed : SYSTEM_CHROME;
 }
 
+/** How `launchBrowser` locks the browser off the network (section 8, the harness, Network). */
+export interface LaunchOptions {
+  /** `--outline <https URL>`: the one use of the network of `test`. The browser gets no lock. */
+  network?: boolean;
+  /**
+   * The browser of `origins-gesture`: it maps the host of `site` to 127.0.0.1, treats the served origin under that
+   * host as a secure context, and hides `navigator.webdriver`, so a page sees the browser of a visitor.
+   */
+  visitor?: { host: string; origin: string };
+}
+
+/**
+ * The launch switches of the lock. Chromium already gets `--disable-background-networking` from Playwright; the
+ * kit names it too. `--webrtc-ip-handling-policy=disable_non_proxied_udp` keeps a peer connection from sending UDP.
+ */
+export const LOCK_ARGS: readonly string[] = [
+  '--disable-background-networking',
+  '--webrtc-ip-handling-policy=disable_non_proxied_udp',
+];
+
+/**
+ * The host rules of the lock: no host name resolves, except 127.0.0.1 and `localhost`, and the visitor's site host,
+ * which resolves to 127.0.0.1. So no DNS query leaves the machine.
+ */
+export const hostRules = (siteHost?: string): string =>
+  [
+    ...(siteHost === undefined ? [] : [`MAP ${siteHost} 127.0.0.1`]),
+    'MAP * ~NOTFOUND',
+    'EXCLUDE 127.0.0.1',
+    'EXCLUDE localhost',
+  ].join(', ');
+
 /**
  * Launches Chromium as the harness says: the back/forward cache on (13.1 item 29) and a 60 s limit. A failed launch
  * throws an error that holds the error of the launch.
+ *
+ * The lock: unless `options.network`, the browser gets a refusing proxy of its own (`startRefusingProxy`) as its
+ * proxy, with the bypass `127.0.0.1`, and the switches of `LOCK_ARGS` and `hostRules`. Chromium's own requests, such as
+ * those of its updater, then end at that proxy too, and the proxy closes when the browser disconnects. A context
+ * of a check still gets the proxy of its run.
  */
-export async function launchBrowser(env: Env): Promise<Browser> {
+export async function launchBrowser(env: Env, options: LaunchOptions = {}): Promise<Browser> {
   const executablePath = browserPath(env);
+  const proxy = options.network === true ? undefined : await startRefusingProxy();
+  const args =
+    proxy === undefined
+      ? []
+      : [
+          ...LOCK_ARGS,
+          `--host-resolver-rules=${hostRules(options.visitor?.host)}`,
+          // Chromium asks its autofill service about each form, in the network of the context. That request ends at
+          // the proxy of the browser, so it never reaches the proxy of a check, which counts it for the page.
+          `--autofill-server-url=${proxy.server}/`,
+        ];
+  if (options.visitor !== undefined) {
+    args.push(
+      '--disable-blink-features=AutomationControlled',
+      '--disable-smooth-scrolling',
+      `--unsafely-treat-insecure-origin-as-secure=${options.visitor.origin}`,
+    );
+  }
   try {
-    return await chromium.launch({
+    const browser = await chromium.launch({
       executablePath,
       ignoreDefaultArgs: ['--disable-back-forward-cache'],
       timeout: 60_000,
+      args,
+      ...(proxy === undefined ? {} : { proxy: proxyOption(proxy) }),
     });
+    if (proxy !== undefined) browser.on('disconnected', () => void proxy.close());
+    return browser;
   } catch (error) {
+    await proxy?.close();
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`astro-kit test: the browser ${executablePath} did not start: ${message}`);
   }
 }
 
-/** A browser context with the page helpers and the time limits of the harness. */
+/**
+ * A browser context with the page helpers and the time limits of the harness. A context of a run gets the refusing
+ * proxy of the run (`TestRun.proxy`) and, outside the perf pass, the answer with 204 (`answerOtherOrigins`), so a
+ * request to another host never reaches the network.
+ */
 async function contextOf(browser: Browser, options: BrowserContextOptions = {}): Promise<BrowserContext> {
   const context = await browser.newContext({ viewport: DESKTOP, deviceScaleFactor: 1, ...options });
   try {
@@ -240,8 +305,10 @@ async function runCheck(
   const contexts: BrowserContext[] = [];
   const shared = new Map<boolean, BrowserContext>();
   const newContext = async (options: BrowserContextOptions = {}): Promise<BrowserContext> => {
-    const context = await contextOf(run.browser, options);
+    const context = await contextOf(run.browser, { ...options, proxy: run.proxy });
     contexts.push(context);
+    // Each request to another origin gets 204 and an empty body, except in the perf pass, which needs the cache.
+    if (rule.cache !== true) await answerOtherOrigins(context, run.origin);
     return context;
   };
   const check: Check = {
@@ -343,8 +410,9 @@ export function shotName(where: string, width: number, height: number): string {
 /** `--shots`: one full-page image for each tested page and viewport, at device scale 1. */
 async function writeShots(run: TestRun, folder: string): Promise<void> {
   mkdirSync(folder, { recursive: true });
-  const context = await contextOf(run.browser);
+  const context = await contextOf(run.browser, { proxy: run.proxy });
   try {
+    await answerOtherOrigins(context, run.origin);
     for (const page of run.pages) {
       for (const viewport of VIEWPORTS) {
         const tab = await context.newPage();
@@ -374,10 +442,16 @@ async function writeShots(run: TestRun, folder: string): Promise<void> {
 export async function runBrowser(input: BrowserInput): Promise<void> {
   // A forms site gets the form stub of 9.1, so that `a11y-no-js` can send each declared form.
   const served = await serveDist(input.dist, input.options.features.forms ? { forms: input.options } : {});
+  let proxy: Awaited<ReturnType<typeof startRefusingProxy>> | undefined;
   try {
+    proxy = await startRefusingProxy();
     const pages = testPages(served.root, input.options, input.components);
     const sample = samplePages(pages);
     const browser = input.browser ?? (await launchBrowser(input.env ?? {}));
+    // The browser of `origins-gesture`, launched once at its first use: its switches name the served origin.
+    const siteHost = new URL(input.options.site).hostname;
+    const visitorOrigin = `http://${siteHost}:${new URL(served.origin).port}`;
+    let visitor: Promise<Browser> | undefined;
     try {
       const run: TestRun = {
         origin: served.origin,
@@ -388,6 +462,12 @@ export async function runBrowser(input: BrowserInput): Promise<void> {
         home: pages.find((page) => page.isDefaultHome),
         received: served.received,
         browser,
+        proxy: proxyOption(proxy),
+        visitorOrigin,
+        visitor: () => {
+          visitor ??= launchBrowser(input.env ?? {}, { visitor: { host: siteHost, origin: visitorOrigin } });
+          return visitor;
+        },
       };
       const loads: Loads = { limitMs: input.navigationLimitMs ?? NAVIGATION_LIMIT_MS, failed: new Map() };
       for (const rule of input.rules ?? BROWSER_RULES) {
@@ -404,9 +484,11 @@ export async function runBrowser(input: BrowserInput): Promise<void> {
       }
       if (input.shots !== undefined) await writeShots(run, input.shots);
     } finally {
+      if (visitor !== undefined) await quietly(async () => (await visitor)?.close());
       if (input.browser === undefined) await browser.close();
     }
   } finally {
+    await proxy?.close();
     await served.close();
   }
 }
@@ -475,7 +557,7 @@ export async function outline(root: string, target: string, io: ToolIo): Promise
   if (!external && !target.startsWith('/')) throw new Error(BAD_OUTLINE);
   const served = external ? undefined : await serveDist(requireBuild(root));
   try {
-    const browser = await launchBrowser(io.env);
+    const browser = await launchBrowser(io.env, { network: external });
     try {
       const context = await contextOf(browser);
       const tab = await context.newPage();

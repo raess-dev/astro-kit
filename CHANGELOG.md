@@ -355,3 +355,25 @@
   suite run again on them. `solid-js` 1.9.20 is 7 days old only at 20:54 UTC on 2026-11-26, so it moves in its own PR.
 - `solid-js` moves to 1.9.20 under the pinning rule of 2.1, in the kit and in the islands install of 9.2. The Solid
   hydration hash is measured again and is unchanged (13.1 item 11).
+- Milestone M8, part 8b: the browser half of islands, scripts and origins. The kit has 122 rules.
+  - `origins-gesture` opens each tested page as a visitor's browser opens it: under the host of `site`, as a secure
+    context, with the user agent of Chrome and no `navigator.webdriver`. A gesture is a click on the control or a key
+    that activates it, and the check makes none. Playwright's clock is paused; the check advances it by 60 s,
+    scrolls, moves the mouse, presses Tab, dispatches `focus`, advances it by 60 s again, and leaves the page. So a
+    page timer, a scroll, a hover, a focus and a beacon on leaving count, in every run the same: no time edge decides
+    a verdict. It counts each request and WebSocket, each connection at a refusing proxy of its own (a shared worker,
+    `link rel=prerender`, a beacon after the page is gone), each `link` that may fetch, and each
+    `RTCPeerConnection`. A request to the host of an origin with `load: "page"` passes, and so do the origin of
+    `site` and a WebSocket to the page's own host and port. A request that the CSP blocked counts with its own words.
+  - `test` reaches no network. Each browser that the kit launches gets a refusing proxy of its own, which also takes
+    Chromium's own requests (its updater, its accounts and autofill services), no DNS, and no WebRTC UDP. Each
+    check answers a request to another origin itself, with 204 and an empty body, and every context sends a request
+    to another host to a refusing proxy of the kit on 127.0.0.1. The perf pass gets the proxy only, because a route
+    turns the browser cache off.
+  - `origins-third-party` reads every `link` but those whose `rel` never fetches (`canonical`, `alternate` and nine
+    more). A `link rel=prerender` to another host reaches it past the CSP in Chromium 153, and now fails the build.
+  - The acceptance harness reports a command that it killed after 600 s (`KitRun.killed`), and each planted set of
+    the browser job asserts that first, so a timeout no longer reads as a set with no finding.
+  - The acceptance suite has the `islands`, `scripts` and `origins` variants and the `origins` set. The `scripts`
+    and `origins` variants and the set share one build in `planted-origins.test.ts`, which runs in
+    `kit / acceptance (browser)`. The `islands` case also waits in Chromium until the island hydrated.

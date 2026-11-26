@@ -383,6 +383,14 @@ export const RULES: readonly Rule[] = [
     'The page loads a resource from another origin.',
     'Download the image, font, style sheet or script into the project. A frame, a script or a form of a third party needs an origin in `astro-kit.json`, which the owner declares.',
   ),
+  r(
+    'origins-gesture',
+    'origins',
+    'browser',
+    'On each tested page at 1280×800, with JavaScript on, opened as a visitor opens it (under the host of `site`, no `navigator.webdriver`, the user agent of Chrome), from the navigation until the tab is closed: nothing goes to another host before a gesture, a click on the control or a key that activates it (9.4), except to the host of an origin with `load: "page"`. The page clock is paused; the check advances it by 60 s, scrolls, moves the mouse, presses Tab, dispatches `focus`, advances it by 60 s again, and leaves the page. Each request, WebSocket, connection at the proxy of the check, fetching `link` and peer connection counts, also when the CSP blocked it. The harness answers each request to another origin itself, with status 204 and an empty body, so the check needs no network. One finding for each other origin, with its first URL, and one for each peer connection.',
+    'The page contacts a third-party host before the visitor acts.',
+    'Load the frame, script or connection of a `gesture` origin only after a click on its control or a key that activates it, from a bundled script or an island: not on a timer, a scroll, a hover, focus or when the visitor leaves. A host that the page needs while it loads needs `load: "page"`, which the owner declares (9.4).',
+  ),
   // head
   r(
     'head-canonical',

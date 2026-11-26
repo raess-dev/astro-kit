@@ -213,6 +213,7 @@ test('the browser rules are the browser rules of the registry, in its order', ()
     registry,
   );
   assert.deepEqual(registry, [
+    'origins-gesture',
     'modes-behavior',
     'a11y-axe',
     'a11y-focus',
@@ -358,11 +359,15 @@ test('a page that does not load fails the check that opens it; the later checks 
     const { port } = hang.address() as AddressInfo;
     const page = html(BODY.replace('</main>', `<img src="http://127.0.0.1:${port}/x.png" alt="Bild"></main>`));
     const opened: string[] = [];
-    const opens = (javaScript: boolean): BrowserRule =>
-      probe(async (check) => {
+    // The image is on another port, so another origin. Outside the perf pass the harness answers it with 204 itself
+    // (section 8, Network), so these probes keep the cache as the perf pass does, and the request reaches the server.
+    const opens = (javaScript: boolean): BrowserRule => ({
+      ...probe(async (check) => {
         opened.push(String(javaScript));
         await check.open({ javaScript });
-      });
+      }),
+      cache: true,
+    });
     const report = new Report();
     const start = Date.now();
     await inTempAsync({ 'index.html': page }, (dist) =>

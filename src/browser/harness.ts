@@ -90,6 +90,21 @@ export interface TestRun {
   /** Every request that the server got, in order, with its headers (`perf-prerender` reads `sec-purpose`). */
   received: readonly Received[];
   browser: Browser;
+  /**
+   * The `proxy` option of every context of the run: the refusing proxy of `src/browser/network.ts`, which ends each
+   * request to another host that no route answers, so no check reaches the network.
+   */
+  proxy: { server: string; bypass: string };
+  /**
+   * `http://<host of site>:<port>`: the origin under which `origins-gesture` opens the served `dist`, as a visitor
+   * opens the site under its host.
+   */
+  visitorOrigin: string;
+  /**
+   * The browser of `origins-gesture`, launched at the first call and closed at the end of the run: it resolves the
+   * host of `site` to the test server and looks like the browser of a visitor (section 8, `origins-gesture`).
+   */
+  visitor(): Promise<Browser>;
 }
 
 /** How `Check.open` opens a page. */
@@ -153,6 +168,12 @@ export interface BrowserRule {
    * (`perf-prerender`, `perf-prefetch`).
    */
   concurrent?: boolean;
+  /**
+   * The rule measures the loading as a visitor gets it, the browser cache included: the perf pass. Its contexts get
+   * no route, which would turn the cache off. A request to another host reaches the refusing proxy instead of the
+   * answer with 204 (`src/browser/network.ts`).
+   */
+  cache?: boolean;
   check(check: Check): Promise<void>;
 }
 

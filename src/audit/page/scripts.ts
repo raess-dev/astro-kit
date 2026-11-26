@@ -248,7 +248,7 @@ const ORIGINS_THIRD_PARTY = 'origins-third-party';
 
 /**
  * The resource elements of `origins-third-party` (section 8). Each reads every attribute of `RESOURCE_ATTRIBUTES`. A
- * `link` counts only with a resource `rel` (below).
+ * `link` counts unless every token of its `rel` is one that never fetches (`NON_FETCHING_RELS`).
  */
 const RESOURCE_TAGS: ReadonlySet<string> = new Set([
   'img',
@@ -264,18 +264,28 @@ const RESOURCE_TAGS: ReadonlySet<string> = new Set([
   'form',
 ]);
 
-/** The resource tokens of `rel` that make a `link` count. */
-const RESOURCE_RELS: ReadonlySet<string> = new Set([
-  'stylesheet',
-  'preload',
-  'modulepreload',
-  'prefetch',
-  'preconnect',
-  'dns-prefetch',
-  'icon',
-  'apple-touch-icon',
-  'manifest',
+/**
+ * The `rel` tokens of a `link` that never make Chromium fetch its `href` (section 8, `origins-third-party`). A `link`
+ * counts when one token of its `rel` is not in this set, so a `rel` that a browser may fetch, such as `prerender`, or a
+ * new one, counts. A browser fetches `manifest`, `search` and `apple-touch-icon` when it needs them, so they count.
+ */
+export const NON_FETCHING_RELS: ReadonlySet<string> = new Set([
+  'alternate',
+  'author',
+  'canonical',
+  'expect',
+  'help',
+  'license',
+  'me',
+  'next',
+  'prev',
+  'privacy-policy',
+  'terms-of-service',
 ]);
+
+/** Says whether a `rel` value, split into ASCII lower-case tokens, makes a browser fetch the `href` of its `link`. */
+export const isFetchingRel = (tokens: readonly string[]): boolean =>
+  tokens.some((token) => !NON_FETCHING_RELS.has(token));
 
 /**
  * The attributes that name a URL, on every element of `RESOURCE_TAGS`. `imagesrcset` is the `srcset` of a
@@ -353,7 +363,7 @@ function isException(element: HTMLElement, name: string, url: string, allowed: O
 function urlAttributesOf(element: HTMLElement): readonly string[] {
   const tag = tagOf(element);
   if (RESOURCE_TAGS.has(tag)) {
-    if (tag === 'link' && !tokensOf(element, 'rel').some((token) => RESOURCE_RELS.has(token))) return [];
+    if (tag === 'link' && !isFetchingRel(tokensOf(element, 'rel'))) return [];
     return RESOURCE_ATTRIBUTES;
   }
   if (tag === 'input' && asciiLower((attr(element, 'type') ?? '').trim()) === 'image') return IMAGE_INPUT_ATTRIBUTES;
@@ -381,7 +391,7 @@ function looseTag(element: HTMLElement): string {
 }
 
 /**
- * `origins-third-party`: no `img`, `script`, `link` (with a resource `rel`), `iframe`, `source`, `video`, `audio`,
+ * `origins-third-party`: no `img`, `script`, `link` (unless its `rel` never fetches), `iframe`, `source`, `video`, `audio`,
  * `track`, `object`, `embed` or `form` names another origin (`otherOrigin`) in `src`, `href`, `srcset`, `imagesrcset`,
  * `poster`, `action` or `data`; no `button` or `input` in `formaction`, no `input[type=image]` in `src`, no `a` or
  * `area` in `ping`, and no SVG `image` or `use` in `href` or `xlink:href`; but for the three exceptions of 9.4
