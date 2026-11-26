@@ -353,6 +353,8 @@
 - The stack pins move under the pinning rule of 2.1: `astro` 7.4.13 (with `rolldown` 1.3.3 and `vite` 8.3.8),
   `@astrojs/cloudflare` 14.4.9 and `wrangler` 4.165.0, in the kit and in the test site. The spikes and the whole
   suite run again on them. `solid-js` 1.9.20 is 7 days old only at 20:54 UTC on 2026-11-26, so it moves in its own PR.
+- `solid-js` moves to 1.9.20 under the pinning rule of 2.1, in the kit and in the islands install of 9.2. The Solid
+  hydration hash is measured again and is unchanged (13.1 item 11).
 - Milestone M8, part 8b: the browser half of islands, scripts and origins. The kit has 122 rules.
   - `origins-gesture` opens each tested page as a visitor's browser opens it: under the host of `site`, as a secure
     context, with the user agent of Chrome and no `navigator.webdriver`. A gesture is a click on the control or a key
