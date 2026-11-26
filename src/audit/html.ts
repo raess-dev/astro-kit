@@ -13,6 +13,9 @@
  * - html-validate has no setting that turns directives off. So the audit validates a copy of the page in which the
  *   `-` after `html-validate` of each comment that would be a directive is a `_`: such a comment is a plain comment
  *   then. The copy has the length of the page, so every line and column stays the same.
+ * - On a site with islands, Astro writes its island style element into the body (`ISLAND_STYLE_ELEMENT`, 7.1), where
+ *   html-validate refuses a `<style>`. The copy holds a comment of the same length in its place. Any other `<style>`
+ *   stays an error.
  * - The `require-sri` exception is not a setting either: the rule's `exclude` option matches any part of a URL, so
  *   `https://evil.example/?https://js.pay.example/` would pass. The audit drops a `require-sri` message only when the
  *   element at its place is a `script` whose `src` is an `https` URL on such a host, with no port and no user.
@@ -75,6 +78,22 @@ function validatorOf(): HtmlValidate {
  */
 export const withoutDirectives = (html: string): string =>
   html.replace(/(<!--\s*\[?html-validate)-/g, (_match, start: string) => `${start}_`);
+
+/**
+ * Astro's island style element, exact: the one text of 7.1 in a `<style>` without attributes. Astro writes it into
+ * the body, right before the first island of a page, and html-validate refuses a `<style>` in most places of the
+ * body (`element-permitted-content`). The project cannot change it.
+ */
+export const ISLAND_STYLE_ELEMENT = '<style>astro-island,astro-slot,astro-static-slot{display:contents}</style>';
+
+/** A comment of the length of the island style element: the copy keeps every line and column. */
+const ISLAND_STYLE_COMMENT = `<!--${' '.repeat(ISLAND_STYLE_ELEMENT.length - 7)}-->`;
+
+/**
+ * The page text with each exact island style element (`ISLAND_STYLE_ELEMENT`) turned into a comment of the same
+ * length, on a site with islands. Any other `<style>` stays as it is, so html-validate still judges it.
+ */
+export const withoutIslandStyle = (html: string): string => html.replaceAll(ISLAND_STYLE_ELEMENT, ISLAND_STYLE_COMMENT);
 
 /** The hosts of the declared origins whose script files a page may load while it loads (9.4). */
 function pageScriptHosts(options: Pick<Options, 'origins'>): ReadonlySet<string> {
@@ -176,7 +195,8 @@ export async function auditHtmlValidate(ctx: BuildContext): Promise<void> {
     const bom = startsWithBom(ctx, page) ? '\uFEFF' : '';
     let messages: Message[];
     try {
-      const report = await validatorOf().validateString(`${bom}${withoutDirectives(page.html)}`, page.file);
+      const html = ctx.options.features.islands ? withoutIslandStyle(page.html) : page.html;
+      const report = await validatorOf().validateString(`${bom}${withoutDirectives(html)}`, page.file);
       messages = report.results.flatMap((result) => result.messages);
     } catch (error) {
       ctx.report.add(RULE, page.path, `html-validate stopped on the page: ${snippet(String(error))}`);

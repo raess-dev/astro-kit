@@ -188,9 +188,9 @@ export const RULES: readonly Rule[] = [
     'config-public-shadow',
     'config',
     'config',
-    '`public/` holds none of `robots.txt`, `_headers`, `_redirects`, `.well-known/security.txt`, `_kit`, `sitemap*.xml`.',
-    '`public/` holds a file that the kit writes.',
-    'Delete the file from `public/`. The kit writes it into `dist/` at the end of the build.',
+    '`public/` holds none of `robots.txt`, `_headers`, `_redirects`, `.well-known/security.txt`, `_kit`, `sitemap*.xml`. It holds no folder or file `_astro` either, in any letter case. Astro writes its bundled files to `/_astro/`, and `js-script` allows a module script there, so no file of `public/` may stand at such a URL.',
+    '`public/` holds a file that the kit or Astro writes.',
+    'Delete the file from `public/`. The kit writes it into `dist/` at the end of the build; Astro writes `/_astro/` itself. Put a script into `src/` as a bundled `<script>`.',
   ),
   r(
     'config-wrangler',
@@ -240,6 +240,39 @@ export const RULES: readonly Rule[] = [
     '`redirects.json` rows are `{from, to}` or `{from, gone: true}`. `from` starts with `/` and has no whitespace, no `?` ("query strings cannot be matched; mark it gone or add a zone Single Redirect") and no `#` ("fragments cannot be matched: a browser never sends the text after #"). No duplicate `from`. `to` starts with `/`, not with `//` or `/\\`, and has no whitespace, so a row writes one line and never leaves the site. Neither `from` nor `to` holds a backslash, and neither path holds a `.` or `..` segment, also not as `%2e`: Cloudflare removes such a segment, so it would store another path, and a `to` such as `/.//host/` would leave the site. The path of a `to` ends before its `?` or `#`. No chains (the path of no `to` is a `from`). Limits: 2,000 static, 100 dynamic, 1,000 characters per line. Every literal `to` is built (patterns, and `/api/` with forms, are skipped).',
     '`redirects.json` is not valid.',
     'Fix the row that the finding names. Point each `to` at a built page, or mark the row `gone`.',
+  ),
+  // js
+  r(
+    'js-script',
+    'js',
+    'config + build',
+    'Pages ship no script except JSON-LD, the kit speculation block and the kit mode script (`modes-script`). With scripts: `/_astro/` module scripts and inline module scripts. With astroPrefetch: the prefetch chunk (`^/_astro/page(\\.[\\w-]+)?\\.js$`) as a `/_astro/` module script. With islands: Astro\'s exact island runtime and directive texts, and the exact text of Solid\'s hydration script, the text that the kit hashes (6.2). With an origin that has `script` and `load: "page"`: a `script` with `async`, `defer` or `type="module"` whose `src` is an `https` URL with no port and no user, and whose host in ASCII lower case is that host (9.4). The URL is compared as the browser parses it, as in `origins-third-party`. Every other `script` element fails, one finding for each page: a classic or module script, an import map and a data block. A `/_astro/` module script is a `script[type=module]` whose `src` resolves to a same-origin path under `/_astro/`, not `http:`, that names a file of dist. The path is the one that the browser asks for: a dot segment counts also when it writes a dot as `%2e` (`/_astro/%2e%2e/x.js` is `/x.js`). The island texts are the island runtime and the texts of the five built-in client directives of the `astro` that the project installed (`@astrojs/runtime`, resolved from `astro`); `client:load` and `client:only` are `js-directive`\'s, so their texts count too. A project whose `astro` holds no such texts, or whose `solid-js` gives no hydration script, allows none of them. The speculation block and every script whose text starts like the mode script are left to `speculation-block` and `modes-script`. Template content is not read. Source: a `<script>` other than `application/ld+json` (its `type` trimmed, in any ASCII case) in `.astro` needs scripts or such an origin. Islands alone allow none: Astro writes the scripts of an island itself. This half reads the settings. A tag whose name starts with a capital letter is a component.',
+    'The page ships a script that the settings do not allow.',
+    'Remove the script. For a bundled script the owner turns on `features.scripts`, for an island `features.islands`, and a third-party script needs a declared origin with `script` and `load: "page"`.',
+  ),
+  r(
+    'js-prefetch-attr',
+    'js',
+    'config + build',
+    'No element carries `data-astro-prefetch`, one finding for each page. Source: no tag of a `.astro` file, an element or a component, carries it.',
+    'An element carries `data-astro-prefetch`.',
+    'Remove the attribute. The kit prefetches same-site links itself: with the speculation rules, and with `prefetch.astroPrefetch` in other browsers.',
+  ),
+  r(
+    'js-directive',
+    'js',
+    'config + build',
+    'Islands hydrate only with `client:visible`, `client:idle` or `client:media` (`client:load` and `client:only` fail). Built: the `client` attribute of every `astro-island` is `visible`, `idle` or `media`, exactly; an island without it fails; one finding for each page. Source: every `client:*` attribute of a tag of a `.astro` file, its name in ASCII lower case, is one of the three.',
+    'An island hydrates with a directive other than `client:visible`, `client:idle` or `client:media`.',
+    'Use `client:visible`, `client:idle` or `client:media`. An island must render its markup on the server: `client:only` cannot.',
+  ),
+  r(
+    'js-budget',
+    'js',
+    'build',
+    'For each page. **At once:** the files in the static-import closure (`/(?:\\bimport|\\bfrom)\\s*["\']([^"\']+\\.js)["\']/g`) of every `astro-island` `component-url`, `renderer-url` and `before-hydration-url` on the page, and of every module script of the page: the file of its `src`, or the files that its inline text imports. The sum of their compressed sizes ≤ 20,480 B (`islandJsBytes`: the JS that loads at once). **Later:** every `/_astro/*.js` file that an at-once file or an inline module script names in `import()` (``/\\bimport\\(\\s*(?:"([^"]+\\.js)"|\'([^\']+\\.js)\'|`([^`$]+\\.js)`)\\s*\\)/g``, the group that matched; Astro 7 bundles with Rolldown, which writes the backtick form), with the static-import closure of each. Each `import()` of a file so added counts the same way, until no file is added. The at-once files are taken out. The sum of their compressed sizes ≤ 204,800 B (`lazyJsBytes`). **Cannot be measured:** an at-once or later file, or an inline module script, holds an `import(` that is no match of that regex: its argument is no string literal of a `.js` file (`import(url)`, a template literal with `${`), or white space stands before the parenthesis. That is a finding. An `import(` here is the word `import` that no `.`, letter, digit, `_` or `$` comes before, then white space and `(`. The prefetch chunk (`^/_astro/page(\\.[\\w-]+)?\\.js$`) and its closure ≤ 2,048 B. With astroPrefetch on, a missing chunk is a finding: a page with no module script whose `src` is the chunk, or whose chunk names no dist file. A module script is a `script[type=module]`: the file of its `src`, or its inline text. The prefetch chunk is a module script too, so it loads at once. A URL resolves against the page, and a specifier against the URL of its file; a URL that names no dist file adds nothing, and so does a script of another origin (9.4). Each file counts once in a sum. One finding for each limit that a page breaks, and one for the JS that cannot be measured. Compressed size is the larger of zstd level 3 and brotli quality 5.',
+    'The JavaScript of the page is over its budget, or the kit cannot measure it.',
+    'Make the island or the script smaller, load a rarely used part later with `import()`, or drop a dependency. The detail names the largest files. Write each `import()` with a literal path, so the kit can measure what it loads.',
   ),
   // speculation
   r(
@@ -340,6 +373,15 @@ export const RULES: readonly Rule[] = [
     'At most 2 families with `url()` faces (faces with only `local()` are exempt). Every font `url()` is same-origin. At most 1 font preload on each page: a `link` whose `rel` holds the token `preload` and whose `as` is `font`. The rule holds for the site as a whole.',
     'The site loads too many font families, a font from another origin, or preloads more than one font.',
     'Use at most two self-hosted families in `src/styles/fonts.css`, and preload at most one font file.',
+  ),
+  // origins
+  r(
+    'origins-third-party',
+    'origins',
+    'build',
+    'No `img`, `script`, `link` (resource rels: stylesheet, preload, modulepreload, prefetch, preconnect, dns-prefetch, icon, apple-touch-icon, manifest), `iframe`, `source`, `video`, `audio`, `track`, `object`, `embed` or `form` uses another origin in `src`, `href`, `srcset`, `poster`, `action` or `data`. No `button` or `input` uses one in `formaction`, no `input` whose `type` is `image` (trimmed, in any ASCII case) in `src`, no `a` or `area` in `ping` (each URL of its list), and no SVG `image` or `use` in `href` or `xlink:href`: each of them makes a request. Three exceptions, each for a declared origin (9.4): a `form` `action`, or the `formaction` of a submit control, on a host with `form`; a `script` `src` on a host with `script` and `load: "page"`; an `iframe` `src` with a `title`, on a host with `frame` and `load: "page"`. An `a` or `area` `href` may name any address: this rule does not read links. Each candidate of a `srcset` counts, and so does each candidate of the `imagesrcset` of a `link`, which a browser fetches too. The elements inside a `noscript` count too, parsed as markup: a browser without JavaScript loads them. So do the elements of the markup of an `iframe` `srcdoc`, and the content of a `noscript` inside that markup or inside a `noscript`, parsed as markup in the same way, at any depth up to 8: the browser renders that markup in the frame, and a frame without `allow-scripts` shows the `noscript` content. Another origin is a URL with another host or port, `http:` on the host of the site, or another scheme with a host (`ftp://`); a URL without a host (`data:`, `blob:`, `about:`, `javascript:`) is not this rule\'s. An exception URL is `https`, with no port and no user, and a `title` is not empty after a trim. Template content is not read. One finding for each element, attribute and URL.',
+    'The page loads a resource from another origin.',
+    'Download the image, font, style sheet or script into the project. A frame, a script or a form of a third party needs an origin in `astro-kit.json`, which the owner declares.',
   ),
   // head
   r(
@@ -748,7 +790,7 @@ export const RULES: readonly Rule[] = [
     'csp-hash',
     'csp',
     'config + build',
-    'Every inline executable, `speculationrules` and `importmap` script has its hash in `script-src` (falling back to `default-src`); every inline `<style>` has its hash in `style-src` (falling back to `default-src`). Template content counts: a script can put it into the page. Source: no `define:vars`, no `is:inline`.',
+    'Every inline executable, `speculationrules` and `importmap` script has its hash in `script-src` (falling back to `default-src`); every inline `<style>` has its hash in `style-src` (falling back to `default-src`). Template content counts: a script can put it into the page. Source: no tag of a `.astro` file carries `define:vars` or `is:inline`.',
     'An inline script or style has no hash in the CSP of the page, or the source uses `define:vars` or `is:inline`.',
     'Remove `define:vars` and `is:inline`, and let Astro bundle the script or style, so that it hashes it. Never edit a script or style of the built page.',
   ),
@@ -790,7 +832,7 @@ export const RULES: readonly Rule[] = [
     'html-validate',
     'html',
     'build',
-    'Every page passes html-validate with only the kit config: `html-validate:recommended` and `html-validate:document`, elements `html5`; `unique-landmark`, `prefer-native-element` and `no-missing-references` are errors; `heading-level`, `wcag/h37`, `long-title` and `no-inline-style` are off; `require-sri` targets `crossorigin`, except a `script` whose `src` is on a host with `script` and `load: "page"`. html-validate reads the file as written, a UTF-8 byte order mark included. A page with more than 4 × `domElements` elements or a depth over 4 × `domDepth` (the kit\'s limits, template content counted) is not validated, because html-validate takes seconds on it or overflows its stack: it fails with one finding that says so.',
+    'Every page passes html-validate with only the kit config: `html-validate:recommended` and `html-validate:document`, elements `html5`; `unique-landmark`, `prefer-native-element` and `no-missing-references` are errors; `heading-level`, `wcag/h37`, `long-title` and `no-inline-style` are off; `require-sri` targets `crossorigin`, except a `script` whose `src` is on a host with `script` and `load: "page"`. html-validate reads the file as written, a UTF-8 byte order mark included. On a site with islands, Astro\'s island style element (`<style>astro-island,astro-slot,astro-static-slot{display:contents}</style>`, the one rule of 7.1, exactly, in a `<style>` without attributes) is read as a comment of the same length: Astro writes it into the body, where html-validate refuses a `<style>`, and the project cannot change it. Any other `<style>` in the body stays an error. A page with more than 4 × `domElements` elements or a depth over 4 × `domDepth` (the kit\'s limits, template content counted) is not validated, because html-validate takes seconds on it or overflows its stack: it fails with one finding that says so.',
     'The HTML of the page is not valid, or html-validate finds an accessibility problem.',
     'Fix the markup at the place that html-validate names. The detail holds its rule id and its message.',
   ),
@@ -798,9 +840,9 @@ export const RULES: readonly Rule[] = [
     'html-shell',
     'html',
     'build',
-    'The first focusable element (`a[href], area[href], button, input:not([type=hidden]), select, textarea, summary, iframe, [tabindex]:not([tabindex="-1"]), [contenteditable], audio[controls], video[controls]`) is a skip link `a[href="#<id>"]`, and the page\'s single `main` has that id (the fragment as written or percent-decoded).',
-    'The page does not start with a skip link to its one `main`.',
-    'Make the first focusable element of the page a link `<a href="#main" class="visually-hidden">` to the `id` of its one `<main id="main">`.',
+    'The first focusable element (`a[href], area[href], button, input:not([type=hidden]), select, textarea, summary, iframe, [tabindex]:not([tabindex="-1"]), [contenteditable], audio[controls], video[controls]`) is a skip link `a[href="#<id>"]`, and the page\'s single `main` has that id (the fragment as written or percent-decoded). No `meta` has an `http-equiv` of `refresh` or a `name` of `referrer`, each trimmed and in any ASCII case, whatever its `content`. A meta refresh sends the visitor to any address with no gesture, which the CSP does not limit; a redirect belongs in `redirects.json`. A meta referrer overrides the `Referrer-Policy` header of 6.3, so it can send the full URL of the page to another origin. A `meta` inside a `noscript` counts too: a browser without JavaScript reads it.',
+    'The page does not start with a skip link to its one `main`, or it has a meta refresh or a meta referrer.',
+    'Make the first focusable element of the page a link `<a href="#main" class="visually-hidden">` to the `id` of its one `<main id="main">`. Remove a meta refresh (add a row to `redirects.json`) and a meta referrer (the kit header sets the policy).',
   ),
   // forms
   r(
@@ -856,9 +898,17 @@ export const RULES: readonly Rule[] = [
     'legal-statement',
     'legal',
     'build',
-    'A declared accessibility page claims conformance (a match of `konform`, `conforme`, `conformant` or `compliant`) only when `site.json` has `accessibilityAudit`. A match is a whole word, in any letter case: `/(?<!\\p{L})(konform|conforme|conformant|compliant)(?!\\p{L})/iu`. It is not a claim when one of `not`, `non`, `nicht`, `pas`, `kein`, `keine` stands as a whole word in the 24 characters before it.',
+    'A declared accessibility page claims conformance (a match of `konform`, `conforme`, `conformant` or `compliant`) only when `site.json` has `accessibilityAudit`. It reads the page text that a visitor sees: without the subtree of an element with `hidden`, `aria-hidden="true"` or the class `visually-hidden`, and without template content. When `body` itself or an element around it is such an element, the page has no such text. A match is a whole word, in any letter case: `/(?<!\\p{L})(konform|conforme|conformant|compliant)(?!\\p{L})/iu`. It is not a claim when one of `not`, `non`, `nicht`, `pas`, `kein`, `keine` stands as a whole word in the 24 characters before it.',
     'The accessibility page claims conformance without an audit in `site.json`.',
     'Remove the claim, or ask the owner to add the audit to `site.json` `accessibilityAudit`.',
+  ),
+  r(
+    'legal-origins',
+    'legal',
+    'build',
+    'The legal text of the privacy page of each locale holds the `processor` text of each entry of `origins`, as an exact substring. The processor is read as the legal text is: in NFC, with each run of white space as one space, trimmed; the letter case counts. The legal text holds only text that a visitor sees, so a processor in a hidden part is not named, and neither is one in a `main` that is hidden itself or inside a hidden element. One finding for each privacy page, naming every processor that it lacks. A declared privacy page that is not built is left to `legal-pages`.',
+    'A privacy page does not name the processor of a declared origin.',
+    'Add the sentence about the processor to the privacy page of each locale, with the name written exactly as in `origins[].processor`. The owner approves the legal text.',
   ),
   // media
   r(

@@ -328,16 +328,24 @@ export function textOf(
   return parts.join('');
 }
 
-const PAGE_TEXTS = new WeakMap<BuiltPage, { page: string; legal: string }>();
+const PAGE_TEXTS = new WeakMap<BuiltPage, { page: string; seen: string; legal: string }>();
 
 /** The page text and the legal text of a page, found once. */
-function textsOf(page: BuiltPage): { page: string; legal: string } {
+function textsOf(page: BuiltPage): { page: string; seen: string; legal: string } {
   let found = PAGE_TEXTS.get(page);
   if (found === undefined) {
     const dom = domOf(page);
-    const of = (element: HTMLElement | undefined): string =>
-      element === undefined ? '' : collapse(textOf(element).normalize('NFC'));
-    found = { page: of(dom.body), legal: of(dom.main) };
+    const of = (element: HTMLElement | undefined, skip?: (element: HTMLElement) => boolean): string => {
+      if (element === undefined) return '';
+      if (skip === undefined) return collapse(textOf(element).normalize('NFC'));
+      // `textOf` never skips the element it starts from, so a root that a visitor does not see, or one inside such
+      // an ancestor, gives no text here.
+      for (let node: HTMLElement | null = element; node !== null; node = node.parentNode) {
+        if (node.nodeType === NodeType.ELEMENT_NODE && skip(node)) return '';
+      }
+      return collapse(textOf(element, { skip }).normalize('NFC'));
+    };
+    found = { page: of(dom.body), seen: of(dom.body, isUnseen), legal: of(dom.main, isUnseen) };
     PAGE_TEXTS.set(page, found);
   }
   return found;
@@ -349,7 +357,23 @@ function textsOf(page: BuiltPage): { page: string; legal: string } {
  */
 export const pageText = (page: BuiltPage): string => textsOf(page).page;
 
-/** The legal text (Measurement details): the same for the first `main`. `''` without a `main`. */
+/**
+ * Says whether a visitor sees no part of an element for the legal text: it has `hidden`, `aria-hidden="true"` or the
+ * kit class `visually-hidden` (Measurement details, "Legal text and page text").
+ */
+const isUnseen = (element: HTMLElement): boolean =>
+  isHidden(element) || tokensOf(element, 'class').includes('visually-hidden');
+
+/**
+ * The page text that a visitor sees: the page text without the subtree of an element that a visitor does not see
+ * (`isUnseen`). `legal-statement` reads it. `''` without a `body`.
+ */
+export const seenPageText = (page: BuiltPage): string => textsOf(page).seen;
+
+/**
+ * The legal text (Measurement details): the same for the first `main`, without the subtree of an element that a
+ * visitor does not see (`isUnseen`). Template content is no part of it either. `''` without a `main`.
+ */
 export const legalText = (page: BuiltPage): string => textsOf(page).legal;
 
 /** Says whether two `lang` values name one language tag: BCP 47 compares tags without regard to ASCII case. */
@@ -794,14 +818,25 @@ function strip(raw: string): string {
   return text.slice(start, end);
 }
 
-/** Removes the dot segments of a path that starts with `/` (RFC 3986, 5.2.4). */
+/** The segments that the URL standard reads as `.`: `.` and `%2e`, in any ASCII case. */
+const SINGLE_DOT: ReadonlySet<string> = new Set(['.', '%2e']);
+
+/** The segments that the URL standard reads as `..`: `..`, `.%2e`, `%2e.` and `%2e%2e`, in any ASCII case. */
+const DOUBLE_DOT: ReadonlySet<string> = new Set(['..', '.%2e', '%2e.', '%2e%2e']);
+
+/**
+ * Removes the dot segments of a path that starts with `/` (RFC 3986, 5.2.4), as the URL standard does: a segment
+ * is a dot segment also when it writes a dot as `%2e` or `%2E` (`/_astro/%2e%2e/x.js` asks for `/x.js`).
+ */
 function removeDots(path: string): string {
   const out: string[] = [];
   const segments = path.split('/');
   segments.forEach((segment, index) => {
     const last = index === segments.length - 1;
-    if (segment === '.' || segment === '..') {
-      if (segment === '..' && out.length > 1) out.pop();
+    const lower = segment.length <= 6 ? asciiLower(segment) : '';
+    const double = DOUBLE_DOT.has(lower);
+    if (double || SINGLE_DOT.has(lower)) {
+      if (double && out.length > 1) out.pop();
       if (last) out.push('');
     } else out.push(segment);
   });
@@ -882,6 +917,21 @@ export function decodePath(path: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The dist file that a URL of a page, or of the file at `base`, names: its same-origin path, as written or
+ * percent-decoded, when the client directory holds that file. `undefined` for another origin, an `http:` URL and a
+ * path that names no file. The path is the one that the browser asks for (`resolveHref`).
+ */
+export function distFileOf(ctx: BuildContext, url: string, base: string): string | undefined {
+  const { files, host } = siteOf(ctx);
+  const target = resolveHref(url, base, host);
+  if (target.kind !== 'internal' || target.scheme === 'http') return undefined;
+  const file = target.path.slice(1);
+  if (files.has(file)) return file;
+  const decoded = decodePath(file);
+  return decoded !== undefined && files.has(decoded) ? decoded : undefined;
 }
 
 /** One link of a page: an `a` or `area` with an `href`. */

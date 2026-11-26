@@ -1016,3 +1016,62 @@ test('config-wrangler carries the hint of the protected task, and it is not waiv
   assert.equal(getRule(RULE).waivable, false);
   assert.equal(getRule(RULE).stage, 'config');
 });
+
+// The five cases of 9.4, byte for byte
+
+/** The `Permissions-Policy` of 6.3 with no origin, written out. */
+const PERMISSIONS_TEXT =
+  'accelerometer=(), autoplay=(self), bluetooth=(), browsing-topics=(), camera=(), display-capture=(), fullscreen=(self), geolocation=(), gyroscope=(), hid=(), idle-detection=(), local-fonts=(), magnetometer=(), microphone=(), midi=(), payment=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), usb=(), xr-spatial-tracking=()';
+
+/** The `/*` rule of `_headers` for a case, written out: the header policy, COOP and the Permissions-Policy. */
+const allRuleOf = (policy: string, opener: string, permissions: string): string =>
+  [
+    '/*',
+    `  Content-Security-Policy: ${policy}`,
+    '  Strict-Transport-Security: max-age=31536000; includeSubDomains',
+    '  X-Content-Type-Options: nosniff',
+    '  Referrer-Policy: strict-origin-when-cross-origin',
+    `  Cross-Origin-Opener-Policy: ${opener}`,
+    '  Cross-Origin-Resource-Policy: same-origin',
+    `  Permissions-Policy: ${permissions}`,
+    '',
+  ].join('\n');
+
+const PLAIN_POLICY = "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'";
+
+const FIVE_CASES: readonly [name: string, origins: readonly unknown[], rule: string][] = [
+  ['1: none', [], allRuleOf(PLAIN_POLICY, 'same-origin', PERMISSIONS_TEXT)],
+  ['2: a frame origin', [MAPS], allRuleOf(PLAIN_POLICY, 'same-origin-allow-popups', PERMISSIONS_TEXT)],
+  [
+    '3: a script and frame origin with payment, and a connect origin',
+    [PAY, PAY_API],
+    allRuleOf(
+      PLAIN_POLICY,
+      'same-origin-allow-popups',
+      PERMISSIONS_TEXT.replace('payment=()', 'payment=(self "https://js.pay.example")'),
+    ),
+  ],
+  ['4: a connect origin on page load', [STATS], allRuleOf(PLAIN_POLICY, 'same-origin', PERMISSIONS_TEXT)],
+  [
+    '5: a form origin',
+    [NEWS],
+    allRuleOf(
+      "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self' https://news.example.com",
+      'same-origin',
+      PERMISSIONS_TEXT,
+    ),
+  ],
+];
+
+test('headersText for the five origin cases of 9.4: the /* rule byte for byte', () => {
+  assert.equal(PERMISSIONS_TEXT, PLAIN_PERMISSIONS);
+  const seen = FIVE_CASES.map(([name, origins]) => {
+    // The example of 5.1 has forms, so the adapter writes the /_astro/* rule, and the kit writes /* alone.
+    const text = headersText(withOrigins(origins));
+    return [name, text];
+  });
+  assert.deepEqual(
+    seen,
+    FIVE_CASES.map(([name, , rule]) => [name, rule]),
+  );
+});

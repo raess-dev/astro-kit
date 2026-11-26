@@ -59,6 +59,13 @@ export const MESSAGES = {
     'a gesture origin needs features.scripts or features.islands: a script adds the frame, the script or the request after the click',
 } as const;
 
+/** The exact messages of the field checks of `origins` that are no pattern or length (5.2). */
+export const ORIGIN_MESSAGES = {
+  ip: 'an origin is a DNS host name, not an IP address',
+  processorEmpty: 'origins[].processor must name the company: it is only white space',
+  purposeEmpty: 'origins[].purpose must say why the site needs the host: it is only white space',
+} as const;
+
 // The pattern of every mail address and the date check live in src/forms/fields.ts, which the Worker loads without
 // this module. They are exported here too, for the other loaders.
 export { EMAIL, isRealDate };
@@ -299,9 +306,28 @@ const legalSchema = z.strictObject({
   accessibility: legalPathsSchema.optional(),
 });
 
+/**
+ * Says whether a host is an IP address: an IPv6 literal (it holds `:` or a bracket), or an IPv4 address in any form
+ * that the URL parser reads (its last label is digits only, or a hexadecimal number such as `0x7f`).
+ */
+export const isIpHost = (host: string): boolean => {
+  if (/[:[\]]/.test(host)) return true;
+  const last = host.split('.').at(-1) ?? '';
+  return /^\d+$/.test(last) || /^0x[0-9a-f]*$/i.test(last);
+};
+
+/**
+ * Says whether a text holds a word: it is not empty after NFC, with each run of white space as one space, and trimmed,
+ * as `legal-origins` reads a processor (section 8).
+ */
+const hasWords = (text: string): boolean => text.normalize('NFC').replace(/\s+/g, ' ').trim() !== '';
+
 const originSchema = z
   .strictObject({
-    host: z.string().regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/),
+    host: z
+      .string()
+      .refine((host) => !isIpHost(host), { message: ORIGIN_MESSAGES.ip, abort: true })
+      .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/),
     directives: z
       .array(z.enum(['connect', 'frame', 'script', 'form']))
       .min(1)
@@ -312,8 +338,8 @@ const originSchema = z
       .array(z.enum(['payment', 'fullscreen', 'autoplay', 'geolocation']))
       .superRefine((values, ctx) => uniqueValues(values, ctx))
       .default(() => []),
-    purpose: z.string().min(3).max(120),
-    processor: z.string().min(2).max(80),
+    purpose: z.string().min(3).max(120).refine(hasWords, { message: ORIGIN_MESSAGES.purposeEmpty }),
+    processor: z.string().min(2).max(80).refine(hasWords, { message: ORIGIN_MESSAGES.processorEmpty }),
   })
   .superRefine((origin, ctx) => {
     if (origin.allow.length > 0 && !origin.directives.includes('frame')) add(ctx, ['allow'], MESSAGES.originAllow);

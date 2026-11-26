@@ -1,7 +1,7 @@
 /**
  * The `build` set of the planted violations at milestone M5 (specification, 14.2, "Planted-violation sets"). One copy
  * of the test site gets every plant of the list, and one `build` run must report exactly the ids of the set, and no
- * passed line. The ids of the forms rules joined at M7; `legal-origins` and `origins-third-party` join at M8, and
+ * passed line. The ids of the forms rules joined at M7; `legal-origins` and `origins-third-party` joined at M8, and
  * `legal-approved` at M9, each with its rule.
  *
  * Each plant is the smallest violation of its rule, on a page or a file that no other plant needs, so that one plant
@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { edit, passedLine, read, run, siteCase, write } from './harness.ts';
 
-/** The ids of the set at M5, with `edge-private` of M6 and the forms rules of M7, sorted. */
+/** The ids of the set at M5, with `edge-private` of M6, the forms rules of M7 and the origins rules of M8, sorted. */
 const BUILD_IDS = [
   'content-copied',
   'content-glossary',
@@ -49,6 +49,7 @@ const BUILD_IDS = [
   'images-priority',
   'images-src',
   'indexing-noindex',
+  'legal-origins',
   'legal-pages',
   'legal-statement',
   'links-depth',
@@ -59,6 +60,7 @@ const BUILD_IDS = [
   'media-captions',
   'media-pdf',
   'modes-switch',
+  'origins-third-party',
   'routes-404',
   'routes-slug',
   'routes-translation',
@@ -380,6 +382,25 @@ const PLANTS: readonly Plant[] = [
       ),
   },
   {
+    // The origin of 14.2: a map of OpenStreetMap on page load, which no privacy page names. Its frame changes only
+    // the CSP and the headers, which the kit writes for the settings, so no page needs another change.
+    id: 'legal-origins',
+    plant: (dir) => {
+      const settings = JSON.parse(read(dir, 'astro-kit.json')) as { origins: unknown[] };
+      settings.origins = [
+        ...settings.origins,
+        {
+          host: 'www.openstreetmap.org',
+          directives: ['frame'],
+          load: 'page',
+          purpose: 'Planted',
+          processor: 'OpenStreetMap Foundation',
+        },
+      ];
+      write(dir, { 'astro-kit.json': `${JSON.stringify(settings, null, 2)}\n` });
+    },
+  },
+  {
     // A declared French accessibility page that is not built.
     id: 'legal-pages',
     plant: (dir) =>
@@ -488,6 +509,18 @@ const PLANTS: readonly Plant[] = [
         HEADER,
         '<ModeSwitch locale={locale} />',
         "{Astro.url.pathname !== '/en/contact/' && <ModeSwitch locale={locale} />}",
+      ),
+  },
+  {
+    // A `preconnect` to a tile server in the head of the French getting-here page: a resource rel on another origin,
+    // which no origin declares. A `link` in the head is valid HTML that no other build rule reads.
+    id: 'origins-third-party',
+    plant: (dir) =>
+      edit(
+        dir,
+        PAGE,
+        '<link rel="icon" href="/favicon.ico" sizes="32x32">',
+        '<link rel="icon" href="/favicon.ico" sizes="32x32">\n    {Astro.url.pathname === \'/fr/acces/\' && <link rel="preconnect" href="https://tiles.example.net" />}',
       ),
   },
   {

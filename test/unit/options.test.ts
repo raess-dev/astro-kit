@@ -19,12 +19,14 @@ import {
   MESSAGES,
   OPTIONS_FILE,
   type Options,
+  ORIGIN_MESSAGES,
   optionsSchema,
   parseOptions,
   readJson,
   reportIssues,
 } from '../../src/options.ts';
 import { Report, RULES } from '../../src/registry.ts';
+import { SPEC } from './spec.ts';
 
 type Json = Record<string, unknown>;
 type Key = string | number;
@@ -159,7 +161,7 @@ function outcomes(cases: readonly Case[]): Outcome[] {
 
 const text = (length: number): string => 'x'.repeat(length);
 
-test('the registry holds the rules of milestones M2 to M6 and part 7a of M7 in the order of section 8', () => {
+test('the registry holds the rules of milestones M2 to M7 and part 8a of M8 in the order of section 8', () => {
   assert.deepEqual(
     RULES.map((rule) => [rule.id, rule.group, rule.stage]),
     [
@@ -183,6 +185,10 @@ test('the registry holds the rules of milestones M2 to M6 and part 7a of M7 in t
       ['routes-slug', 'routes', 'config + build'],
       ['routes-translation', 'routes', 'build'],
       ['routes-redirects', 'routes', 'config + build'],
+      ['js-script', 'js', 'config + build'],
+      ['js-prefetch-attr', 'js', 'config + build'],
+      ['js-directive', 'js', 'config + build'],
+      ['js-budget', 'js', 'build'],
       ['speculation-block', 'speculation', 'build'],
       ['budget-head', 'budgets', 'build'],
       ['budget-document', 'budgets', 'build'],
@@ -195,6 +201,7 @@ test('the registry holds the rules of milestones M2 to M6 and part 7a of M7 in t
       ['images-public', 'images', 'config'],
       ['images-original', 'images', 'config'],
       ['fonts-limit', 'fonts', 'build'],
+      ['origins-third-party', 'origins', 'build'],
       ['head-canonical', 'head', 'build'],
       ['head-lang', 'head', 'build'],
       ['head-title', 'head', 'build'],
@@ -258,6 +265,7 @@ test('the registry holds the rules of milestones M2 to M6 and part 7a of M7 in t
       ['legal-pages', 'legal', 'build'],
       ['legal-processing', 'legal', 'config'],
       ['legal-statement', 'legal', 'build'],
+      ['legal-origins', 'legal', 'build'],
       ['media-animated', 'media', 'build'],
       ['media-captions', 'media', 'build'],
       ['media-pdf', 'media', 'build'],
@@ -282,6 +290,7 @@ test('the registry holds the rules of milestones M2 to M6 and part 7a of M7 in t
   );
   // Section 8, Waivers: of these rules, only these are waivable.
   const waivable = [
+    'js-budget',
     'budget-head',
     'budget-document',
     'budget-dom',
@@ -1291,6 +1300,45 @@ test('origins', () => {
     ['a host with a scheme', origin, [[at('host'), 'https://js.stripe.com']], [['origins[0].host']]],
     ['a host with a wildcard', origin, [[at('host'), '*.stripe.com']], [['origins[0].host']]],
     ['a host with one label', origin, [[at('host'), 'localhost']], [['origins[0].host']]],
+    // An IP address is no DNS host name (F18): IPv4 in the forms of the URL parser, and IPv6.
+    ['an IPv4 host', origin, [[at('host'), '127.0.0.1']], [['origins[0].host', ORIGIN_MESSAGES.ip]]],
+    ['an IPv4 host of a private net', origin, [[at('host'), '10.0.0.1']], [['origins[0].host', ORIGIN_MESSAGES.ip]]],
+    [
+      'a host whose last label is digits',
+      origin,
+      [[at('host'), 'js.stripe.123']],
+      [['origins[0].host', ORIGIN_MESSAGES.ip]],
+    ],
+    [
+      'a host whose last label is a hex number',
+      origin,
+      [[at('host'), 'js.0x7f']],
+      [['origins[0].host', ORIGIN_MESSAGES.ip]],
+    ],
+    ['an IPv6 host', origin, [[at('host'), '[::1]']], [['origins[0].host', ORIGIN_MESSAGES.ip]]],
+    ['an IPv6 host without brackets', origin, [[at('host'), '2001:db8::1']], [['origins[0].host', ORIGIN_MESSAGES.ip]]],
+    ['a host with digits in an inner label', origin, [[at('host'), '1.2.example.org']], []],
+    ['a host whose last label holds a digit and a letter', origin, [[at('host'), 'cdn.example.co1']], []],
+    // A processor or a purpose of white space only names nothing (F6).
+    [
+      'a processor of white space',
+      origin,
+      [[at('processor'), '   ']],
+      [['origins[0].processor', ORIGIN_MESSAGES.processorEmpty]],
+    ],
+    [
+      'a processor of no-break spaces',
+      origin,
+      [[at('processor'), '\u00a0\u00a0']],
+      [['origins[0].processor', ORIGIN_MESSAGES.processorEmpty]],
+    ],
+    [
+      'a purpose of white space',
+      origin,
+      [[at('purpose'), ' \t\n ']],
+      [['origins[0].purpose', ORIGIN_MESSAGES.purposeEmpty]],
+    ],
+    ['a processor with white space around a name', origin, [[at('processor'), '  AG  ']], []],
     ['a host in upper case', origin, [[at('host'), 'JS.stripe.com']], [['origins[0].host']]],
     ['a host with a path', origin, [[at('host'), 'js.stripe.com/v3']], [['origins[0].host']]],
     ['a host with a port', origin, [[at('host'), 'js.stripe.com:443']], [['origins[0].host']]],
@@ -1940,4 +1988,8 @@ test('config-options fails a form whose body cap passes 128 KiB, and names the f
   const declared = short.forms as Record<string, { fields: Json[] }>;
   for (const field of declared.long?.fields ?? []) field.maxLength = 3000;
   assert.notEqual(parseOptions(short, new Report()), undefined);
+});
+
+test('the messages of the origin field checks are the texts of 5.2', () => {
+  for (const message of Object.values(ORIGIN_MESSAGES)) assert.ok(SPEC.includes(`\`${message}\``), message);
 });
