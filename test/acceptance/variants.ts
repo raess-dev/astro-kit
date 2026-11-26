@@ -70,3 +70,238 @@ export async function toStatic(dir: string): Promise<void> {
   if (options === undefined) throw new Error(`toStatic: astro-kit.json is not valid:\n${report.format()}`);
   write(dir, { 'wrangler.jsonc': renderWrangler(options) });
 }
+
+/** Reads `astro-kit.json` of a case, lets `change` edit it, and writes it back. */
+function changeSettings(
+  dir: string,
+  change: (value: Record<string, unknown> & { features: Record<string, boolean> }) => void,
+): void {
+  const value = JSON.parse(read(dir, 'astro-kit.json')) as Record<string, unknown> & {
+    features: Record<string, boolean>;
+  };
+  change(value);
+  write(dir, { 'astro-kit.json': `${JSON.stringify(value, null, 2)}\n` });
+}
+
+/** The page of the `islands` variant that holds the island `MoreLinks`. */
+export const ISLAND_PAGE = '/zimmer/';
+
+/** The class that `MoreLinks` adds only in the browser: no built page holds it (`css-unused`, 7.8). */
+export const ISLAND_CLASS = 'more-links--open';
+
+/**
+ * The Solid island of the `islands` variant: a list of links to other pages of the hotel. Its server markup shows
+ * every link, so the page works without JavaScript (`a11y-no-js`). After hydration it adds the modifier
+ * `more-links--open`, a class that only the browser sees.
+ */
+const MORE_LINKS = `/**
+ * More links to the pages of the hotel, as a Solid island. The server markup shows every link. In the browser the
+ * island marks its root as open, a class that no built page holds.
+ */
+import { For, onMount } from 'solid-js';
+import '../styles/components/more-links.css';
+
+interface Link {
+  href: string;
+  text: string;
+}
+
+interface Props {
+  label: string;
+  links: readonly Link[];
+}
+
+export default function MoreLinks(props: Props) {
+  let root: HTMLDivElement | undefined;
+  onMount(() => root?.classList.add('${ISLAND_CLASS}'));
+  return (
+    <div class="more-links stack" ref={root}>
+      <p>{props.label}</p>
+      <ul class="more-links__list">
+        <For each={props.links}>
+          {(link) => (
+            <li>
+              <a class="more-links__link" href={link.href}>
+                {link.text}
+              </a>
+            </li>
+          )}
+        </For>
+      </ul>
+    </div>
+  );
+}
+`;
+
+/** The CSS file of `MoreLinks`: its root, two parts and the modifier that the island adds. */
+const MORE_LINKS_CSS = `@layer components {
+  .more-links {
+    --stack-gap: var(--space-2);
+
+    .more-links__list {
+      display: flex;
+      flex-wrap: wrap;
+      column-gap: var(--space-4);
+      padding-inline-start: 0;
+      list-style-type: none;
+    }
+
+    /* Each link stands alone, so it is a target of 44 px. */
+    .more-links__link {
+      display: inline-flex;
+      align-items: center;
+      min-inline-size: var(--size-target);
+      min-block-size: var(--size-target);
+    }
+
+    /* The island adds the modifier after hydration. */
+    &.${ISLAND_CLASS} .more-links__list {
+      column-gap: var(--space-5);
+    }
+  }
+}
+`;
+
+/**
+ * The `islands` variant of 14.2: `features.islands` on, and the Solid island `src/components/MoreLinks.tsx` with its
+ * CSS file on the German rooms page, hydrated with `client:visible`. Its links lead to pages that the main navigation
+ * links too, so the page links no page that its translations do not (`content-stale`). `init --shims` writes the
+ * ESLint shim from M9 (14.2, Variants).
+ */
+export function toIslands(dir: string): void {
+  changeSettings(dir, (value) => {
+    value.features.islands = true;
+  });
+  write(dir, {
+    'src/components/MoreLinks.tsx': MORE_LINKS,
+    'src/styles/components/more-links.css': MORE_LINKS_CSS,
+  });
+  const page = 'src/pages/zimmer.astro';
+  edit(
+    dir,
+    page,
+    "import FeatureCard from '../components/FeatureCard.astro';\n",
+    "import FeatureCard from '../components/FeatureCard.astro';\nimport MoreLinks from '../components/MoreLinks.tsx';\n",
+  );
+  edit(
+    dir,
+    page,
+    "import { linkTo } from '../data/routes.ts';\n",
+    "import { linkTo } from '../data/routes.ts';\nimport { UI } from '../data/ui.ts';\n",
+  );
+  const links = ['restaurant', 'gettingHere', 'contact']
+    .map((key) => `{ href: linkTo('${key}', locale), text: UI[locale].pages.${key} }`)
+    .join(', ');
+  edit(
+    dir,
+    page,
+    /\n {2}<\/TextSection>\n<\/Page>/,
+    `\n    <MoreLinks client:visible label="Mehr über das Hotel" links={[${links}]} />\n  </TextSection>\n</Page>`,
+  );
+  edit(
+    dir,
+    'docs/design.md',
+    '| `.page-index .page-index__link` | `min-block-size` | `--size-target` |\n',
+    '| `.page-index .page-index__link` | `min-block-size` | `--size-target` |\n| `.more-links .more-links__link` | `min-block-size` | `--size-target` |\n',
+  );
+}
+
+/** The map of the `origins` variant: the embed of OpenStreetMap around Sils. The `origins` set plants it too. */
+export const MAP_URL = 'https://www.openstreetmap.org/export/embed.html?bbox=9.74%2C46.41%2C9.80%2C46.44&layer=mapnik';
+
+/** The one origin of the `origins` variant (14.2). */
+export const MAP_ORIGIN = {
+  host: 'www.openstreetmap.org',
+  directives: ['frame'],
+  load: 'gesture',
+  purpose: 'Map on the getting-here page',
+  processor: 'OpenStreetMap Foundation',
+} as const;
+
+/** The getting-here page of each locale, with the text of the map button and of its notice. */
+const MAP_PAGES = [
+  {
+    file: 'src/pages/anreise.astro',
+    button: 'Karte zeigen (lädt Daten von OpenStreetMap)',
+    title: 'Karte von Sils',
+    notice: 'Die Karte lädt erst nach einem Klick Daten von OpenStreetMap. Mehr dazu sagt unsere',
+    privacy: 'Datenschutzerklärung',
+  },
+  {
+    file: 'src/pages/fr/acces.astro',
+    button: 'Afficher la carte (charge des données d’OpenStreetMap)',
+    title: 'Carte de Sils',
+    notice: 'La carte ne charge des données d’OpenStreetMap qu’après un clic. Pour en savoir plus, lisez notre',
+    privacy: 'déclaration de protection des données',
+  },
+  {
+    file: 'src/pages/en/getting-here.astro',
+    button: 'Show map (loads data from OpenStreetMap)',
+    title: 'Map of Sils',
+    notice: 'The map loads data from OpenStreetMap only after a click. To learn more, read our',
+    privacy: 'privacy policy',
+  },
+] as const;
+
+/** The sentence about the map for the privacy page of each locale: it names the processor (`legal-origins`). */
+const PRIVACY_TEXTS = [
+  {
+    file: 'src/pages/datenschutz.astro',
+    before: '    <h2>Ihre Rechte</h2>',
+    text: 'Auf der Anreiseseite zeigt eine Karte den Weg zum Hotel. Sie lädt ihre Daten erst nach einem Klick von der <span lang="en">OpenStreetMap Foundation</span>, die dabei Ihre IP-Adresse erhält.',
+  },
+  {
+    file: 'src/pages/fr/protection-des-donnees.astro',
+    before: '    <h2>Vos droits</h2>',
+    text: 'Sur la page d’accès, une carte montre le chemin de l’hôtel. Elle ne charge ses données auprès de l’<span lang="en">OpenStreetMap Foundation</span> qu’après un clic, et celle-ci reçoit alors votre adresse IP.',
+  },
+  {
+    file: 'src/pages/en/privacy.astro',
+    before: '    <h2>Your rights</h2>',
+    text: 'On the getting-here page, a map shows the way to the hotel. It loads its data from the OpenStreetMap Foundation only after a click, and the foundation then receives your IP address.',
+  },
+] as const;
+
+/**
+ * The bundled script of the map: a click on the button puts the map frame in its place. Until the click the page
+ * holds no frame, so nothing goes to OpenStreetMap (9.4, `load: "gesture"`).
+ */
+const MAP_SCRIPT = `<script>
+  const button = document.querySelector<HTMLButtonElement>('[data-map-button]');
+  button?.addEventListener('click', () => {
+    const frame = document.createElement('iframe');
+    frame.title = button.dataset.mapTitle ?? '';
+    frame.width = '600';
+    frame.height = '400';
+    frame.src = '${MAP_URL}';
+    button.replaceWith(frame);
+  });
+</script>
+`;
+
+/**
+ * The `origins` variant of 14.2: `features.scripts` on and the one origin `MAP_ORIGIN` with `load: "gesture"`; on
+ * the three getting-here pages, a button that says what it loads, a notice that links the privacy page, and a
+ * bundled script that adds the map frame on a click; the processor named on the three privacy pages. `legal --write`
+ * joins from M9 (14.2, Variants).
+ */
+export function toOrigins(dir: string): void {
+  changeSettings(dir, (value) => {
+    value.features.scripts = true;
+    value.origins = [MAP_ORIGIN];
+  });
+  for (const page of MAP_PAGES) {
+    const markup =
+      `    <p>\n      <button type="button" data-map-button data-map-title="${page.title}">${page.button}</button>\n    </p>\n` +
+      `    <p>${page.notice} <a href={linkTo('privacy', locale)}>${page.privacy}</a>.</p>\n`;
+    edit(
+      dir,
+      page.file,
+      /\n {2}<\/TextSection>\n<\/Page>\s*$/,
+      `\n${markup}  </TextSection>\n</Page>\n\n${MAP_SCRIPT}`,
+    );
+  }
+  for (const privacy of PRIVACY_TEXTS) {
+    edit(dir, privacy.file, privacy.before, `    <p>\n      ${privacy.text}\n    </p>\n\n${privacy.before}`);
+  }
+}

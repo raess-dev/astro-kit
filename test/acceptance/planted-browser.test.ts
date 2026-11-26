@@ -343,6 +343,8 @@ test('M6 planted: the browser set gives exactly its ids', () => {
   assert.equal(built.status, 0, tail(built.output));
   for (const plant of PLANTS) if (plant.id !== drop) plant.plant(dir);
   const result = run(dir, ['test', '--all']);
+  // A killed command has no findings: it must read as a kill, not as a set that gives no id.
+  assert.equal(result.killed, undefined, tail(result.output));
   assert.deepEqual(
     result.ids,
     BROWSER_IDS.filter((id) => id !== drop),

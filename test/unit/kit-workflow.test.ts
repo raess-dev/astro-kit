@@ -148,7 +148,10 @@ test('the test job runs the commands of 11.1 in order, and scan gets the gitleak
   assert.match(job('scan').env?.GITLEAKS ?? '', /^ghcr\.io\/gitleaks\/gitleaks:v\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/);
 });
 
-/** The npm scripts of the two acceptance jobs (3.4): the suite without the browser sets, and the browser sets. */
+/**
+ * The npm scripts of the two acceptance jobs (3.4): the suite without the three sets that run `test --all`, and those
+ * sets.
+ */
 const SCRIPTS = (
   JSON.parse(readFileSync(fileURLToPath(new URL('../../package.json', import.meta.url)), 'utf8')) as {
     scripts: Record<string, string>;
@@ -159,11 +162,11 @@ test('the npm scripts split the acceptance suite in two, and acceptance runs it 
   assert.equal(SCRIPTS.acceptance, "node --test 'test/acceptance/**/*.test.ts'");
   assert.equal(
     SCRIPTS['acceptance:core'],
-    "node --test 'test/acceptance/**/!(planted-browser|planted-prefetch).test.ts'",
+    "node --test 'test/acceptance/**/!(planted-browser|planted-prefetch|planted-origins).test.ts'",
   );
   assert.equal(
     SCRIPTS['acceptance:browser'],
-    'node --test test/acceptance/planted-browser.test.ts test/acceptance/planted-prefetch.test.ts',
+    'node --test test/acceptance/planted-browser.test.ts test/acceptance/planted-prefetch.test.ts test/acceptance/planted-origins.test.ts',
   );
 });
 

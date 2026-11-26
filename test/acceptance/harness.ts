@@ -496,6 +496,27 @@ export interface KitRun extends Run {
   /** stdout alone. The passed line of a command that runs checks is its last line (specification, 6.4). */
   stdout: string;
   ids: string[];
+  /**
+   * Why the command ended without a status, or `undefined` when it gave one: the signal that ended it, and the
+   * error of `spawnSync`, such as `spawnSync node ETIMEDOUT` when it ran longer than `RUN_LIMIT_MS`. A planted set
+   * asserts it first, so a killed command reads as a kill and not as a run with no finding.
+   */
+  killed: string | undefined;
+}
+
+/** The longest time that `run` gives one command of the kit before it kills it. */
+export const RUN_LIMIT_MS = 600_000;
+
+/** The `killed` text of a result of `spawnSync`: its signal and its error, or `undefined` for a command that ended. */
+export function killedOf(result: {
+  status: number | null;
+  signal: NodeJS.Signals | null;
+  error?: Error;
+}): string | undefined {
+  if (result.status !== null && result.error === undefined) return undefined;
+  const parts = [`signal ${result.signal ?? 'none'}`];
+  if (result.error !== undefined) parts.push(result.error.message);
+  return `killed after at most ${RUN_LIMIT_MS / 1000} s: ${parts.join(', ')}`;
 }
 
 /** The entry file of the kit CLI in the base copy: the CLI of the packed kit. */
@@ -518,12 +539,12 @@ export function run(target: string, command: string | readonly string[], env: Re
     cwd: dir,
     env: { ...machineEnv(), ...ENV, ...env },
     encoding: 'utf8',
-    timeout: 600_000,
+    timeout: RUN_LIMIT_MS,
     maxBuffer: 64 * 1024 * 1024,
   });
   const stdout = result.stdout ?? '';
   const output = `${stdout}${result.stderr ?? ''}`;
-  return { status: result.status, stdout, output, ids: ruleIds(output) };
+  return { status: result.status, stdout, output, ids: ruleIds(output), killed: killedOf(result) };
 }
 
 /** The passed line of the kit CLI (specification, 6.4). */

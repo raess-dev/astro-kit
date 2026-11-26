@@ -211,6 +211,7 @@ function lastLcp(page: Page): Promise<LcpImage | null> {
 export const lcpPriority: BrowserRule = {
   id: 'perf-lcp-priority',
   pages: 'tested',
+  cache: true,
   concurrent: true,
   check: async (check) => {
     for (const device of PERF_DEVICES) {
@@ -506,6 +507,7 @@ async function clsAt(check: Check, viewport: Viewport): Promise<string | undefin
 export const cls: BrowserRule = {
   id: 'perf-cls',
   pages: 'tested',
+  cache: true,
   concurrent: true,
   check: async (check) => {
     // The viewports run at the same time: most of the time goes to the fixed pauses, and the clock makes the
@@ -776,6 +778,7 @@ const srcsetScript = (): string =>
 export const imageOversize: BrowserRule = {
   id: 'perf-image-oversize',
   pages: 'tested',
+  cache: true,
   concurrent: true,
   check: async (check) => {
     for (const device of PERF_DEVICES) {
@@ -850,6 +853,7 @@ export function bfcacheReasons(reasons: readonly string[]): string[] {
 export const bfcache: BrowserRule = {
   id: 'perf-bfcache',
   pages: 'tested',
+  cache: true,
   concurrent: true,
   check: async (check) => {
     const context = await check.context({ viewport: DESKTOP });
@@ -1009,6 +1013,7 @@ export const NO_PRERENDER =
 export const prerender: BrowserRule = {
   id: 'perf-prerender',
   pages: 'tested',
+  cache: true,
   check: async (check) => {
     if (!check.run.options.prefetch.speculationRules) return;
     const page = await check.open({ viewport: DESKTOP });
@@ -1049,6 +1054,7 @@ const targetOf = (href: string): string => {
 export const prefetch: BrowserRule = {
   id: 'perf-prefetch',
   pages: 'tested',
+  cache: true,
   check: async (check) => {
     const settings = check.run.options.prefetch;
     if (!settings.astroPrefetch || settings.speculationRules) return;

@@ -552,6 +552,45 @@ test('origins-third-party fails each resource element and attribute that names a
       [],
       '<link rel="alternate" type="application/rss+xml" href="https://feeds.example.org/a.xml">',
     ],
+    // 8b: every rel counts but those that never fetch. Chromium 153 sends a prerender request to any host, past the CSP.
+    ['link prerender', '', ['origins-third-party'], '<link rel="prerender" href="https://evil.example/p">'],
+    ['link prerender in main', '<link rel="prerender" href="https://evil.example/p">', ['origins-third-party']],
+    [
+      'link compression-dictionary',
+      '',
+      ['origins-third-party'],
+      '<link rel="compression-dictionary" href="https://cdn.example.org/d">',
+    ],
+    ['link of an unknown rel', '', ['origins-third-party'], '<link rel="x-new-hint" href="https://cdn.example.org/">'],
+    ['link search', '', ['origins-third-party'], '<link rel="search" href="https://cdn.example.org/os.xml">'],
+    [
+      'link alternate stylesheet',
+      '',
+      ['origins-third-party'],
+      '<link rel="alternate stylesheet" href="https://cdn.example.org/b.css">',
+    ],
+    [
+      'links of the rels that never fetch',
+      '',
+      [],
+      [
+        'canonical',
+        'alternate',
+        'author',
+        'license',
+        'help',
+        'next',
+        'prev',
+        'me',
+        'privacy-policy',
+        'terms-of-service',
+        'expect',
+        'Canonical',
+      ]
+        .map((rel) => `<link rel="${rel}" href="https://other.example.org/${rel}">`)
+        .join(''),
+    ],
+    ['a link with no rel', '', [], '<link href="https://other.example.org/">'],
   ];
   assert.deepEqual(
     cases.map(([name, markup, , head]) => [
