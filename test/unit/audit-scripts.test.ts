@@ -1130,6 +1130,50 @@ test('js-budget: a preloaded script loads at once, and a worker file loads later
       { '_astro/s.js': 'navigator.serviceWorker.register("sw.js")', '_astro/sw.js': small },
       ['js-budget'],
     ],
+    // JavaScript decodes an escape in a string, so the file that loads is not the text: it cannot be measured
+    // (Codex, #27).
+    [
+      'an escape in a worker URL cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'new Worker("/_astro/\\x77.js")', '_astro/w.js': small },
+      ['js-budget'],
+    ],
+    [
+      'an escape in an importScripts URL cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'importScripts("/_astro/\\x77.js")', '_astro/w.js': small },
+      ['js-budget'],
+    ],
+    [
+      'an escape in import() cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'import("/_astro/\\x77.js")', '_astro/w.js': small },
+      ['js-budget'],
+    ],
+    [
+      'an escape in a static import cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'import"./\\x77.js";', '_astro/w.js': small },
+      ['js-budget'],
+    ],
+    [
+      'an escape in a static from cannot be measured',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': "export{a}from'./w\\u002ejs';", '_astro/w.js': small },
+      ['js-budget'],
+    ],
+    [
+      'a backslash in a string that is no specifier is no escape here',
+      SCRIPTS,
+      module('/_astro/s.js'),
+      { '_astro/s.js': 'import"./w.js";const p="a\\\\b";', '_astro/w.js': small },
+      [],
+    ],
     // importScripts resolves against the worker, which the kit does not know, so it must start with / (Codex, #27).
     [
       'a relative importScripts URL cannot be measured',

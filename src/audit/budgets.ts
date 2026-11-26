@@ -55,7 +55,7 @@ export const STATIC_IMPORT = /(?:\bimport|\bfrom)\s*["']([^"']+\.js)["']/g;
  * file. A template literal counts only without a substitution (`${`). Astro 7 bundles with Rolldown, which writes the
  * backtick form. The specifier is the group that matched.
  */
-export const DYNAMIC_IMPORT = /\bimport\(\s*(?:"([^"]+\.js)"|'([^']+\.js)'|`([^`$]+\.js)`)\s*\)/g;
+export const DYNAMIC_IMPORT = /\bimport\(\s*(?:"([^"\\]+\.js)"|'([^'\\]+\.js)'|`([^`$\\]+\.js)`)\s*\)/g;
 
 /**
  * The start of every `import(` call: the word `import`, white space, and `(`. A property access (`x.import(`) and a
@@ -70,7 +70,7 @@ const IMPORT_CALL = /(?<![\w$.])import\s*\(/g;
  * worker as ``new Worker(new URL(`/_astro/w.js`, ``+import.meta.url), …)``. The specifier is the group that matched.
  */
 export const WORKER_URL =
-  /(?:(?<![\w$.])(?:new\s+(?:URL|Worker|SharedWorker)|importScripts)|\bserviceWorker\s*\.\s*register)\s*\(\s*(?:"([^"]+\.js)"|'([^']+\.js)'|`([^`$]+\.js)`)/g;
+  /(?:(?<![\w$.])(?:new\s+(?:URL|Worker|SharedWorker)|importScripts)|\bserviceWorker\s*\.\s*register)\s*\(\s*(?:"([^"\\]+\.js)"|'([^'\\]+\.js)'|`([^`$\\]+\.js)`)/g;
 
 /**
  * The start of every call that starts a worker: `new Worker(`, `new SharedWorker(`, `importScripts(` and
@@ -84,14 +84,14 @@ const WORKER_CALL =
 const BACKTICK = '`';
 
 /** A string literal of a `.js` file: in quotes, or a template literal without a substitution. */
-const JS_LITERAL = String.raw`(?:"[^"]+\.js"|'[^']+\.js'|${BACKTICK}[^${BACKTICK}$]+\.js${BACKTICK})`;
+const JS_LITERAL = String.raw`(?:"[^"\\]+\.js"|'[^'\\]+\.js'|${BACKTICK}[^${BACKTICK}$\\]+\.js${BACKTICK})`;
 
 /**
  * A string literal of a `.js` file whose path starts with `/`: its URL is the same whatever the base. A bare worker
  * URL resolves against the document that runs the script, not against the script, and one script can run on many
  * pages.
  */
-const ROOT_JS_LITERAL = String.raw`(?:"/[^"]+\.js"|'/[^']+\.js'|${BACKTICK}/[^${BACKTICK}$]+\.js${BACKTICK})`;
+const ROOT_JS_LITERAL = String.raw`(?:"/[^"\\]+\.js"|'/[^'\\]+\.js'|${BACKTICK}/[^${BACKTICK}$\\]+\.js${BACKTICK})`;
 
 /**
  * The first argument of a worker call that the kit can measure, whole: a literal of a `.js` file whose path starts
@@ -114,7 +114,7 @@ const IMPORT_SCRIPTS_ARGUMENTS = new RegExp(String.raw`\s*${ROOT_JS_LITERAL}(?:\
 
 /** Every literal of a `.js` file in a text, with its specifier in the group that matched. */
 const JS_LITERALS = new RegExp(
-  String.raw`"([^"]+\.js)"|'([^']+\.js)'|${BACKTICK}([^${BACKTICK}$]+\.js)${BACKTICK}`,
+  String.raw`"([^"\\]+\.js)"|'([^'\\]+\.js)'|${BACKTICK}([^${BACKTICK}$\\]+\.js)${BACKTICK}`,
   'g',
 );
 
@@ -134,6 +134,13 @@ function importScriptsSpecifiers(text: string): string[] {
   }
   return out;
 }
+
+/**
+ * A static import (`import "…"`, `from "…"`) whose specifier holds a backslash. JavaScript decodes an escape such as
+ * `\x77` in a string, so the file that loads is not the text that `STATIC_IMPORT` reads. The bundler writes no such
+ * specifier, so the kit cannot measure one.
+ */
+const ESCAPED_STATIC_IMPORT = /(?:\bimport|\bfrom)\s*(?:"[^"\n]*\\|'[^'\n]*\\)/;
 
 /** The specifier of a match of `DYNAMIC_IMPORT` or `WORKER_URL`: the group that matched. */
 const dynamicSpecifier = (match: RegExpMatchArray): string => match[1] ?? match[2] ?? match[3] ?? '';
@@ -229,7 +236,9 @@ function jsIndexOf(ctx: BuildContext): JsIndex {
 
 /**
  * Says whether a JS text holds an `import(` that `DYNAMIC_IMPORT` does not read: its argument is no string literal
- * of a `.js` file (`import(url)`, a template literal with `${`), or white space stands before the parenthesis. It
+ * of a `.js` file without a backslash (`import(url)`, a template literal with `${`, an escape such as `\x77`), or
+ * white space stands before the parenthesis. It also holds for a static import with an escape
+ * (`ESCAPED_STATIC_IMPORT`). It
  * also holds when a worker call (`WORKER_CALL`) takes an argument that the kit cannot read whole (`WORKER_ARGUMENT`,
  * `IMPORT_SCRIPTS_ARGUMENTS`). The kit cannot
  * know what such a call loads, so the JS cannot be measured.
@@ -238,6 +247,7 @@ export function hasUnmeasuredImport(text: string): boolean {
   const read = new Set<number>();
   for (const match of text.matchAll(DYNAMIC_IMPORT)) read.add(match.index);
   for (const match of text.matchAll(IMPORT_CALL)) if (!read.has(match.index)) return true;
+  if (ESCAPED_STATIC_IMPORT.test(text)) return true;
   for (const match of text.matchAll(WORKER_CALL)) {
     const argument = match[0].includes('importScripts') ? IMPORT_SCRIPTS_ARGUMENTS : WORKER_ARGUMENT;
     argument.lastIndex = match.index + match[0].length;

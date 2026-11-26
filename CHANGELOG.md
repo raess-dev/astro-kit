@@ -348,3 +348,5 @@
   - A worker URL counts only when the whole argument is a literal (or `new URL(` of one on the file's own base), and
     each argument of `importScripts(` counts. A bare worker URL and each `importScripts(` argument must start
     with `/`: the browser resolves them against the page or the worker, which the kit does not know (Codex, #27).
+  - A specifier with a backslash cannot be measured, in `import()`, a worker URL and a static import: JavaScript
+    decodes the escape, so the file that loads is not the text (Codex, #27).
