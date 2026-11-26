@@ -209,7 +209,7 @@ Each pin follows the pinning rule above: the latest stable release that every pe
 | Accessibility engine | `axe-core` | `4.14.0` | Injected from `axe-core/axe.min.js` |
 | HTML validator | `html-validate` | `11.21.0` | `html-validate` rule |
 | HTML parser | `node-html-parser` | `9.0.7` | Every build audit |
-| Islands (feature) | `solid-js` / `@astrojs/solid-js` | pins `1.9.19` (peer `>=1.9.18 <2`) / `7.1.6` (peer `>=7.1.2 <8`) | Only with `features.islands`. Solid 2 waits until `@astrojs/solid-js` accepts it: 7.1.6 has the peer `solid-js` `^1.9.13`. |
+| Islands (feature) | `solid-js` / `@astrojs/solid-js` | pins `1.9.20` (peer `>=1.9.18 <2`) / `7.1.6` (peer `>=7.1.2 <8`) | Only with `features.islands`. Solid 2 waits until `@astrojs/solid-js` accepts it: 7.1.6 has the peer `solid-js` `^1.9.13`. |
 | Islands lint (feature) | `eslint` / `eslint-plugin-solid` / `typescript-eslint` | pins `10.15.0` / `0.20.0` / `8.73.0` | Site devDependencies, only with islands. ESLint lints only `src/**/*.tsx`, for the Solid rules Biome lacks, `solid/reactivity` above all (9.2). |
 | Forms adapter (feature) | `@astrojs/cloudflare` | `14.4.6`; peer `>=14.4.6 <15` | Only with `features.forms` |
 | Deploy CLI | `wrangler` | `4.160.0` | A devDependency of every site. The deploy, preview and rollback jobs run it from the lockfile with `npx --no wrangler` |
@@ -226,7 +226,7 @@ Each pin follows the pinning rule above: the latest stable release that every pe
 | `astro` | `7.4.13` |
 | `@biomejs/biome` | `2.6.7` |
 | `html-validate` | `11.21.1` |
-| `solid-js` | `1.9.19` |
+| `solid-js` | `1.9.20` |
 | `@astrojs/solid-js` | `7.1.6` |
 | `eslint` | `10.15.0` |
 | `eslint-plugin-solid` | `0.20.0` |
@@ -2141,7 +2141,7 @@ The form may sit on a page, in a dialog or in a sidebar, but not on `/404.html`,
 - **Install:**
 
   ```sh
-  npm install --save-exact --ignore-scripts @astrojs/solid-js@7.1.6 solid-js@1.9.19
+  npm install --save-exact --ignore-scripts @astrojs/solid-js@7.1.6 solid-js@1.9.20
   npm install --save-exact --ignore-scripts --save-dev eslint@10.15.0 eslint-plugin-solid@0.20.0 typescript-eslint@8.73.0
   npx --no astro-kit init --shims
   ```
@@ -2973,7 +2973,7 @@ These facts were checked on the versions of 2.1, against the published package s
 8. Every `injectScript('page')` script is bundled into one `/_astro/page.<hash>.js` chunk.
 9. Astro 7.4's `experimental` block defaults to `{ collectionStorage: 'single-file' }`.
 10. Astro does not hash a renderer's hydration script.
-11. Solid's `generateHydrationScript()` returns `<script>…</script><!--xs-->`. Its text starts with `window._$HY||`. With solid-js 1.9.18 and 1.9.19 its hash is `sha256-VmEf2BGdqVUwcvyhTyarJo/bY7DNqS2+T2sz4IO/kbw=`.
+11. Solid's `generateHydrationScript()` returns `<script>…</script><!--xs-->`. Its text starts with `window._$HY||`. With solid-js 1.9.19 and 1.9.20 its hash is `sha256-VmEf2BGdqVUwcvyhTyarJo/bY7DNqS2+T2sz4IO/kbw=`.
 12. The CSP meta has the same directives and the same script hashes on every page. Its style hashes differ between pages (item 41): two pages share a meta only when they share a `<style>`. Astro places it after the project's head tags and before its `<style>`.
 13. Astro always hashes the five client-directive scripts (idle, load, media, only, visible), every inline script and client JS asset, and injected `head-inline` and `before-hydration` scripts. With a renderer it also hashes the island runtime and its style. It hashes every CSS chunk of the site, before it merges the chunks of a page into one `<style>`, as a union over all pages. While it renders a page, it adds the hash of that page's own merged `<style>` to that page's meta only.
 14. Astro emits no SRI `integrity` attributes.

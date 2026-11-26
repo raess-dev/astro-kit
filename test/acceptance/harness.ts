@@ -46,7 +46,7 @@ export const STAND_IN = join(import.meta.dirname, 'kit');
  */
 export const PINS = {
   playwright: 'playwright-core@1.65.0',
-  islands: ['@astrojs/solid-js@7.1.6', 'solid-js@1.9.19'],
+  islands: ['@astrojs/solid-js@7.1.6', 'solid-js@1.9.20'],
   islandsLint: ['eslint@10.15.0', 'eslint-plugin-solid@0.20.0', 'typescript-eslint@8.73.0'],
 } as const;
 
