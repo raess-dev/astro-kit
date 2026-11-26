@@ -327,7 +327,9 @@
   - `html-shell` refuses a meta refresh and a meta referrer. `config-public-shadow` refuses `public/_astro/`.
     `config-options` refuses an origin host that is an IP address, and a processor or purpose of white space only.
     The legal text leaves out hidden and visually hidden parts. html-validate reads Astro's island style element
-    as a comment on an islands site.
+    as a comment on an islands site. A hidden `main` or `body`, or one inside a hidden element, gives no legal text,
+    and `origins-third-party` also reads a `noscript` inside `srcdoc` markup or inside another `noscript` (Codex,
+    #26).
   - The islands shim `templates/features/islands/eslint.config.mjs` holds the text of 9.2. `check` compares it from
     M9.
   - The pinning rule of 2.1 is the owner's rule of 2026-11-26. The islands and lint pins are `solid-js` 1.9.19,

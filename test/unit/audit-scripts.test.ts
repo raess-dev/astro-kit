@@ -487,6 +487,27 @@ test('origins-third-party fails each resource element and attribute that names a
       ['origins-third-party'],
     ],
     ['a same-origin srcdoc', '<iframe title="x" srcdoc="<p>Hallo</p><img src=/_astro/a.png alt=>"></iframe>', []],
+    // The content of a noscript inside srcdoc markup loads in a frame without scripts (Codex, #26).
+    [
+      'an img in a noscript in a srcdoc',
+      '<iframe title="x" srcdoc="<noscript><img src=https://cdn.example.org/a.png alt=></noscript>"></iframe>',
+      ['origins-third-party'],
+    ],
+    [
+      'a srcdoc in a noscript in a srcdoc',
+      '<iframe title="x" srcdoc="<noscript><iframe title=y srcdoc=\'<img src=https://cdn.example.org/a.png>\'></iframe></noscript>"></iframe>',
+      ['origins-third-party'],
+    ],
+    [
+      'an img in a noscript in a noscript',
+      '<noscript><noscript><img src="https://cdn.example.org/a.png" alt=""></noscript></noscript>',
+      ['origins-third-party'],
+    ],
+    [
+      'a same-origin noscript in a srcdoc',
+      '<iframe title="x" srcdoc="<noscript><img src=/_astro/a.png alt=></noscript>"></iframe>',
+      [],
+    ],
     // A link may name any address: the rule does not read links (F8).
     ['a link: any http address', '<p><a href="http://www.example.org/">Example</a></p>', []],
     ['link stylesheet', '', ['origins-third-party'], '<link rel="stylesheet" href="https://cdn.example.org/a.css">'],
@@ -1173,6 +1194,20 @@ test('legal-origins reads only text a visitor sees: a processor in a hidden part
   // A part of the name in a hidden element breaks the name.
   assert.deepEqual(ids('OpenStreetMap <span hidden>x</span>Foundation'), []);
   assert.deepEqual(ids('OpenStreetMap <span class="visually-hidden">Foundation</span>'), ['legal-origins']);
+  // A hidden main, or a hidden element around it, hides all of its text (Codex, #26).
+  const named = privacySite(one, { de: 'Karten: OpenStreetMap Foundation.', fr: 'OpenStreetMap Foundation' });
+  const file = fileOf('/datenschutz/');
+  for (const [from, to] of [
+    ['<main id="content">', '<main id="content" hidden>'],
+    ['<main id="content">', '<main id="content" aria-hidden="true">'],
+    ['<main id="content">', '<main id="content" class="visually-hidden">'],
+    [' <body> ', ' <body hidden> '],
+  ] as const) {
+    const html = String(named[file]);
+    assert.ok(html.includes(from), from);
+    const files = { ...named, [file]: html.replace(from, to) };
+    assert.deepEqual(idsOf(auditLegalOrigins, contextOf(files, { options: one })), ['legal-origins'], to);
+  }
 });
 
 test('legal-origins reads main only, reports each privacy page once, and leaves an unbuilt page to legal-pages', () => {

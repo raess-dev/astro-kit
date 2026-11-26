@@ -828,6 +828,13 @@ test('legal-statement reads only text a visitor sees: hidden, aria-hidden, visua
     'legal-statement',
   ]);
   assert.deepEqual(read('<p aria-hidden="false">Die Website ist konform.</p>'), ['legal-statement']);
+  // A claim in a body that no visitor sees is no claim either (Codex, #26).
+  const files = statement('<p>Die Website ist konform.</p>');
+  const file = 'barrierefreiheit/index.html';
+  const html = String(files[file]);
+  assert.ok(html.includes(' <body> '));
+  const hiddenBody = { ...files, [file]: html.replace(' <body> ', ' <body aria-hidden="true"> ') };
+  assert.deepEqual(ids(run(auditLegalStatement, hiddenBody, { options: ACCESSIBILITY })), []);
 });
 
 test('legal-statement passes a claim when site.json has accessibilityAudit', () => {

@@ -335,8 +335,16 @@ function textsOf(page: BuiltPage): { page: string; seen: string; legal: string }
   let found = PAGE_TEXTS.get(page);
   if (found === undefined) {
     const dom = domOf(page);
-    const of = (element: HTMLElement | undefined, skip?: (element: HTMLElement) => boolean): string =>
-      element === undefined ? '' : collapse(textOf(element, skip === undefined ? {} : { skip }).normalize('NFC'));
+    const of = (element: HTMLElement | undefined, skip?: (element: HTMLElement) => boolean): string => {
+      if (element === undefined) return '';
+      if (skip === undefined) return collapse(textOf(element).normalize('NFC'));
+      // `textOf` never skips the element it starts from, so a root that a visitor does not see, or one inside such
+      // an ancestor, gives no text here.
+      for (let node: HTMLElement | null = element; node !== null; node = node.parentNode) {
+        if (node.nodeType === NodeType.ELEMENT_NODE && skip(node)) return '';
+      }
+      return collapse(textOf(element, { skip }).normalize('NFC'));
+    };
     found = { page: of(dom.body), seen: of(dom.body, isUnseen), legal: of(dom.main, isUnseen) };
     PAGE_TEXTS.set(page, found);
   }
