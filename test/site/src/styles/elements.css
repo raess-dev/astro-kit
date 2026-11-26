@@ -233,10 +233,68 @@
     cursor: pointer;
   }
 
-  input[type="radio"] {
+  /* A radio and a checkbox stand before their label text, in the row of the label. */
+  input:is([type="radio"], [type="checkbox"]) {
     flex-shrink: 0;
     inline-size: var(--size-icon);
     block-size: var(--size-icon);
     accent-color: var(--color-brand);
+  }
+
+  /* The fields of a form: the text of the page on its background, a line around, and a target of 44 px. */
+  input:is([type="text"], [type="email"], [type="tel"], [type="date"], [type="number"]) {
+    min-block-size: var(--size-target);
+    padding-inline: var(--space-3);
+    font: inherit;
+    color: var(--color-text);
+    background-color: var(--color-page);
+    border: var(--line-thin) solid var(--color-text);
+    border-radius: var(--radius-s);
+  }
+
+  select {
+    min-block-size: var(--size-target);
+    padding-inline: var(--space-3);
+    font: inherit;
+    color: var(--color-text);
+    background-color: var(--color-page);
+    border: var(--line-thin) solid var(--color-text);
+    border-radius: var(--radius-s);
+  }
+
+  textarea {
+    min-block-size: var(--size-target);
+    padding: var(--space-3);
+    font: inherit;
+    color: var(--color-text);
+    background-color: var(--color-page);
+    border: var(--line-thin) solid var(--color-text);
+    border-radius: var(--radius-s);
+    resize: vertical;
+  }
+
+  /* A button looks like a link with the class `button`: the main action of a form. */
+  button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-inline-size: var(--size-target);
+    min-block-size: var(--size-target);
+    padding-block: var(--space-2);
+    padding-inline: var(--space-5);
+    font: inherit;
+    font-weight: var(--weight-strong);
+    color: var(--color-text);
+    cursor: pointer;
+    background-color: var(--color-accent);
+    border: var(--line-thick) solid var(--color-text);
+    border-radius: var(--radius-pill);
+    transition-property: background-color;
+    transition-duration: var(--duration-fast);
+    transition-timing-function: var(--ease-standard);
+  }
+
+  button:hover {
+    background-color: var(--color-glow);
   }
 }

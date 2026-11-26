@@ -9,8 +9,11 @@ export const FORM_ACTION_PREFIX = '/api/forms/';
 /** The path of the endpoint of one form. */
 export const formAction = (id: string): string => `${FORM_ACTION_PREFIX}${id}/`;
 
-/** The endpoint rejects a larger `content-length`, and it cancels the body stream past this many bytes. */
-export const MAX_BODY_BYTES = 32_768;
+/**
+ * The largest body cap of a form (`bodyCap` of `fields.ts`). `config-options` fails a form whose cap is larger, so
+ * no endpoint holds more than this many bytes of a body.
+ */
+export const MAX_FORM_BODY = 131_072;
 
 /** The honeypot field. A visitor never sees it, so a filled one is a bot. */
 export const HONEYPOT = 'website';

@@ -481,13 +481,61 @@ function formsOf(action: string): number[] {
   return places;
 }
 
-/** What blocks the fill of one field of the form at `index` (page code): `null` when its control is visible. */
+/**
+ * What blocks the fill of one field of the form at `index` (page code): `null` when its control is visible,
+ * enabled and editable. A disabled control (also in a disabled fieldset) or a readonly one takes no fill, so the
+ * check names it at once and goes on with the next form.
+ */
 function fieldProblem(input: { index: number; name: string }): string | null {
   const control = document.forms[input.index]?.elements.namedItem(input.name);
   if (control === null || control === undefined) return `has no control for the field ${input.name}`;
   const first = control instanceof RadioNodeList ? control[0] : control;
   if (first === undefined || !window.__astroKit.visible(first)) return `shows no control for the field ${input.name}`;
+  if (first instanceof Element && first.matches(':disabled'))
+    return `has a disabled control for the field ${input.name}`;
+  // `readonly` has no effect on a checkbox or a radio.
+  const choice = first instanceof HTMLInputElement && (first.type === 'checkbox' || first.type === 'radio');
+  const readOnly =
+    (first instanceof HTMLInputElement || first instanceof HTMLTextAreaElement) && first.readOnly && !choice;
+  if (readOnly) return `has a readonly control for the field ${input.name}`;
   return null;
+}
+
+/** The ids of the two notes of the markup pattern (9.1). */
+const NOTE_IDS = ['sent', 'not-sent'] as const;
+
+/** The notes among `#sent` and `#not-sent` that are visible now, and whether `#sent` has text (page code). */
+function notesShown(ids: readonly string[]): { shown: string[]; sentText: boolean } {
+  const shown = ids.filter((id) => {
+    const element = document.getElementById(id);
+    return element !== null && window.__astroKit.visible(element);
+  });
+  // `#sent` has text when one of its text nodes that is not blank sits in a visible element.
+  const sent = document.getElementById('sent');
+  let sentText = false;
+  if (sent !== null) {
+    const walker = document.createTreeWalker(sent, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node !== null && !sentText; node = walker.nextNode()) {
+      const parent = node.parentElement;
+      sentText = (node.textContent ?? '').trim() !== '' && parent !== null && window.__astroKit.visible(parent);
+    }
+  }
+  return { shown, sentText };
+}
+
+/**
+ * Says whether the form at `index` shows a link to the privacy page `path` (page code): an `a[href]` inside it
+ * whose same-origin path is the page or its file, and that is visible.
+ */
+function privacyShown(input: { index: number; path: string }): boolean {
+  for (const link of document.forms[input.index]?.querySelectorAll('a[href]') ?? []) {
+    if (!(link instanceof HTMLAnchorElement)) continue;
+    const url = new URL(link.href, location.href);
+    const same =
+      url.origin === location.origin && (url.pathname === input.path || url.pathname === `${input.path}index.html`);
+    if (same && window.__astroKit.visible(link)) return true;
+  }
+  return false;
 }
 
 /** The name of the first control of the form at `index` that is not valid (page code), else `null`. */
@@ -529,10 +577,15 @@ function markDialogInvoker(index: number): boolean {
  * fresh tab: after a submission that the CSP stops, Playwright takes no further click on that document (13.1
  * item 56). The tab first opens every `details` and popover, as the reveal step does, so a form inside one can be
  * filled, and then the dialog that holds the form through its native invoker. The fields are filled in their
- * declared order.
+ * declared order. Before the send, neither `#sent` nor `#not-sent` shows, and the form shows a link to the privacy
+ * page of the locale. After it, `#sent` shows with text and `#not-sent` does not. A disabled or readonly field and
+ * a disabled submit button are named before the fill, so the check never waits for them.
  */
 async function submitForm(check: Check, fields: readonly FormField[], index: number): Promise<string | null> {
   const tab = await check.open({ viewport: NARROW, javaScript: false });
+  // Before the send, neither note shows (9.1: they show with `:target`).
+  const early = (await tab.evaluate(notesShown, NOTE_IDS)).shown;
+  if (early.length > 0) return `shows ${early.map((id) => `#${id}`).join(' and ')} before the send`;
   await tab.evaluate(() => window.__astroKit.openAll());
   await settle(tab);
   // A form inside a closed dialog: a click on the dialog's visible native invoker opens it, as a visitor does.
@@ -546,6 +599,10 @@ async function submitForm(check: Check, fields: readonly FormField[], index: num
     await tab.locator(`[${DIALOG_INVOKER}]`).first().click();
     await tab.evaluate(() => window.__astroKit.restorePopovers());
     await settle(tab);
+  }
+  const privacy = new Map(Object.entries(check.run.options.legal.privacy ?? {})).get(check.page.locale);
+  if (privacy !== undefined && !(await tab.evaluate(privacyShown, { index, path: privacy }))) {
+    return `shows no link to the privacy page ${privacy}`;
   }
   for (const field of fields) {
     const problem = await tab.evaluate(fieldProblem, { index, name: field.name });
@@ -567,6 +624,7 @@ async function submitForm(check: Check, fields: readonly FormField[], index: num
   if (invalid !== null) return `is not valid after the fill: the field ${invalid}`;
   const submit = form.locator(SUBMIT).first();
   if ((await submit.count()) === 0) return 'has no submit button';
+  if (await submit.isDisabled()) return 'has a disabled submit button';
   const start = new URL(tab.url());
   // The wait starts before the click, so it also sees a navigation that ends before the click returns.
   const landed = tab.waitForURL((url) => url.href !== start.href, { timeout: FORM_LIMIT_MS, waitUntil: 'load' });
@@ -581,11 +639,12 @@ async function submitForm(check: Check, fields: readonly FormField[], index: num
   const end = new URL(tab.url());
   const want = `${start.pathname}#sent`;
   if (`${end.pathname}${end.hash}` !== want) return `lands on ${end.pathname}${end.hash}, not on ${want}`;
-  const sent = await tab.evaluate(() => {
-    const element = document.getElementById('sent');
-    return element !== null && window.__astroKit.visible(element);
-  });
-  return sent ? null : `lands on ${want}, but #sent is not visible`;
+  // After the send, `#sent` shows with text and `#not-sent` does not.
+  const after = await tab.evaluate(notesShown, NOTE_IDS);
+  if (!after.shown.includes('sent')) return `lands on ${want}, but #sent is not visible`;
+  if (!after.sentText) return `lands on ${want}, but #sent has no text`;
+  if (after.shown.includes('not-sent')) return `lands on ${want}, but #not-sent is visible too`;
+  return null;
 }
 
 /** `a11y-no-js`: with JavaScript off, the content and the controls show, and each declared form reaches `#sent`. */

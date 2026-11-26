@@ -484,10 +484,15 @@ const bookingPage = (dateMax = ''): string =>
         '<label><input type="radio" name="meal" value="halbpension"> Halbpension</label></fieldset>',
         '<label>Nachricht (Pflichtfeld) <textarea name="message" required></textarea></label>',
         '<label><input type="checkbox" name="privacy" required> Datenschutz (Pflichtfeld)</label>',
-        '<button>Senden</button></form><p id="sent">Danke.</p><p id="not-sent">Leider nicht.</p></main>',
+        '<p><a href="/datenschutz/">Datenschutzerklärung</a></p>',
+        '<button>Senden</button></form><p id="sent" tabindex="-1">Danke.</p>',
+        '<p id="not-sent" tabindex="-1">Leider nicht.</p></main>',
       ].join(''),
     ),
-    { css: `${CSS}input,select,textarea{min-block-size:44px}` },
+    // The notes show with `:target` only, and the form links the privacy page (9.1, the markup pattern).
+    {
+      css: `${CSS}input,select,textarea{min-block-size:44px}#sent,#not-sent{display:none}#sent:target,#not-sent:target{display:block}`,
+    },
   );
 
 test('a11y-no-js: the fill values of 8', () => {
@@ -576,4 +581,55 @@ test('a11y-no-js: a declared form that the fill cannot make valid fails before t
 
 test('a11y-no-js: a page without the declared form has nothing to submit', async () => {
   assert.deepEqual(await idsOf(browser(), PASSING, [noJs], { settings: FORMS }), []);
+});
+
+// a11y-no-js: the notes, the privacy link and the controls that take no fill (the 7b review)
+
+test('a11y-no-js: a note that shows before the send fails', async () => {
+  const page = bookingPage().replace('#sent,#not-sent{display:none}', '#sent{display:none}');
+  assert.notEqual(page, bookingPage());
+  assert.deepEqual(await placesOf(browser(), { 'index.html': page }, [noJs], { settings: FORMS }), [
+    '/ 390×844 with JS off: the form booking shows #not-sent before the send',
+  ]);
+});
+
+test('a11y-no-js: #sent without text, and #not-sent that shows after the send, fail', async () => {
+  const empty = bookingPage().replace('<p id="sent" tabindex="-1">Danke.</p>', '<p id="sent" tabindex="-1"></p>');
+  const both = bookingPage().replace('#sent:target,', '#sent:target,#sent:target~#not-sent,');
+  assert.notEqual(both, bookingPage());
+  assert.deepEqual(await placesOf(browser(), { 'index.html': empty }, [noJs], { settings: FORMS }), [
+    '/ 390×844 with JS off: the form booking lands on /#sent, but #sent has no text',
+  ]);
+  assert.deepEqual(await placesOf(browser(), { 'index.html': both }, [noJs], { settings: FORMS }), [
+    '/ 390×844 with JS off: the form booking lands on /#sent, but #not-sent is visible too',
+  ]);
+});
+
+test('a11y-no-js: a form without a visible link to the privacy page fails', async () => {
+  const page = bookingPage().replace('</style>', 'form a{display:none}</style>');
+  assert.deepEqual(await placesOf(browser(), { 'index.html': page }, [noJs], { settings: FORMS }), [
+    '/ 390×844 with JS off: the form booking shows no link to the privacy page /datenschutz/',
+  ]);
+});
+
+test('a11y-no-js: a readonly or disabled field and a disabled submit are named at once, and the next form runs', async () => {
+  const cases: [string, string, string][] = [
+    ['name="name" required', 'name="name" readonly required', 'has a readonly control for the field name'],
+    ['name="tel" required', 'name="tel" disabled required', 'has a disabled control for the field tel'],
+    ['<fieldset>', '<fieldset disabled>', 'has a disabled control for the field meal'],
+    ['<button>Senden', '<button disabled>Senden', 'has a disabled submit button'],
+  ];
+  for (const [from, to, detail] of cases) {
+    const page = bookingPage();
+    const form = /<form.*<\/form>/.exec(page)?.[0] ?? '';
+    // The broken form first, then the passing one: the check names the first and still sends the second.
+    const broken = page.replace(form, `${form.replace(from, to)}${form}`);
+    const started = Date.now();
+    assert.deepEqual(
+      await placesOf(browser(), { 'index.html': broken }, [noJs], { settings: FORMS }),
+      [`/ 390×844 with JS off: the form booking ${detail}`],
+      to,
+    );
+    assert.ok(Date.now() - started < 12_000, `${to} took ${Date.now() - started} ms`);
+  }
 });

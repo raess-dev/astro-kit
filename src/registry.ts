@@ -213,7 +213,7 @@ export const RULES: readonly Rule[] = [
     'routes-404',
     'routes',
     'build',
-    "`/404.html` exists in dist. (The project builds it from `src/pages/404.astro`; the rule reads only dist.) It is the only 404 page: no other built page path has a segment that is exactly `404`. Message for such a path `<p>`: `<p> has a 404 segment. Under build.format 'directory' it is written to <p>index.html, an ordinary page that answers 200. Cloudflare answers a missing URL only with a file named 404.html, which Astro builds only from src/pages/404.astro. Put every language on /404.html.` `/404.html` links every locale home (`/` and each `/<code>/`; a link to the file of a built home, `/fr/index.html`, counts too). It holds no form whose action starts with `/api/forms/`, because the `return` of such a form would fail. It passes every page rule that does not exempt it.",
+    "`/404.html` exists in dist. (The project builds it from `src/pages/404.astro`; the rule reads only dist.) It is the only 404 page: no other built page path has a segment that is exactly `404`. Message for such a path `<p>`: `<p> has a 404 segment. Under build.format 'directory' it is written to <p>index.html, an ordinary page that answers 200. Cloudflare answers a missing URL only with a file named 404.html, which Astro builds only from src/pages/404.astro. Put every language on /404.html.` `/404.html` links every locale home (`/` and each `/<code>/`; a link to the file of a built home, `/fr/index.html`, counts too). It holds no form whose action starts with `/api/forms/` in any letter case, and no control whose `formaction` does, because the `return` of such a form would fail. It passes every page rule that does not exempt it.",
     'The one 404 page is missing, a second 404 page exists, or `/404.html` does not link every locale home or holds a form.',
     'Build every language on one `src/pages/404.astro`, which Astro writes to `/404.html`, and remove every other `404` page. Link each locale home from it, and put no form on it.',
   ),
@@ -804,6 +804,30 @@ export const RULES: readonly Rule[] = [
   ),
   // forms
   r(
+    'forms-declared',
+    'forms',
+    'build',
+    'Every form whose action starts with `/api/forms/` names a declared id and is `method="post"`. It has a hidden `return` equal to the page path, and the honeypot `input[name=website][type=text][tabindex="-1"][autocomplete=off]` inside an `inert` `aria-hidden="true"` element with class `visually-hidden`. It renders exactly the declared fields with the controls of 9.1: the `required` attribute as declared; `maxlength` = `maxLength` for string types; `min`/`max` as declared; choice values exactly the declared options (a select may add one empty option); consent a required checkbox; `autocomplete` as declared. The page has elements with ids `sent` and `not-sent`. Every declared form appears on at least one page. A form on `/404.html` is left to `routes-404`, so it reports once. The action, resolved like a link (a backslash before the query reads as `/`, as in a browser), makes a kit form when its path starts with `/api/forms/` in any letter case. That path is exactly `/api/forms/<id>/` of a declared form, with the last slash and no query, and no `http:` scheme. `method` and `enctype` compare in ASCII lower case without a trim, as a browser reads them, so `method="post "` fails. The form has no `enctype` other than `application/x-www-form-urlencoded` and `multipart/form-data`, no `accept-charset` token other than `utf-8` (any letter case), and no `novalidate`, and it is not under `[inert]` or `[hidden]`; a closed `dialog` may hold it. The rule reads the controls inside the form: a control with a `form` attribute, a `formaction`, `formmethod`, `formenctype`, `formtarget` or `formnovalidate` in the form, and a control elsewhere whose `form` attribute names the form fail. `return` and the honeypot are there exactly once. `return` is not disabled. The honeypot has an empty `value`, and nothing outside its wrapper names it: no `label`, and no `for`, `aria-labelledby` or `aria-describedby` with its id. A declared control has no constraint that a declaration cannot express: no `minlength`, `multiple`, `readonly`, `disabled` or `accept`, and no disabled `fieldset` around it (its first `legend` excepted). `step` is only on a number field, and only `1` or `any`. `maxlength`, `min` and `max` appear only where the field declares them. `pattern` appears only on an email field, where it is required and equals `EMAIL_PATTERN` (9.1). A consent checkbox has no empty `value`. A radio group is every control of its name, each radio with `required` as declared; `autocomplete` is not checked on a checkbox or a radio. `#sent` and `#not-sent` each have `tabindex="-1"` and rendered text, and sit in no form, no dialog and no honeypot wrapper; a closed `details` may hold them. On every page, a form that posts to a same-origin path is a kit form: a static site has no other POST handler. A form posts when its `method` is `post` or when a submit control that it owns has `formmethod="post"`. A missing or relative action resolves against the page. On every page but `/404.html`, a submit control outside a kit form that changes a post to `/api/forms/` with `formaction`, `formmethod`, `formenctype` or `formtarget` fails.',
+    'A form of the kit does not post to a declared form, or it does not render that form as declared.',
+    'Post to `/api/forms/<id>/` with `method="post"`, and render the hidden `return`, the honeypot and exactly the fields of `astro-kit.json` `forms.<id>` with their attributes, as the forms-declared row of docs/standards.md says. Put `#sent` and `#not-sent` on the page.',
+  ),
+  r(
+    'forms-fields',
+    'forms',
+    'build',
+    'Every field (not hidden, submit, reset, button or image) has a label, except a field under `[inert]`; every other check of the rule holds under `[inert]` too. A required field\'s label contains a required word and an optional field\'s an optional word: de `pflichtfeld`, `erforderlich`, `pflicht` / `optional`, `freiwillig`; fr `obligatoire`, `requis` / `facultatif`, `optionnel`; it `obbligatorio`, `richiesto` / `facoltativo`, `opzionale`; en `required` / `optional`; rm `obligatoric` / `facultativ`. A field in another language fails when the language of the locale of its page has words. When it has none either, the field skips the word check with a warning, which carries its own message and fails nothing. Every non-checkbox, non-radio field has `autocomplete`. No `placeholder`. The controls inside `[data-mode-switch]` (9.3) need a label, but skip the required and optional word check and the `autocomplete` check. A field is an `input`, a `select` or a `textarea` of any page, also outside a form. A label is a `label` element (by `for`, or around the field). A field is required when it has the `required` attribute. The words are whole words of the rendered label text in lower case: the text of the label without the content of controls, `script`, `style` and `template`, and without any part under `hidden`, `inert` or `aria-hidden="true"`. For a radio, the rendered text of the `legend` of its nearest `fieldset` counts as label text too. The language is the first subtag of the nearest `lang` of the field.',
+    'A form field has no label, misses its required or optional word or its `autocomplete`, or shows a placeholder.',
+    'Give every field a `label`. Write the required or the optional word of the language into each label, set `autocomplete`, and remove the `placeholder`: put a hint into the label.',
+  ),
+  r(
+    'forms-safety',
+    'forms',
+    'build',
+    'No file input, no pre-checked checkbox or radio, and every POST form contains a link to its locale\'s `legal.privacy` path. These hold on every page. A POST form is a form whose `method` is `post` in ASCII lower case without a trim, or a form that owns a submit control with `formmethod="post"` (inside it, or elsewhere with `form=`). The link is an `a[href]` or `area[href]` inside the form whose same-origin path is the privacy path of the locale of the page, or the file of that page, and that a visitor can see and reach: neither the link nor an ancestor has `hidden`, `inert` or `aria-hidden="true"`, so a link in the honeypot wrapper does not count.',
+    'A page has a file input or a pre-checked choice, or a form that posts data without a link to the privacy page.',
+    'Remove the file input and the `checked` attribute, and put a link to the privacy page of the language inside each form that posts.',
+  ),
+  r(
     'forms-binding',
     'forms',
     'config',
@@ -931,7 +955,7 @@ export const RULES: readonly Rule[] = [
     'a11y-no-js',
     'a11y',
     'browser',
-    'With JS off, `h1` and `main` are visible, and every link target and named control visible with JS on, except `[data-mode-switch]` and its content, is visible with JS off (both after the reveal step). Each declared form is filled and submitted within 10 s: email `probe@example.com`; tel `+41441234567`; date today + 30 days; number its `min`; choice its first option; consent checked; text and textarea `Kit browser test`. It must land on `<page path>#sent` with `#sent` visible. Before it fills a form, a fresh tab with JS off opens every `details` and popover, as the reveal step does, and then the dialog that holds the form, with a click on its visible native invoker (`[commandfor][command=show-modal]`). A form in a dialog that no visible invoker opens fails.',
+    'With JS off, `h1` and `main` are visible, and every link target and named control visible with JS on, except `[data-mode-switch]` and its content, is visible with JS off (both after the reveal step). Each declared form is filled and submitted within 10 s: email `probe@example.com`; tel `+41441234567`; date today + 30 days; number its `min`; choice its first option; consent checked; text and textarea `Kit browser test`. It must land on `<page path>#sent` with `#sent` visible. Before it fills a form, a fresh tab with JS off opens every `details` and popover, as the reveal step does, and then the dialog that holds the form, with a click on its visible native invoker (`[commandfor][command=show-modal]`). A form in a dialog that no visible invoker opens fails. In that fresh tab, before the reveal step, neither `#sent` nor `#not-sent` is visible. After the reveal step, the form shows a visible link to the privacy page of the locale. After the send, `#sent` is visible with text and `#not-sent` is not. A declared field whose control is disabled (also by a `fieldset`) or readonly, and a disabled submit control, are named before the fill, and the check goes on with the next form.',
     'Without JavaScript, content, a link or a control is missing, or a form does not reach its confirmation.',
     'Render the content and the controls in HTML, and let a script only add to them. A form posts as plain HTML and returns to `#sent`.',
   ),
@@ -1026,6 +1050,16 @@ export interface Finding {
   detail?: string;
   /** Set when a waiver covers the finding. A waived finding fails nothing. */
   waived?: { until: string; reason: string };
+  /**
+   * Set for a finding that only warns, whatever the level of its rule: it is printed with `!` and fails nothing. A
+   * rule uses it where section 8 says that it skips a check with a warning (`forms-fields`).
+   */
+  warning?: true;
+  /**
+   * The message of a warning (`Report.warn`), printed in place of the failure message of its rule: a warning says
+   * what the rule skipped, not what failed.
+   */
+  message?: string;
 }
 
 export function getRule(id: string, rules: RuleMap = RULE_BY_ID): Rule {
@@ -1063,7 +1097,7 @@ export function applyWaivers(
 
 /** Says whether the finding fails its command: an `error` rule, and no waiver. */
 export function fails(finding: Finding, rules: RuleMap = RULE_BY_ID): boolean {
-  return !finding.waived && getRule(finding.rule, rules).level === 'error';
+  return !finding.waived && finding.warning !== true && getRule(finding.rule, rules).level === 'error';
 }
 
 /** The findings that fail the command. */
@@ -1083,13 +1117,15 @@ export function formatFindings(findings: readonly Finding[], rules: RuleMap = RU
   if (count > 0) lines.push(`astro-kit: ${count} finding${count === 1 ? '' : 's'}`);
   for (const finding of findings) {
     const rule = getRule(finding.rule, rules);
-    const text = `[${rule.id}] ${finding.where}: ${rule.message}${finding.detail ? ` (${finding.detail})` : ''}`;
+    const message = finding.message ?? rule.message;
+    const text = `[${rule.id}] ${finding.where}: ${message}${finding.detail ? ` (${finding.detail})` : ''}`;
     if (finding.waived) {
       lines.push(`~ ${text} (waived until ${finding.waived.until}: ${finding.waived.reason})`);
       continue;
     }
-    lines.push(`${rule.level === 'warn' ? '!' : '✗'} ${text}`);
-    lines.push(`    fix: ${rule.hint}`);
+    lines.push(`${rule.level === 'warn' || finding.warning === true ? '!' : '✗'} ${text}`);
+    // The hint fixes a failure. A warning with a message of its own has nothing to fix.
+    if (finding.message === undefined) lines.push(`    fix: ${rule.hint}`);
     lines.push(`    rule: ${DOCS_PATH}#${rule.id}`);
   }
   return lines.join('\n');
@@ -1129,6 +1165,15 @@ export class Report {
     const finding: Finding = detail === undefined ? { rule, where } : { rule, where, detail };
     const [marked] = applyWaivers([finding], this.waivers, this.rules);
     this.findings.push(marked ?? finding);
+  }
+
+  /**
+   * Adds a finding that only warns (`Finding.warning`): it is printed with `!` and its own `message`, and it fails
+   * nothing.
+   */
+  warn(rule: string, where: string, message: string, detail: string): void {
+    getRule(rule, this.rules);
+    this.findings.push({ rule, where, detail, warning: true, message });
   }
 
   /** True when no finding fails the command. Warnings and waived findings do not count. */

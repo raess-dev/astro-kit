@@ -1,0 +1,20 @@
+---
+/**
+ * The two notes of the forms (kit specification, 9.1, the markup pattern): `#sent` and `#not-sent`. The endpoint
+ * of the kit redirects back to one of them, and `:target` shows it. They stand outside any dialog, and
+ * `tabindex="-1"` lets the browser move the focus there.
+ */
+import '../styles/components/form-status.css';
+import { FORM_TEXT } from '../data/forms.ts';
+import type { Locale } from '../data/locales.ts';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const text = FORM_TEXT[locale];
+---
+
+<p class="form-status" id="sent" tabindex="-1">{text.sent}</p>
+<p class="form-status" id="not-sent" tabindex="-1">{text.notSent}</p>

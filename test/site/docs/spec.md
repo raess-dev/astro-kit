@@ -52,7 +52,7 @@ Each page has one intent, one main message and one call to action. The paths are
 | Rooms and prices | Guests who compare. | Three kinds of room, each with its price for a night with breakfast; the prices for a dog and for the car park. | Send a booking request. |
 | Restaurant | Hotel guests and guests from the village. | Engadin cooking, the evening menu and its price, the closures between the seasons. | Call the restaurant for a table; read the menu as a PDF. |
 | Getting here | Guests who plan the journey. | By train and bus in every season; by car, with the car park; the walk from the bus stop. | Ask for the pick-up from the bus stop. |
-| Contact and booking request | Guests who are ready to ask. | How to reach the reception and the restaurant, and what a booking request holds. Two short forms follow at stage 3: a question, or a booking request with dates and room. | Write an email, or call. |
+| Contact and booking request | Guests who are ready to ask. | How to reach the reception and the restaurant, and what a booking request holds. Two short forms: a question, or a booking request with dates and room. | Send a form, write an email, or call. |
 | Jobs | Job seekers (German and French only). | The house as an employer; the open positions of the season. | Write to the jobs address. |
 | Legal note | Anyone who must know who runs the site. | The company, its address, its register entry and its tax number. | None. |
 | Privacy | Anyone who asks what the site does with data. | What is processed, by whom and why, in plain words; the rights of the visitor. | Write to the hotel. |
@@ -62,8 +62,9 @@ Each page has one intent, one main message and one call to action. The paths are
 **Stage 1** had the home page, the legal note and the privacy page in the three languages, and the 404 page.
 **Stage 2** adds the other pages: 26 pages and the 404 page. The header holds the main navigation with every page of
 the hotel in its language, and the footer links the legal pages and the sitemap page. So every page is one click
-from every other page. **Stage 3** adds the two forms to the contact page. Until then the contact page asks for a
-room by email and by phone.
+from every other page. **Stage 3** adds the two forms to the contact page: a booking request and a question. Each
+one posts to the form endpoint of the kit, which sends the mail to the reception. Until then the contact page asked
+for a room by email and by phone.
 
 **Photos.** Each home page has the hero photo, and the rooms, restaurant and getting-here pages each have one photo
 with a caption. The photos stand in `src/assets/photos/` and reach the pages through Astro's `Picture`, as AVIF with
@@ -109,8 +110,10 @@ Clalüna family runs it. The persons who may sign for the company are named in t
   (Cloudflare delivers the site and processes the IP address, the user agent and the requested URL; the transfer to
   the United States rests on the Swiss-U.S. and the EU-U.S. Data Privacy Framework) and `previews` (Cloudflare Access
   sends a one-time code to a reviewer's email address). The site sets no cookie and has no statistics. The page also
-  says that the browser keeps the chosen display mode on the device. With the forms of a later stage, the page
-  gets the sentences for `forms` and `server`.
+  says that the browser keeps the chosen display mode on the device. With the forms of stage 3, `processing` also
+  declares `forms` (Cloudflare Email Routing delivers the message; a rate limiter keyed by IP address counts the
+  messages for 60 seconds) and `server` (Workers Logs keep request logs for up to 7 days, with error codes only),
+  and the page says both.
 - **What the privacy page does not say.** It names no state abroad but the United States, because `cdn` declares no
   other. It has no section on enquiries by email or by phone: no setting declares who carries and stores the mail of
   the hotel, so the page could not name the recipients. It makes no promise that no fact supports, such as "we never

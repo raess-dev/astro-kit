@@ -1,14 +1,14 @@
 /**
  * The `browser` set of the planted violations at milestone M6 (specification, 14.2, "Planted-violation sets"). One
- * copy of the test site is built (the build passes), every plant of the list goes into the built `dist/`, and one
- * `test --all` run must report exactly the ids of the set, and no passed line.
+ * copy of the test site is built (the build passes), every plant of the list goes into the built client directory
+ * (`dist/client/` with forms), and one `test --all` run must report exactly the ids of the set, and no passed line.
  *
  * Each plant is the smallest violation of its rule, on a page that no other plant touches, so that one plant gives
- * one id and no other plant gives it. A plant adds a style sheet or a script of its own as a file of `dist/`, and
- * links it from its page: the CSP of the site allows a file of its own origin (`'self'`), while a change to an inline
- * style or script would break its hash. The a11y plants stand on pages outside the browser sample, so that no perf
- * rule reads them, where the site has such a page. `contrast-pairs` and `modes-behavior` read the default home
- * only, so their plants are there.
+ * one id and no other plant gives it. A plant adds a style sheet or a script of its own as a file of the client
+ * directory, and links it from its page: the CSP of the site allows a file of its own origin (`'self'`), while a
+ * change to an inline style or script would break its hash. The a11y plants stand on the pages that were outside
+ * the browser sample at M6, where the site has such a page; from M7 the contact pages and `/fr/emplois/` are in the
+ * sample. `contrast-pairs` and `modes-behavior` read the default home only, so their plants are there.
  *
  * `KIT_PLANTED_DROP=<id>` runs the set without the plant of that id, and expects the list without that id. The review
  * runs it once for each id, to prove that each plant gives its id alone. CI does not set it.
@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { crc32, deflateSync } from 'node:zlib';
-import { edit, passedLine, read, run, siteCase, write } from './harness.ts';
+import { CLIENT, edit, passedLine, read, run, siteCase, write } from './harness.ts';
 
 /** The ids of the set, sorted. */
 const BROWSER_IDS = [
@@ -77,10 +77,10 @@ function png(width: number, height: number, noise: boolean): Buffer {
   ]);
 }
 
-/** The built page of a page path: `dist/<path>index.html`. */
-const pageFile = (path: string): string => `dist${path}index.html`;
+/** The built page of a page path: `dist/client/<path>index.html` (`CLIENT`). */
+const pageFile = (path: string): string => `${CLIENT}${path}index.html`;
 
-/** Links a file of `dist/` from the head of a built page: a style sheet (`.css`) or a module script (`.js`). */
+/** Links a file of the client directory from the head of a built page: a style sheet (`.css`) or a module script (`.js`). */
 function link(dir: string, path: string, file: string): void {
   const tag = file.endsWith('.css')
     ? `<link rel="stylesheet" href="${file}">`
@@ -99,15 +99,15 @@ function intoMain(dir: string, path: string, markup: string): void {
 const atMainEnd = (dir: string, path: string, markup: string): void =>
   edit(dir, pageFile(path), '</main>', `${markup}</main>`);
 
-/** Adds a style sheet of its own to `dist/` and links it from one page. */
+/** Adds a style sheet of its own to the client directory and links it from one page. */
 function style(dir: string, path: string, name: string, css: string): void {
-  write(dir, { [`dist/${name}.css`]: css });
+  write(dir, { [`${CLIENT}/${name}.css`]: css });
   link(dir, path, `/${name}.css`);
 }
 
-/** Adds a module script of its own to `dist/` and links it from one page. */
+/** Adds a module script of its own to the client directory and links it from one page. */
 function script(dir: string, path: string, name: string, js: string): void {
-  write(dir, { [`dist/${name}.js`]: js });
+  write(dir, { [`${CLIENT}/${name}.js`]: js });
   link(dir, path, `/${name}.js`);
 }
 
@@ -116,7 +116,7 @@ const PLANTS: readonly { id: string; plant: (dir: string) => void }[] = [
     // An image with no `alt` on the German legal note: axe gives `image-alt`.
     id: 'a11y-axe',
     plant: (dir) => {
-      write(dir, { 'dist/plant-dot.png': png(8, 8, false) });
+      write(dir, { [`${CLIENT}/plant-dot.png`]: png(8, 8, false) });
       atMainEnd(dir, '/impressum/', '<p><img src="/plant-dot.png" width="8" height="8"></p>');
     },
   },
@@ -220,14 +220,15 @@ const PLANTS: readonly { id: string; plant: (dir: string) => void }[] = [
       style(dir, '/en/legal-note/', 'plant-spacing', 'main p:first-of-type { block-size: 3lh; overflow: hidden; }\n'),
   },
   {
-    // A button of 32 × 32 px on the German jobs page: below 43.5 px, above the 24 px of axe's `target-size`.
+    // A button of 32 × 32 px on the German jobs page: below 43.5 px, above the 24 px of axe's `target-size`. From M7
+    // `elements.css` gives every button a minimum size of 44 px, so the plant sets both minimums to 0.
     id: 'a11y-targets',
     plant: (dir) => {
       style(
         dir,
         '/jobs/',
         'plant-small',
-        '.plant-small { box-sizing: border-box; inline-size: 32px; block-size: 32px; padding: 0; border: 1px solid currentColor; }\n',
+        '.plant-small { box-sizing: border-box; inline-size: 32px; block-size: 32px; min-inline-size: 0; min-block-size: 0; padding: 0; border: 1px solid currentColor; }\n',
       );
       atMainEnd(dir, '/jobs/', '<p><button type="button" class="plant-small" aria-label="Teilen">+</button></p>');
     },
@@ -278,7 +279,7 @@ const PLANTS: readonly { id: string; plant: (dir: string) => void }[] = [
     // the image is never the largest element of the first screen.
     id: 'perf-image-oversize',
     plant: (dir) => {
-      write(dir, { 'dist/plant-wide.png': png(1600, 900, false) });
+      write(dir, { [`${CLIENT}/plant-wide.png`]: png(1600, 900, false) });
       atMainEnd(
         dir,
         '/sitemap/',
@@ -291,7 +292,7 @@ const PLANTS: readonly { id: string; plant: (dir: string) => void }[] = [
     // with neither `fetchpriority="high"` nor `loading="eager"`.
     id: 'perf-lcp-priority',
     plant: (dir) => {
-      write(dir, { 'dist/plant-noise.png': png(480, 360, true) });
+      write(dir, { [`${CLIENT}/plant-noise.png`]: png(480, 360, true) });
       style(
         dir,
         '/fr/mentions-legales/',

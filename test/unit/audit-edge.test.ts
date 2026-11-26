@@ -1048,6 +1048,30 @@ test('edge-private: a secret or a Worker config that no line hides fails', () =>
   assert.deepEqual(privateFindings({ ...PLATFORM, 'conf/.env': '', '.assetsignore': 'conf/\n!conf/.env\n' }), []);
 });
 
+test('edge-private: the .assetsignore of a forms build, in the order measured with the adapter (13.1 item 63)', () => {
+  // The Vite plugin of the adapter appends `wrangler.json` and `.dev.vars` to the lines of `public/.assetsignore`,
+  // before `build:done` of the kit runs. The audit reads that merged file.
+  const project = '# Project lines first.\n.env\n';
+  const merged = `${project}wrangler.json\n.dev.vars\n`;
+  const secrets = { '.env': 'KEY=1', '.dev.vars': 'KEY=1', 'wrangler.json': '{}' };
+  assert.deepEqual(privateFindings({ ...PLATFORM, ...secrets, '.assetsignore': merged }), []);
+  // A negation of the project before the adapter lines: the later adapter line hides the file again.
+  assert.deepEqual(
+    privateFindings({ ...PLATFORM, '.dev.vars': 'KEY=1', '.assetsignore': `!.dev.vars\nwrangler.json\n.dev.vars\n` }),
+    [],
+  );
+  // The adapter names no `.env`: a project without its own line for it fails, with or without the adapter lines.
+  assert.deepEqual(privateFindings({ ...PLATFORM, '.env': 'KEY=1', '.assetsignore': 'wrangler.json\n.dev.vars\n' }), [
+    `${PRIVATE} .env: ${HIDES_NOT}`,
+  ]);
+  // Before the adapter lines exist, the same files fail: an adapter that wrote them only after the audit would make
+  // the audit fail a hidden file, never pass a public one. The acceptance case proves the order on a real build.
+  assert.deepEqual(privateFindings({ ...PLATFORM, ...secrets, '.assetsignore': project }), [
+    `${PRIVATE} .dev.vars: ${HIDES_NOT}`,
+    `${PRIVATE} wrangler.json: ${HIDES_NOT}`,
+  ]);
+});
+
 test('auditEdge runs edge-private on the client directory, and the rule is no waivable rule', async () => {
   const ctx = contextOf(STATIC, { '.assetsignore': '!*\n', '.env': '' });
   writeEdgeFiles(ctx);

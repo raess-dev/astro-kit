@@ -30,6 +30,14 @@ export const AUTOCOMPLETE: ReadonlyMap<string, string> = new Map([
 /** The pattern of every mail address: in the settings, in `site.json` and in an `email` field. */
 export const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * `EMAIL` as the `pattern` attribute of an `input[type=email]` (9.1). HTML compiles a pattern with the `v` flag and
+ * anchors it at both ends, so this text without `^` and `$` has the meaning of `EMAIL`. A site writes it once:
+ * `pattern={EMAIL_PATTERN}`. The browser then refuses an address that step 7 refuses, such as `ann@gmailcom`, and
+ * keeps the typed text.
+ */
+export const EMAIL_PATTERN = '[^\\s@]+@[^\\s@]+\\.[^\\s@]+';
+
 /** A date `YYYY-MM-DD`. `isRealDate` also checks the calendar. */
 export const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -134,6 +142,54 @@ export function validateFields(fields: readonly FormField[], body: ReadonlyMap<s
     if (!valid) invalid.push(field.name);
   }
   return { values, invalid };
+}
+
+// The body cap
+
+/** The most bytes that one UTF-16 code unit of a value takes in an urlencoded body: three escapes `%XX`. */
+export const BYTES_PER_UNIT = 9;
+
+/**
+ * The code units that the cap counts for a value of a type without `maxLength`. A date has 10 (`YYYY-MM-DD`). A
+ * number and a consent value get 64. A choice counts its longest option.
+ */
+export const DATE_UNITS = 10;
+export const OTHER_UNITS = 64;
+
+/**
+ * The bytes of each field around its name and value: the `=` and `&` of urlencoded, or the boundary line and the
+ * part headers of multipart. A browser boundary has at most 70 characters, and the part headers of a field without
+ * a file are `Content-Disposition: form-data; name="<name>"`.
+ */
+export const FIELD_OVERHEAD = 128;
+
+/** The bytes of a body around its fields: the last boundary of multipart and one named submit control. */
+export const BODY_OVERHEAD = 1_024;
+
+/** `return` counts at its bound of 512 characters, 3 B each: a valid path is ASCII, and `/` is escaped as `%2F`. */
+export const RETURN_BYTES = 6 + FIELD_OVERHEAD + 3 * 512;
+
+/** The empty honeypot `website`. */
+export const HONEYPOT_BYTES = 7 + FIELD_OVERHEAD;
+
+/** The code units that the cap counts for the value of a field. */
+function unitsOf(field: FormField): number {
+  if (field.maxLength !== undefined) return field.maxLength;
+  if (field.type === 'date') return DATE_UNITS;
+  if (field.type === 'choice') return Math.max(0, ...(field.options ?? []).map((option) => option.length));
+  return OTHER_UNITS;
+}
+
+/**
+ * The body cap of one form (9.1, steps 1 and 2): the largest body that a browser can send for it. Each field counts
+ * its name, `FIELD_OVERHEAD` and 9 B for each code unit of its value: an urlencoded body escapes a character of
+ * three UTF-8 bytes as `%XX%XX%XX`, and a line break as `%0D%0A`. A multipart body takes at most 3 B for a code
+ * unit. Then `return`, the empty honeypot and `BODY_OVERHEAD`.
+ */
+export function bodyCap(fields: readonly FormField[]): number {
+  let bytes = BODY_OVERHEAD + RETURN_BYTES + HONEYPOT_BYTES;
+  for (const field of fields) bytes += field.name.length + FIELD_OVERHEAD + BYTES_PER_UNIT * unitsOf(field);
+  return bytes;
 }
 
 // The mail

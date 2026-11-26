@@ -251,6 +251,9 @@ test('the registry holds the rules of milestones M2 to M6 and part 7a of M7 in t
       ['edge-private', 'edge', 'build'],
       ['html-validate', 'html', 'build'],
       ['html-shell', 'html', 'build'],
+      ['forms-declared', 'forms', 'build'],
+      ['forms-fields', 'forms', 'build'],
+      ['forms-safety', 'forms', 'build'],
       ['forms-binding', 'forms', 'config'],
       ['legal-pages', 'legal', 'build'],
       ['legal-processing', 'legal', 'config'],
@@ -1904,4 +1907,37 @@ test('legal-processing: the default of processing fails a site with forms', () =
   const report = new Report();
   checkProcessing(options, report);
   assert.deepEqual(report.findings.map((finding) => finding.rule).sort(), ['legal-processing', 'legal-processing']);
+});
+
+test('config-options fails a form whose body cap passes 128 KiB, and names the form and its cap', () => {
+  const longText = (field: string): Json => ({ name: field, type: 'textarea' });
+  const withTexts = (count: number): Json => ({
+    ...single(),
+    features: { forms: true },
+    contact: { to: 'info@example.ch', from: 'form@example.ch' },
+    forms: { long: { fields: Array.from({ length: count }, (_, index) => longText(`text_${index}`)) } },
+    processing: ['cdn', 'previews', 'forms', 'server'],
+  });
+  // Two textareas of 5,000 code units fit: 2 × (6 + 128 + 45,000) + 2,829 = 93,097 B.
+  const fits = new Report();
+  assert.notEqual(parseOptions(withTexts(2), fits), undefined);
+  assert.deepEqual(fits.findings, []);
+  // Three do not: 138,231 B.
+  const over = new Report();
+  assert.equal(parseOptions(withTexts(3), over), undefined);
+  assert.deepEqual(
+    over.findings.map((finding) => [finding.rule, finding.where, finding.detail]),
+    [
+      [
+        'config-options',
+        'astro-kit.json: forms.long',
+        'the form long needs a body cap of 138231 B, more than 131072 B: lower a maxLength or declare fewer fields',
+      ],
+    ],
+  );
+  // A lower maxLength makes the three fit.
+  const short = withTexts(3);
+  const declared = short.forms as Record<string, { fields: Json[] }>;
+  for (const field of declared.long?.fields ?? []) field.maxLength = 3000;
+  assert.notEqual(parseOptions(short, new Report()), undefined);
 });

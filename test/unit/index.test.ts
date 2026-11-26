@@ -9,6 +9,7 @@ import { FORMS_ADAPTER_OPTIONS } from '../../src/config.ts';
 import { type Sha256, sha256 } from '../../src/csp.ts';
 import { parseDesign } from '../../src/design/parse.ts';
 import { renderTokens } from '../../src/design/tokens.ts';
+import { EMAIL_PATTERN } from '../../src/forms/fields.ts';
 import { renderWrangler } from '../../src/hosts/cloudflare.ts';
 import astroKit from '../../src/index.ts';
 import { enabledModes } from '../../src/modes.ts';
@@ -316,7 +317,8 @@ const ELEMENTS_CSS = [
   '  fieldset,',
   '  legend,',
   '  label,',
-  '  input {',
+  '  input,',
+  '  button {',
   '    margin-block-end: var(--space-2);',
   '  }',
   '}',
@@ -1532,7 +1534,7 @@ interface Page {
  * CSS minifies them with the targets of 6.1 (13.1 item 40). The css and design audits pass on it.
  */
 const BUILT_STYLE =
-  '@layer astro;@layer reset{*,:before,:after{box-sizing:border-box}*{margin:0}img,picture,svg,video,canvas{block-size:auto;max-inline-size:100%;display:block}input,button,textarea,select{font:inherit;color:inherit}[hidden]:not([hidden=until-found]),:root:not([data-mode]) [data-mode-switch]{display:none!important}.visually-hidden:not(:focus-within){clip-path:inset(50%)!important;white-space:nowrap!important;block-size:1px!important;inline-size:1px!important;position:absolute!important;overflow:hidden!important}:focus-visible:not([tabindex="-1"]){outline-style:solid!important}@media (prefers-reduced-motion:reduce){*,:before,:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}}@layer tokens{:root{color-scheme:light;--color-text:#222;--color-page:#fff;--font-body:system-ui, sans-serif;--text-m:1rem;--space-2:.5rem}}@layer elements{body{color:var(--color-text);background-color:var(--color-page)}a{color:var(--color-text)}:focus-visible{outline-color:var(--color-text)}h1,p,fieldset,legend,label,input{margin-block-end:var(--space-2)}}@layer layout{.stack{gap:var(--stack-gap);flex-direction:column;display:flex}.cluster{align-items:center;gap:var(--cluster-gap);flex-wrap:wrap;display:flex}.grid{gap:var(--grid-gap);grid-template-columns:repeat(auto-fit, minmax(min(100%, var(--grid-min)), 1fr));display:grid}.center{box-sizing:content-box;max-inline-size:var(--center-max);padding-inline:var(--center-gutter);margin-inline:auto}}@layer components,page;@media (prefers-reduced-motion:no-preference){@view-transition{navigation:auto}}';
+  '@layer astro;@layer reset{*,:before,:after{box-sizing:border-box}*{margin:0}img,picture,svg,video,canvas{block-size:auto;max-inline-size:100%;display:block}input,button,textarea,select{font:inherit;color:inherit}[hidden]:not([hidden=until-found]),:root:not([data-mode]) [data-mode-switch]{display:none!important}.visually-hidden:not(:focus-within){clip-path:inset(50%)!important;white-space:nowrap!important;block-size:1px!important;inline-size:1px!important;position:absolute!important;overflow:hidden!important}:focus-visible:not([tabindex="-1"]){outline-style:solid!important}@media (prefers-reduced-motion:reduce){*,:before,:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}}@layer tokens{:root{color-scheme:light;--color-text:#222;--color-page:#fff;--font-body:system-ui, sans-serif;--text-m:1rem;--space-2:.5rem}}@layer elements{body{color:var(--color-text);background-color:var(--color-page)}a{color:var(--color-text)}:focus-visible{outline-color:var(--color-text)}h1,p,fieldset,legend,label,input,button{margin-block-end:var(--space-2)}}@layer layout{.stack{gap:var(--stack-gap);flex-direction:column;display:flex}.cluster{align-items:center;gap:var(--cluster-gap);flex-wrap:wrap;display:flex}.grid{gap:var(--grid-gap);grid-template-columns:repeat(auto-fit, minmax(min(100%, var(--grid-min)), 1fr));display:grid}.center{box-sizing:content-box;max-inline-size:var(--center-max);padding-inline:var(--center-gutter);margin-inline:auto}}@layer components,page;@media (prefers-reduced-motion:no-preference){@view-transition{navigation:auto}}';
 
 /** One page of the fake site: its path, its texts, the content of `main`, and its translation. */
 interface FakePage {
@@ -1982,14 +1984,43 @@ test('build:done inserts only what the settings ask for, and release.txt says lo
   );
 });
 
+/**
+ * The forms settings of the fake site: the example of 5.1 with a contact form of two fields, so that every control
+ * of the form is an `input` or the `button`, which `ELEMENTS_CSS` covers (`css-element-coverage`).
+ */
+const FORMS_EXAMPLE = {
+  ...EXAMPLE,
+  forms: { contact: { fields: [EXAMPLE.forms.contact.fields[0], EXAMPLE.forms.contact.fields[1]] } },
+} as const;
+
+/**
+ * The pages of the fake site with the contact form of `FORMS_EXAMPLE` on the German home: the two notes, the hidden
+ * `return`, the honeypot, the two fields and the link to the privacy page (9.1, the markup pattern).
+ */
+function formPages(): Record<string, Page> {
+  const pages = builtPages(FORMS_EXAMPLE);
+  const home = need(GERMAN_PAGES[0], 'the German home');
+  const form = [
+    '<p id="sent" tabindex="-1">Danke.</p> <p id="not-sent" tabindex="-1">Leider nicht.</p>',
+    '<form action="/api/forms/contact/" method="post"><input type="hidden" name="return" value="/">',
+    '<div class="visually-hidden" inert aria-hidden="true"><input name="website" type="text" tabindex="-1" autocomplete="off"></div>',
+    '<label>Name (Pflichtfeld) <input type="text" name="name" required maxlength="100" autocomplete="name"></label>',
+    `<label>E-Mail (Pflichtfeld) <input type="email" name="email" required maxlength="254" pattern="${EMAIL_PATTERN}" autocomplete="email"></label>`,
+    '<p>Mehr in der <a href="/datenschutz/">Erklärung zum Datenschutz</a>.</p> <button type="submit">Senden</button></form>',
+  ].join(' ');
+  pages['index.html'] = builtPage(optionsOf(FORMS_EXAMPLE), { ...home, main: `${home.main} ${form}` });
+  return pages;
+}
+
 test('build:done on a forms site works in the client directory, and merges the _headers of the adapter', async () => {
   // The adapter ran first: it wrote its asset rule into `dist/client/_headers` (13.1, items 16 and 18).
   const adapterRule = '/_astro/*\n  Cache-Control: public, max-age=31536000, immutable\n';
+  const pages = formPages();
   const input: SiteInput = {
-    settings: EXAMPLE,
+    settings: FORMS_EXAMPLE,
     themes: LIGHT_DARK,
     files: {
-      ...distFiles('dist/client', EXAMPLE),
+      ...distFiles('dist/client', FORMS_EXAMPLE, pages),
       'dist/client/_headers': adapterRule,
       'dist/server/entry.mjs': 'export {};\n',
     },
@@ -2000,7 +2031,7 @@ test('build:done on a forms site works in the client directory, and merges the _
     return {
       setup: site.error,
       error,
-      pages: pageBytes(client, builtPages(EXAMPLE)),
+      pages: pageBytes(client, pages),
       headers: textOf(join(client, '_headers')),
       security: textOf(join(client, '.well-known/security.txt')),
       outside: EDGE_FILES.map((file) => textOf(join(site.root, 'dist', file)).startsWith('no file ')),
@@ -2010,7 +2041,7 @@ test('build:done on a forms site works in the client directory, and merges the _
   assert.equal(seen.setup, undefined);
   assert.equal(seen.error, undefined);
   const insert = modeInsertOf(['auto', 'light', 'dark'], 'auto') + SPECULATION_INSERT;
-  assert.deepEqual(seen.pages, insertedBytes(builtPages(EXAMPLE), insert));
+  assert.deepEqual(seen.pages, insertedBytes(pages, insert));
   assert.equal(seen.headers, HEADERS, 'the rule of the kit comes first, and there is one asset rule');
   assert.equal(withoutTime(seen.security), securityOf('de, fr'));
   assert.deepEqual(

@@ -1,5 +1,7 @@
 ---
 import ContactCard from '../components/ContactCard.astro';
+import FormStatus from '../components/FormStatus.astro';
+import RequestForm from '../components/RequestForm.astro';
 import TextSection from '../components/TextSection.astro';
 import { closures, contact, mailHref, openingHours, site } from '../data/facts.ts';
 import { UI } from '../data/ui.ts';
@@ -15,7 +17,7 @@ const kitchen = contact('Restaurant');
   page="contact"
   title="Kontakt und Anfrage – Hotel Lärchenwald in Sils"
   description="Rufen Sie uns an oder schreiben Sie uns: Die Rezeption hilft Ihnen bei der Anfrage für ein Zimmer, einen Tisch im Restaurant oder die Abholung am Bus."
-  modified="2026-11-23"
+  modified="2026-11-25"
 >
   <TextSection>
     <h1>Kontakt</h1>
@@ -23,6 +25,7 @@ const kitchen = contact('Restaurant');
       Sie erreichen unsere Rezeption jeden Tag per Telefon und per E-Mail. Wir beantworten jede Anfrage persönlich,
       meist am selben Tag.
     </p>
+    <FormStatus locale={locale} />
 
     <h2>Rezeption</h2>
     <ContactCard locale={locale} name={site.name} address phone={site.phone} email={site.email} />
@@ -45,11 +48,16 @@ const kitchen = contact('Restaurant');
 
     <h2>Zimmer anfragen</h2>
     <p>
-      Schreiben Sie uns, an welchem Tag Sie ankommen und abreisen, wie viele Personen Sie sind und welches Zimmer Sie
-      wünschen. Sagen Sie uns auch, ob Ihr Hund mitkommt und ob Sie einen Platz in der Garage brauchen. Wir bestätigen
-      Ihre Reservation schriftlich.
+      Sagen Sie uns, an welchem Tag Sie ankommen, wie viele Nächte Sie bleiben und welches Zimmer Sie wünschen. Ob
+      Ihr Hund mitkommt und ob Sie einen Platz in der Garage brauchen, fragen wir Sie in unserer Antwort. Wir
+      bestätigen Ihre Reservation schriftlich.
     </p>
+    <RequestForm locale={locale} form="booking" />
     <p><a class="button" href={mailHref(site.email)}>Anfrage per E-Mail senden</a></p>
+
+    <h2>Schreiben Sie uns</h2>
+    <p>Für jede andere Frage schreiben Sie uns hier eine Nachricht. Wir antworten Ihnen per E-Mail.</p>
+    <RequestForm locale={locale} form="contact" />
 
     <h2>Tisch im Restaurant</h2>
     <p>Einen Tisch für das Abendmenü reservieren Sie direkt beim Restaurant.</p>

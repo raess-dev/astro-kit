@@ -1,8 +1,10 @@
 /**
  * The server case of milestone M6 (specification, 14, M6): one request table, sent to `serveDist` of the packed kit
- * and to `wrangler dev` in local mode, on the built test site. For each request the two answers have the same
- * status, `location`, `cache-control` and the seven kit headers of 6.3 (`kitHeaders`). The kit's browser checks
- * then see the answers that Workers static assets give. Run: node --test test/acceptance/serve-parity.test.ts
+ * and to `wrangler dev` in local mode, on the built test site. The site has forms, so `wrangler dev` runs the built
+ * Worker with the config that the adapter wrote (`WORKER_CONFIG`), and its asset layer answers every path outside
+ * `/api/forms/*`. For each request the two answers have the same status, `location`, `cache-control` and the seven
+ * kit headers of 6.3 (`kitHeaders`). The kit's browser checks then see the answers that Workers static assets give.
+ * Run: node --test test/acceptance/serve-parity.test.ts
  */
 import assert from 'node:assert/strict';
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -11,7 +13,7 @@ import { test } from 'node:test';
 import type * as Cloudflare from '../../src/hosts/cloudflare.ts';
 import type * as OptionsModule from '../../src/options.ts';
 import type * as RegistryModule from '../../src/registry.ts';
-import { type KitRun, kitModule, run, type Served, serve, siteCase } from './harness.ts';
+import { CLIENT, type KitRun, kitModule, run, type Served, serve, siteCase, WORKER_CONFIG } from './harness.ts';
 import { type Answer, call, type Wrangler, wranglerDev } from './wrangler.ts';
 
 /** One request of the table. */
@@ -49,7 +51,7 @@ const TABLE: readonly Row[] = [
   { method: 'POST', path: '/gibt-es-nicht/' },
 ];
 
-/** Files planted in the built `dist/` for the second table, by path. */
+/** Files planted in the built client directory for the second table, by path. */
 const PLANTED: ReadonlyMap<string, string> = new Map([
   ['t/page.html', '<!doctype html><title>page</title>'],
   ['t/dir/index.html', '<!doctype html><title>dir</title>'],
@@ -202,8 +204,8 @@ test('M6: serveDist answers the request table as wrangler dev does: status, loca
   let kit: Served | undefined;
   let wrangler: Wrangler | undefined;
   try {
-    kit = await serve(join(dir, 'dist'));
-    wrangler = await wranglerDev(dir);
+    kit = await serve(join(dir, CLIENT));
+    wrangler = await wranglerDev(dir, WORKER_CONFIG);
     const differences: string[] = [];
     const statuses = new Set<number>();
     for (const row of TABLE) {
@@ -235,7 +237,7 @@ test('M6: serveDist answers the request table as wrangler dev does: status, loca
   }
 
   // The second table: the same build with planted files, rules and redirects, served again by both.
-  const dist = join(dir, 'dist');
+  const dist = join(dir, CLIENT);
   for (const [file, text] of PLANTED) {
     mkdirSync(dirname(join(dist, file)), { recursive: true });
     writeFileSync(join(dist, file), text);
@@ -245,7 +247,7 @@ test('M6: serveDist answers the request table as wrangler dev does: status, loca
   wrangler = undefined;
   try {
     kit = await serve(dist);
-    wrangler = await wranglerDev(dir);
+    wrangler = await wranglerDev(dir, WORKER_CONFIG);
     const extra = [...names, 'content-type', ...PLANTED_NAMES];
     const differences: string[] = [];
     for (const row of PLANTED_TABLE) {

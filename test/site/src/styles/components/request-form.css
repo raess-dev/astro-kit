@@ -1,0 +1,15 @@
+@layer components {
+  /* The fields in one column, at the width of running text. */
+  .request-form {
+    display: grid;
+    gap: var(--space-4);
+    max-inline-size: var(--size-measure);
+
+    /* The label text stands above its control, and the control takes the width of the form. */
+    .request-form__field {
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--space-1);
+    }
+  }
+}

@@ -5,6 +5,7 @@
  *
  * - `head.ts`: `head-*`, `headings-*` and `indexing-noindex`;
  * - `shell.ts`: `speculation-block`, `modes-script`, `modes-switch`, `csp-*` and `html-shell`;
+ * - `forms.ts`: `forms-declared`, `forms-fields` and `forms-safety`;
  * - `assets.ts`: `images-*` (but `images-public` and `images-original`, which are config rules), `fonts-limit`,
  *   `media-*` and `svg-name`.
  *
@@ -23,6 +24,7 @@ import {
   auditMediaPdf,
   auditSvgName,
 } from './page/assets.ts';
+import { auditFormsDeclared, auditFormsFields, auditFormsSafety } from './page/forms.ts';
 import {
   auditHeadCanonical,
   auditHeadDescription,
@@ -46,6 +48,7 @@ import {
 } from './page/shell.ts';
 
 export * from './page/assets.ts';
+export * from './page/forms.ts';
 export * from './page/head.ts';
 export * from './page/shell.ts';
 
@@ -73,6 +76,9 @@ export const PAGE_RULES: readonly AuditRule[] = [
   { id: 'csp-hash', run: auditCspHash },
   { id: 'csp-base', run: auditCspBase },
   { id: 'html-shell', run: auditHtmlShell },
+  { id: 'forms-declared', run: auditFormsDeclared },
+  { id: 'forms-fields', run: auditFormsFields },
+  { id: 'forms-safety', run: auditFormsSafety },
   { id: 'media-animated', run: auditMediaAnimated },
   { id: 'media-captions', run: auditMediaCaptions },
   { id: 'media-pdf', run: auditMediaPdf },

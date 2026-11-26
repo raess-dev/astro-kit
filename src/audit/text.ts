@@ -141,6 +141,23 @@ export const NEGATIONS: ReadonlySet<string> = new Set(['not', 'non', 'nicht', 'p
 /** The number of characters before a claim in which a negation cancels it. */
 export const NEGATION_WINDOW = 24;
 
+/**
+ * The words of `forms-fields` by language (section 8, exact): the label of a required field holds one of the
+ * required words, and the label of an optional field one of the optional words. A word compares whole and in lower
+ * case. A language without a row skips the word check with a warning.
+ */
+export const FIELD_WORDS: ReadonlyMap<string, { required: ReadonlySet<string>; optional: ReadonlySet<string> }> =
+  new Map([
+    [
+      'de',
+      { required: new Set(['pflichtfeld', 'erforderlich', 'pflicht']), optional: new Set(['optional', 'freiwillig']) },
+    ],
+    ['fr', { required: new Set(['obligatoire', 'requis']), optional: new Set(['facultatif', 'optionnel']) }],
+    ['it', { required: new Set(['obbligatorio', 'richiesto']), optional: new Set(['facoltativo', 'opzionale']) }],
+    ['en', { required: new Set(['required']), optional: new Set(['optional']) }],
+    ['rm', { required: new Set(['obligatoric']), optional: new Set(['facultativ']) }],
+  ]);
+
 // Small helpers
 
 /** The ASCII lower case of a text: a tag, an attribute name or a language subtag compares in it. */

@@ -823,15 +823,26 @@ function splitPath(rest: string): { path: string; query: string; fragment: strin
 const SCHEME = /^([A-Za-z][A-Za-z0-9+.-]*):/;
 
 /**
+ * An href with each backslash before its query and its fragment read as a slash. The URL standard reads an `http`
+ * or `https` URL, and a relative URL on such a page, this way: `\\api\\forms\\x\\` asks for `/api/forms/x/`.
+ */
+function withSlashes(text: string): string {
+  const end = text.search(/[?#]/);
+  const head = end < 0 ? text : text.slice(0, end);
+  return head.includes('\\') ? `${head.replaceAll('\\', '/')}${end < 0 ? '' : text.slice(end)}` : text;
+}
+
+/**
  * Where an `href` of the page at `base` (a page path such as `/fr/kontakt/` or `/404.html`) leads, for the site on
- * `host` (lower case, no port). It never throws.
+ * `host` (lower case, no port). A backslash before the query reads as a slash (`withSlashes`). It never throws.
  */
 export function resolveHref(href: string, base: string, host: string): HrefTarget {
-  const text = strip(href);
-  if (text.startsWith('#')) return { kind: 'fragment', fragment: text.slice(1) };
-  const scheme = SCHEME.exec(text)?.[1]?.toLowerCase();
+  const stripped = strip(href);
+  if (stripped.startsWith('#')) return { kind: 'fragment', fragment: stripped.slice(1) };
+  const scheme = SCHEME.exec(stripped)?.[1]?.toLowerCase();
   const isWeb = scheme === 'http' || scheme === 'https';
   if (scheme !== undefined && !isWeb) return { kind: 'external', scheme, host: undefined };
+  const text = withSlashes(stripped);
   const authority = isWeb ? text.slice(scheme.length + 1) : text;
   if (authority.startsWith('//')) {
     let url: URL;

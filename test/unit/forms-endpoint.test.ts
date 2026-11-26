@@ -7,17 +7,19 @@ import assert from 'node:assert/strict';
 import { afterEach, beforeEach, mock, test } from 'node:test';
 import type { APIRoute } from 'astro';
 import {
+  bodyCap,
+  capOf,
   createFormEndpoint,
   type FormSettings,
   handleForm,
   ipKey,
-  MAX_BODY_BYTES,
   PROBE_HEADER,
   type RateLimit,
 } from '../../src/forms/index.ts';
 import {
   BOOKING,
   CONTACT,
+  CONTACT_CAP,
   type FakeEnv,
   FIVE_HEADERS,
   fakeEnv,
@@ -81,7 +83,7 @@ const OUTCOMES: readonly OutcomeCase[] = [
   {
     code: 'too_large',
     id: 'contact',
-    request: (headers) => post('contact', CONTACT, { ...headers, 'content-length': String(MAX_BODY_BYTES + 1) }),
+    request: (headers) => post('contact', CONTACT, { ...headers, 'content-length': String(CONTACT_CAP + 1) }),
     env: fakeEnv,
     redirect: '/#not-sent',
     status: 413,
@@ -91,7 +93,7 @@ const OUTCOMES: readonly OutcomeCase[] = [
     code: 'too_large',
     id: 'contact',
     request: (headers) => {
-      const request = streamed('contact', MAX_BODY_BYTES + 1, { bytes: 0, cancelled: false });
+      const request = streamed('contact', CONTACT_CAP + 1, { bytes: 0, cancelled: false });
       for (const [name, value] of Object.entries(headers)) request.headers.set(name, value);
       return request;
     },
@@ -290,14 +292,14 @@ test('the first step that fails decides the code', async () => {
   assert.deepEqual([env.FORM_RATE_LIMIT.keys, env.FORM_RATE_LIMIT_ALL.keys, env.EMAIL.sent], [[], [], []]);
 });
 
-test('the edges of steps 1 and 6: a declared length of exactly 32,768 B passes, and a honeypot of spaces is empty', async () => {
+test('the edges of steps 1 and 6: a declared length of exactly the cap passes, and a honeypot of spaces is empty', async () => {
   const fields = { ...CONTACT, pad: '' };
   const size = new URLSearchParams({ ...fields }).toString().length;
-  const exact = { ...fields, pad: 'a'.repeat(MAX_BODY_BYTES - size) };
+  const exact = { ...fields, pad: 'a'.repeat(CONTACT_CAP - size) };
   const body = new URLSearchParams(exact).toString();
-  assert.equal(body.length, MAX_BODY_BYTES);
+  assert.equal(body.length, CONTACT_CAP);
   const sent = await handleForm(
-    post('contact', exact, { ...JSON_ACCEPT, 'content-length': String(MAX_BODY_BYTES) }),
+    post('contact', exact, { ...JSON_ACCEPT, 'content-length': String(CONTACT_CAP) }),
     'contact',
     SETTINGS,
     fakeEnv(),
@@ -305,7 +307,7 @@ test('the edges of steps 1 and 6: a declared length of exactly 32,768 B passes, 
   assert.deepEqual([sent.status, await sent.text()], [200, '{"ok":true}']);
   const over = { ...exact, pad: `${exact.pad}a` };
   const large = await handleForm(
-    post('contact', over, { ...JSON_ACCEPT, 'content-length': String(MAX_BODY_BYTES + 1) }),
+    post('contact', over, { ...JSON_ACCEPT, 'content-length': String(CONTACT_CAP + 1) }),
     'contact',
     SETTINGS,
     fakeEnv(),
@@ -742,4 +744,50 @@ test('a load that fails answers no_binding with the five headers, logs its messa
 test('the handler fits the APIRoute of Astro, so the shim needs no cast', () => {
   const route: APIRoute = createFormEndpoint(() => Promise.resolve({ settings: SETTINGS, env: fakeEnv() }));
   assert.equal(typeof route, 'function');
+});
+
+test('the body cap of a form holds the largest body that a browser sends for it, and one byte more fails', async () => {
+  // Every field at its maxLength with a character of three UTF-8 bytes: 9 B a code unit in an urlencoded body.
+  const worst = {
+    return: '/kontakt/',
+    website: '',
+    name: '日'.repeat(200),
+    email: `${'日'.repeat(248)}@日.日日`,
+    message: '日\r\n'.repeat(2_500),
+  };
+  const body = new URLSearchParams(worst).toString();
+  assert.ok(body.length <= CONTACT_CAP, `${body.length} B`);
+  const sent = await handleForm(post('contact', worst, JSON_ACCEPT), 'contact', SETTINGS, fakeEnv());
+  assert.deepEqual([sent.status, await sent.text()], [200, '{"ok":true}']);
+  // The same in multipart is smaller still.
+  const multipart = new FormData();
+  for (const [name, value] of Object.entries(worst)) multipart.append(name, value);
+  const encoded = new Request('https://x.example/', { method: 'POST', body: multipart });
+  assert.ok((await encoded.arrayBuffer()).byteLength <= CONTACT_CAP);
+  // A body of exactly the cap passes, also streamed without a length, and one byte more is too_large.
+  const padded = { ...worst, pad: '' };
+  const pad = CONTACT_CAP - new URLSearchParams(padded).toString().length;
+  const exact = { ...padded, pad: 'a'.repeat(pad) };
+  assert.equal(new URLSearchParams(exact).toString().length, CONTACT_CAP);
+  const atCap = await handleForm(post('contact', exact, JSON_ACCEPT), 'contact', SETTINGS, fakeEnv());
+  assert.equal(atCap.status, 200);
+  const over = await handleForm(
+    post('contact', { ...exact, pad: `${exact.pad}a` }, JSON_ACCEPT),
+    'contact',
+    SETTINGS,
+    fakeEnv(),
+  );
+  assert.equal(over.status, 413);
+  const streamedOver = streamed('contact', CONTACT_CAP + 1, { bytes: 0, cancelled: false });
+  streamedOver.headers.set('accept', 'application/json');
+  assert.equal((await handleForm(streamedOver, 'contact', SETTINGS, fakeEnv())).status, 413);
+});
+
+test('capOf: each form has its own cap, and an id that no form declares gets the largest one', () => {
+  const booking = bodyCap(SETTINGS.forms?.booking?.fields ?? []);
+  assert.equal(capOf(SETTINGS, 'booking'), booking);
+  assert.equal(capOf(SETTINGS, 'contact'), CONTACT_CAP);
+  assert.ok(booking < CONTACT_CAP);
+  assert.equal(capOf(SETTINGS, 'newsletter'), CONTACT_CAP);
+  assert.equal(capOf(SETTINGS, undefined), CONTACT_CAP);
 });

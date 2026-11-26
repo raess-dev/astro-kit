@@ -360,6 +360,34 @@ test('resolveHref: fragments, same-origin paths, other origins and other schemes
   ];
   for (const [href, base, expected] of cases) assert.deepEqual(resolveHref(href, base, host), expected, href);
   assert.equal(decodePath('/%C3%BC/'), '/ü/');
+});
+
+test('resolveHref: a backslash before the query reads as a slash, as the URL standard reads it', () => {
+  const host = 'example.ch';
+  const internal = (path: string, query = '', absolute = false, scheme = '') => ({
+    kind: 'internal',
+    path,
+    query,
+    fragment: undefined,
+    absolute,
+    scheme,
+  });
+  assert.deepEqual(resolveHref('\\api\\forms\\contact\\', '/', host), internal('/api/forms/contact/'));
+  assert.deepEqual(resolveHref('api\\forms\\', '/fr/', host), internal('/fr/api/forms/'));
+  assert.deepEqual(resolveHref('https:\\\\example.ch\\a\\', '/', host), internal('/a/', '', true, 'https'));
+  assert.deepEqual(resolveHref('\\\\other.example\\x', '/', host), {
+    kind: 'external',
+    scheme: 'https',
+    host: 'other.example',
+  });
+  // A backslash in the query stays as it is.
+  assert.deepEqual(resolveHref('/a/?b=\\c', '/', host), internal('/a/', '?b=\\c'));
+  // The URL parser of Node, which follows the URL standard as browsers do, gives the same path.
+  for (const href of ['\\api\\forms\\contact\\', 'https:\\\\example.ch\\a\\', '/a/?b=\\c']) {
+    const url = new URL(href, 'https://example.ch/');
+    const target = resolveHref(href, '/', host);
+    assert.equal(target.kind === 'internal' ? target.path : '', url.pathname, href);
+  }
   assert.equal(decodePath('/%E0%A4%A/'), undefined);
 });
 

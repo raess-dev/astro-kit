@@ -1,0 +1,110 @@
+---
+/**
+ * One form of the kit (kit specification, 9.1): it posts to `/api/forms/<id>/` and renders exactly the fields of
+ * `astro-kit.json`, with the hidden `return`, the honeypot and a link to the privacy page. The kit's endpoint sends
+ * the mail and redirects back to `#sent` or `#not-sent` of the page (`FormStatus`).
+ *
+ * Each label holds the required or the optional word of its language. No field has a placeholder: a hint belongs
+ * into the label, where it stays when the visitor types. An email field has the kit's `EMAIL_PATTERN`, so the
+ * browser refuses an address that the endpoint would refuse, and the typed text stays.
+ */
+import { EMAIL_PATTERN } from '@raess/astro-kit/forms';
+import '../styles/components/request-form.css';
+import { actionOf, FIELDS, FORM_TEXT, type FormId } from '../data/forms.ts';
+import type { Locale } from '../data/locales.ts';
+import { linkTo } from '../data/routes.ts';
+
+interface Props {
+  locale: Locale;
+  form: FormId;
+}
+
+const { locale, form } = Astro.props;
+const text = FORM_TEXT[locale];
+const labelOf = (name: string, required: boolean): string =>
+  `${text.labels[name] ?? name} (${required ? text.required : text.optional})`;
+---
+
+<form class="request-form" action={actionOf(form)} method="post">
+  <input type="hidden" name="return" value={Astro.url.pathname} />
+  <div class="visually-hidden" inert aria-hidden="true">
+    <input name="website" type="text" tabindex="-1" autocomplete="off" />
+  </div>
+  {FIELDS[form].map((field) => {
+    switch (field.type) {
+      case 'textarea':
+        return (
+          <label class="request-form__field">
+            {labelOf(field.name, field.required)}
+            <textarea
+              name={field.name}
+              required={field.required}
+              maxlength={field.maxLength}
+              autocomplete={field.autocomplete}
+              rows="6"
+            ></textarea>
+          </label>
+        );
+      case 'text':
+      case 'email':
+      case 'tel':
+        return (
+          <label class="request-form__field">
+            {labelOf(field.name, field.required)}
+            <input
+              type={field.type}
+              name={field.name}
+              required={field.required}
+              maxlength={field.maxLength}
+              pattern={field.type === 'email' ? EMAIL_PATTERN : undefined}
+              autocomplete={field.autocomplete}
+            />
+          </label>
+        );
+      case 'date':
+        return (
+          <label class="request-form__field">
+            {labelOf(field.name, field.required)}
+            <input type="date" name={field.name} required={field.required} autocomplete={field.autocomplete} />
+          </label>
+        );
+      case 'number':
+        return (
+          <label class="request-form__field">
+            {labelOf(field.name, field.required)}
+            <input
+              type="number"
+              name={field.name}
+              required={field.required}
+              min={field.min}
+              max={field.max}
+              autocomplete={field.autocomplete}
+            />
+          </label>
+        );
+      case 'choice':
+        return (
+          <label class="request-form__field">
+            {labelOf(field.name, field.required)}
+            <select name={field.name} required={field.required} autocomplete={field.autocomplete}>
+              <option value="">{text.choose}</option>
+              {field.options.map((option) => (
+                <option value={option}>{text.rooms[option] ?? option}</option>
+              ))}
+            </select>
+          </label>
+        );
+      case 'consent':
+        return (
+          <label>
+            <input type="checkbox" name={field.name} required />
+            {labelOf(field.name, true)}
+          </label>
+        );
+    }
+  })}
+  <p>
+    {text.privacyBefore} <a href={linkTo('privacy', locale)}>{text.privacyLink}</a>{text.privacyAfter}
+  </p>
+  <p><button type="submit">{text.send[form]}</button></p>
+</form>

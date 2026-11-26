@@ -2,20 +2,22 @@
  * The planted-violation sets of milestone M5 and the five typical agent mistakes (specification, 14 and 14.2).
  *
  * - **A set** plants every violation of its list in one copy of the site, runs `build` once, and asserts exactly
- *   that list of rule ids, and that the output holds no passed line. This file holds the sets `css`, `design` and
- *   `modes`. Each plant changes as little as it can, and its comment says which id it plants.
+ *   that list of rule ids, and that the output holds no passed line. This file holds the sets `css`, `design`,
+ *   `modes` and `route`. Each plant changes as little as it can, and its comment says which id it plants.
  * - **A mistake** is one change that agents often make, each on its own copy of the site. Its case runs `build` and
  *   asserts exactly one id.
  *
  * The ids of rules that later milestones add join their sets with their rules: `js-budget` joins the `css` set at M8.
- * `KIT_PLANTED_DROP=<id>` runs the `css` set without the plant of that id, and expects the list without that id. The
- * review runs it once for each id, to prove that each plant gives its id alone. CI does not set it.
+ * The `route` set (M7) starts from the `static` variant and adds an on-demand route of the project.
+ * `KIT_PLANTED_DROP=<id>` runs the `css` or the `route` set without the plant of that id, and expects the list without
+ * that id. The review runs it once for each id, to prove that each plant gives its id alone. CI does not set it.
  * A case that changes `docs/design.md` runs `tokens` first (14.2, Rendered files).
  * Run: node --test test/acceptance/planted.test.ts
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { edit, type KitRun, kitModule, passedLine, read, run, siteCase, write } from './harness.ts';
+import { toStatic } from './variants.ts';
 
 /** The last part of a command's output, for the message of a failed assertion. */
 const tail = (result: KitRun): string => result.output.slice(-6000);
@@ -229,6 +231,22 @@ const CSS_SET = [
   'media-animated',
 ];
 
+/** The ids of the `route` set (M7). */
+const ROUTE_SET = ['routes-on-demand'];
+
+/**
+ * The id of `KIT_PLANTED_DROP` when it is an id of `set`, else `undefined`. This file takes an id of the `css` set or
+ * of the `route` set; any other id stops the run.
+ */
+function droppedFrom(set: readonly string[]): string | undefined {
+  const drop = process.env.KIT_PLANTED_DROP;
+  if (drop === undefined) return undefined;
+  if (!CSS_SET.includes(drop) && !ROUTE_SET.includes(drop)) {
+    throw new Error(`KIT_PLANTED_DROP: ${drop} is no id of the css or the route set`);
+  }
+  return set.includes(drop) ? drop : undefined;
+}
+
 test('M5 planted set css: exactly the ids of its list', async () => {
   // Each id of the list has one plant.
   assert.deepEqual(
@@ -246,8 +264,7 @@ test('M5 planted set css: exactly the ids of its list', async () => {
   assert.ok(SIZES.elements > 1.2 * LIMITS.domElements);
   assert.ok(SIZES.font > 1.2 * LIMITS.fontBytes);
 
-  const drop = process.env.KIT_PLANTED_DROP;
-  if (drop !== undefined && !CSS_SET.includes(drop)) throw new Error(`KIT_PLANTED_DROP: ${drop} is no id of the set`);
+  const drop = droppedFrom(CSS_SET);
   const dir = siteCase(drop === undefined ? 'planted-css' : `planted-css-without-${drop}`, (folder) => {
     for (const { id, plant } of CSS_PLANTS) if (id !== drop) plant(folder);
   });
@@ -261,6 +278,34 @@ test('M5 planted set css: exactly the ids of its list', async () => {
   assert.deepEqual(passedLine(result), NOT_PASSED, tail(result));
   // `budget-document` holds the word that sets off Astro's false browser hint (13.1); the kit keeps it off.
   assert.equal(result.output.includes('Browser APIs are not available'), false, tail(result));
+});
+
+// The route set
+
+test('M7 planted set route: the static site with an on-demand route of its own gives routes-on-demand', async () => {
+  const drop = droppedFrom(ROUTE_SET);
+  const dir = siteCase(drop === undefined ? 'planted-route' : `planted-route-without-${drop}`);
+  await toStatic(dir);
+  // The pattern `/live.json` passes the endpoint clause of `routes-slug`; only `routes-on-demand` refuses the route.
+  if (drop === undefined) {
+    write(dir, {
+      'src/pages/live.json.ts': [
+        'export const prerender = false;',
+        "export const GET = () => new Response('{}', { headers: { 'content-type': 'application/json' } });",
+        '',
+      ].join('\n'),
+    });
+  }
+  const result = run(dir, 'build');
+  assert.deepEqual(
+    result.ids,
+    ROUTE_SET.filter((id) => id !== drop),
+    tail(result),
+  );
+  // Without its plant the set is the `static` variant, which passes.
+  const passes = drop !== undefined;
+  assert.equal(result.status, passes ? 0 : 1, tail(result));
+  assert.deepEqual(passedLine(result), passes ? { last: true, count: 1 } : NOT_PASSED, tail(result));
 });
 
 // The design set

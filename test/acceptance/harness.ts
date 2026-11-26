@@ -40,18 +40,24 @@ export const SITE = join(REPO, 'test/site');
 export const STAND_IN = join(import.meta.dirname, 'kit');
 
 /**
- * The pins of section 2 that the base copy installs, and that are never in the `package.json` of the site.
- * `@cloudflare/vite-plugin` is not a pin of section 2. The adapter asks for the range `^1.67.0` of it, and no lockfile
- * holds the adapter's tree before M7. The plugin brings its own wrangler, which writes the built Worker config, so a
- * new plugin release would change the config with no commit. Its own dependencies are exact versions. The pin goes
- * away at M7, when the `package.json` and the lockfile of the site hold the adapter.
+ * The pins of section 2 that the base copy installs, and that are never in the `package.json` of the site. The forms
+ * adapter `@astrojs/cloudflare` is in the `package.json` of the site from M7, and its lockfile pins the tree of the
+ * adapter with `@cloudflare/vite-plugin` 1.69.1, the version that 13.1 item 63 and S19 measured.
  */
 export const PINS = {
   playwright: 'playwright-core@1.65.0',
-  cloudflare: ['@astrojs/cloudflare@14.4.7', '@cloudflare/vite-plugin@1.69.1'],
   islands: ['@astrojs/solid-js@7.1.5', 'solid-js@1.9.19'],
   islandsLint: ['eslint@10.14.0', 'eslint-plugin-solid@0.19.0', 'typescript-eslint@8.72.2'],
 } as const;
+
+/**
+ * The client directory of a build of the test site, relative to its case folder. The site has forms from M7, so the
+ * adapter writes the pages and the edge files to `dist/client/` and the Worker to `dist/server/` (13.1 item 16). A
+ * case with forms off (the `static` variant) builds into `dist/` itself.
+ */
+export const CLIENT = 'dist/client';
+/** The Worker config that the adapter writes for a forms build: `wrangler dev` runs the built Worker with it. */
+export const WORKER_CONFIG = 'dist/server/wrangler.json';
 
 /** The top-level names of `test/site/` that a hand build leaves there. The base copy does not take them. */
 const BUILT = new Set(['node_modules', 'dist', '.astro', '.wrangler']);
@@ -166,12 +172,6 @@ function makeBase(dir: string, kit: string): void {
   });
   npm(dir, ['ci', ...NPM_FLAGS]);
   const extra: string[] = [PINS.playwright, ...PINS.islands, ...PINS.islandsLint];
-  // `@astrojs/cloudflare` joins the `package.json` of the site at M7 (specification, 14). Until then the base copy
-  // adds it.
-  const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {
-    dependencies?: Record<string, string>;
-  };
-  if (!manifest.dependencies?.['@astrojs/cloudflare']) extra.push(...PINS.cloudflare);
   // One command: a second `--no-save` install removes the packages of the first.
   npm(dir, ['install', '--no-save', ...NPM_FLAGS, ...extra, kit]);
   if (!existsSync(join(dir, KIT_CLI))) throw new Error(`kit-acceptance: the packed kit ${kit} holds no dist/cli.js`);
