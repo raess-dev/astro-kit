@@ -339,6 +339,8 @@ test('js-script reads a run of comments in linear time, and a comment ends at it
     `new ${'//new\n'.repeat(16_000)}D${'a'.repeat(16_000)}()`,
     `new ${'//new\n'.repeat(16_000)}a${'.b'.repeat(16_000)}`,
     `serviceWorker ${'//serviceWorker\n'.repeat(16_000)}.${'a'.repeat(16_000)}`,
+    // Nor walk again the rest of a member chain that candidates reach at different members (Codex, #31).
+    `/*new a.${'//new\na.'.repeat(16_000)}a()*/`,
     // Nor read again a string literal that many `[` reach through one comment (Codex, #31).
     `${'[/*'.repeat(16_000)}*/"${'a'.repeat(16_000)}"]`,
     `${'[/*'.repeat(16_000)}*/'${'a'.repeat(16_000)}']`,

@@ -392,7 +392,7 @@
 - After the Codex review of #31, the worker check of `js-script` is a scanner, not a regex. A regex read the gap after
   a candidate again from each candidate inside it: a run of comments, or one long comment with `[` in it, took
   seconds on 100 KB. The scanner skips each comment in one step, and it keeps, by its start, the end of each gap and the
-  result of each name, member and string literal that it read, so it reads any text in linear time. It reads the same forms: a block comment ends at its first `*/`, and a line comment ends at `\n`,
+  result of each name, member, member chain and string literal that it read, so it reads any text in linear time. It reads the same forms: a block comment ends at its first `*/`, and a line comment ends at `\n`,
   `\r`, U+2028 or U+2029.
 - After the same review, a `new` with more than 64 opening parentheses before its name is a finding of its own that
   the worker check cannot read, so candidates between the parentheses of one expression cannot make the scan
