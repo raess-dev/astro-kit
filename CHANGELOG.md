@@ -403,3 +403,7 @@
   (owner decision of 2026-11-27).
 - The worker scanner of `js-script` keeps the end of each name by its start, so member dots that reach one long name
   through comments read it once (the Codex finding of round 9 on #31, which the owner moved to this follow-up).
+- CI: a fourth acceptance job, `kit / acceptance (site)`, runs the `site` case and the `static`, `forms` and `islands`
+  variants (`npm run acceptance:site`: `site.test.ts`, `variants.test.ts`, `variants-islands.test.ts`).
+  `kit / acceptance` no longer runs them. M9 adds `check` to every variant and a `ci` case, and the core job could not
+  take that time (11.1 min on #33). `kit / merge` needs the new job (owner decision of 2026-11-27).
