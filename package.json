@@ -57,7 +57,8 @@
     "test": "node --test 'test/unit/**/*.test.ts'",
     "acceptance": "node --test 'test/acceptance/**/*.test.ts'",
     "acceptance:core": "node --test 'test/acceptance/**/!(planted-browser|planted-prefetch|planted-origins).test.ts'",
-    "acceptance:browser": "node --test test/acceptance/planted-browser.test.ts test/acceptance/planted-prefetch.test.ts test/acceptance/planted-origins.test.ts",
+    "acceptance:browser": "node --test test/acceptance/planted-browser.test.ts test/acceptance/planted-prefetch.test.ts",
+    "acceptance:origins": "node --test test/acceptance/planted-origins.test.ts",
     "docs": "node src/docs.ts --write"
   },
   "peerDependencies": {

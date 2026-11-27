@@ -397,3 +397,7 @@
 - After the same review, a `new` with more than 64 opening parentheses before its name is a finding of its own that
   the worker check cannot read, so candidates between the parentheses of one expression cannot make the scan
   quadratic, and many starts in one inline script no longer exceed the argument limit of a call.
+- CI: a third acceptance job, `kit / acceptance (origins)`, runs `planted-origins.test.ts` (`npm run
+  acceptance:origins`). With it in `kit / acceptance (browser)`, that job took 14.8 of its 15 min half budget, and the
+  `prefetch` set's `test --all` passed the 600 s limit of the harness for one command. `kit / merge` needs the new job
+  (owner decision of 2026-11-27).

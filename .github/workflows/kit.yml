@@ -1,7 +1,8 @@
 # The kit's CI (specification, 11.1). test: types, lint, unit tests and the generated docs. acceptance: the
-# acceptance suite of test/acceptance/ with the test site of test/site/, without the two planted sets of the browser
-# rules. acceptance-browser: those two sets; each runs `test --all` on a copy of the test site, so they get a job and
-# a time budget of their own. scan: zizmor on the workflows and gitleaks on the history. merge: squashes a green
+# acceptance suite of test/acceptance/ with the test site of test/site/, without the three planted sets that run
+# `test --all`. acceptance-browser: the browser and prefetch sets. acceptance-origins: the scripts and origins
+# variants and the origins set. Each set runs `test --all` on a copy of the test site, so the sets get jobs and time
+# budgets of their own. scan: zizmor on the workflows and gitleaks on the history. merge: squashes a green
 # pull request of an agent account or Dependabot.
 # A pull request that changes the root .github/ or the root .npmrc is never merged here: the owner approves it and
 # merges it by hand. The kit repository deploys nothing, so no wrangler file is protected here.
@@ -88,6 +89,27 @@ jobs:
       - name: The browser sets, with the kit that the harness builds and packs from this checkout
         run: npm run acceptance:browser
 
+  # The scripts and origins variants and the origins set (specification, 14.2): planted-origins. The same setup and
+  # the same rules. It runs apart from the browser sets, so that each `test --all` gets the CPU of its runner.
+  acceptance-origins:
+    name: kit / acceptance (origins)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Chromium for the browser cases
+        run: npx --no playwright-core install --with-deps chromium
+      - name: The origins set and variants, with the kit that the harness builds and packs from this checkout
+        run: npm run acceptance:origins
+
   scan:
     name: kit / scan
     runs-on: ubuntu-latest
@@ -112,7 +134,7 @@ jobs:
 
   merge:
     name: kit / merge
-    needs: [test, scan, acceptance, acceptance-browser]
+    needs: [test, scan, acceptance, acceptance-browser, acceptance-origins]
     if: >-
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository
