@@ -20,6 +20,8 @@ import {
   auditJsPrefetchAttr,
   auditJsScript,
   auditOriginsThirdParty,
+  PARENS_MAX,
+  UNREAD_NEW,
   workerStarts,
 } from '../../src/audit/page/scripts.ts';
 import { auditLegalOrigins } from '../../src/audit/site.ts';
@@ -336,14 +338,20 @@ test('js-script reads a run of comments in linear time, and a comment ends at it
     // Nor read again the name, the parentheses or the members that many candidates reach (Codex, #31).
     `new ${'//new\n'.repeat(16_000)}D${'a'.repeat(16_000)}()`,
     `new ${'//new\n'.repeat(16_000)}a${'.b'.repeat(16_000)}`,
-    `new ${'//new\n'.repeat(16_000)}${'('.repeat(16_000)}D()`,
     `serviceWorker ${'//serviceWorker\n'.repeat(16_000)}.${'a'.repeat(16_000)}`,
     // Nor read again a string literal that many `[` reach through one comment (Codex, #31).
     `${'[/*'.repeat(16_000)}*/"${'a'.repeat(16_000)}"]`,
     `${'[/*'.repeat(16_000)}*/'${'a'.repeat(16_000)}']`,
     `${'[/*'.repeat(16_000)}*/\`${'a'.repeat(16_000)}\`]`,
   ];
+  // Candidates between the parentheses of one expression do not walk the rest of them again: a `new` with more
+  // than PARENS_MAX opening parentheses is a start that the check cannot read (Codex, #31).
+  const nested = `new (${'//new\n('.repeat(16_000)}Date${')'.repeat(16_001)}()`;
   const started = performance.now();
+  assert.ok(workerStarts(nested).every((name) => name === UNREAD_NEW));
+  assert.ok(
+    workerStarts(`new ${'//new\n'.repeat(16_000)}${'('.repeat(16_000)}D()`).every((name) => name === UNREAD_NEW),
+  );
   for (const text of runs) assert.deepEqual(workerStarts(text), []);
   assert.ok(performance.now() - started < 1_000, 'the runs of comments take less than 1 s together');
   // The comments between the tokens still count as white space, stars included.
@@ -358,6 +366,9 @@ test('js-script reads a run of comments in linear time, and a comment ends at it
   assert.deepEqual(workerStarts('new a).Worker(u)'), []);
   assert.deepEqual(workerStarts('new (a)(b).Worker'), []);
   assert.deepEqual(workerStarts('new (a)).Worker(u)'), []);
+  assert.equal(PARENS_MAX, 64);
+  assert.deepEqual(workerStarts(`new ${'('.repeat(64)}Worker(u)`), ['new Worker']);
+  assert.deepEqual(workerStarts(`new ${'('.repeat(65)}Date()`), [UNREAD_NEW]);
   // A line comment ends at every line terminator of JavaScript, not only at a line feed.
   for (const end of ['\n', '\r', '\r\n', '\u2028', '\u2029']) {
     assert.deepEqual(workerStarts(`new //c${end}Worker("/w.js")`), ['new Worker'], JSON.stringify(end));
@@ -458,6 +469,13 @@ test('js-script without features.workers fails a worker in an inline script; wit
     ),
     [],
   );
+  // A new that the check cannot read has a finding of its own, and many starts are no error of the call (Codex, #31).
+  assert.deepEqual(inline(SCRIPTS, `<script type="module">new ${'('.repeat(65)}Date()</script>`), [
+    '/ an inline script has a new with more than 64 opening parentheses, which the worker check cannot read, and features.workers is off (9.5)',
+  ]);
+  assert.deepEqual(inline(SCRIPTS, `<script type="module">/*${'importScripts;'.repeat(150_000)}*/</script>`), [
+    onPage('importScripts'),
+  ]);
   // With features.workers, no worker is a finding of js-script.
   assert.deepEqual(
     inline(

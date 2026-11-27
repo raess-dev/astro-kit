@@ -27,6 +27,7 @@ import {
   distFileOf,
   domOf,
   hasAttr,
+  pushAll,
   rawContentOf,
   resolveHref,
   scriptKind,
@@ -198,7 +199,8 @@ export function auditJsScript(ctx: BuildContext): void {
       const kind = scriptKind(script);
       const src = attr(script, 'src');
       if (!workers && src === undefined && (kind === 'classic' || kind === 'module')) {
-        starts.push(...workerStarts(rawContentOf(script)));
+        // One by one: a spread of many matches would pass the limit of the arguments of a call (Codex, #31).
+        pushAll(starts, workerStarts(rawContentOf(script)));
       }
       if (kind === 'json-ld' || kind === 'speculationrules') continue;
       if (src === undefined && isModeScriptLike(script)) continue;
@@ -210,13 +212,12 @@ export function auditJsScript(ctx: BuildContext): void {
       problems.push(`${startTag(page, script)}${text}${missing}`);
     }
     reportPage(ctx, JS_SCRIPT, page, problems);
-    if (starts.length > 0) ctx.report.add(JS_SCRIPT, page.path, workerDetail('an inline script', starts));
+    reportWorkers(ctx, page.path, 'an inline script', starts);
   }
   if (workers) return;
   for (const file of ctx.files) {
     if (!JS_FILE.test(file)) continue;
-    const starts = workerStarts(readText(ctx, file) ?? '');
-    if (starts.length > 0) ctx.report.add(JS_SCRIPT, `/${file}`, workerDetail('the script', starts));
+    reportWorkers(ctx, `/${file}`, 'the script', workerStarts(readText(ctx, file) ?? ''));
   }
 }
 
@@ -397,10 +398,12 @@ class WorkerScanner {
   private tailAt(start: number): Step | undefined {
     let index = start;
     let open = 0;
-    while (this.text[index] === '(') {
+    while (this.text[index] === '(' && open < PARENS_MAX) {
       index = this.gap(index + 1);
       open += 1;
     }
+    // More parentheses than that: the check does not read on, and the start counts as one it cannot read.
+    if (this.text[index] === '(') return { name: UNREAD_NEW, end: index };
     for (const name of WORKER_NAMES) {
       if (this.wordAt(index, name)) return { name: `new ${name}`, end: index + name.length };
     }
@@ -484,14 +487,39 @@ const NAME_CHAR = /^[\w$]$/;
 
 const WORKER_NAMES = ['Worker', 'SharedWorker'] as const;
 
+/**
+ * The most opening parentheses that a `new` may have before its name. Each candidate walks its own parentheses and
+ * their closing ones, so a cap keeps that walk short when many candidates stand between the parentheses of one
+ * expression (Codex, #31). A `new` with more counts as a start that the check cannot read (`UNREAD_NEW`).
+ */
+export const PARENS_MAX = 64;
+
+/** The name of a `new` that the scanner does not read on: it has more than `PARENS_MAX` opening parentheses. */
+export const UNREAD_NEW = 'unread new';
+
 /** The names of the starts of a worker in a JS text (`WorkerScanner`), in the order of the text. */
 export function workerStarts(text: string): string[] {
   return new WorkerScanner(text).starts();
 }
 
-/** The detail of a finding for the starts of a worker: each name once, in the order of the text. */
-const workerDetail = (what: string, starts: readonly string[]): string =>
-  `${what} starts a worker (${[...new Set(starts)].join(', ')}), but features.workers is off (9.5)`;
+/**
+ * The findings for the starts of a worker of one text: one that names each start once, in the order of the text,
+ * and one for a `new` that the check cannot read (`UNREAD_NEW`).
+ */
+function reportWorkers(ctx: BuildContext, where: string, what: string, starts: readonly string[]): void {
+  const names = [...new Set(starts)];
+  const read = names.filter((name) => name !== UNREAD_NEW);
+  if (read.length > 0) {
+    ctx.report.add(JS_SCRIPT, where, `${what} starts a worker (${read.join(', ')}), but features.workers is off (9.5)`);
+  }
+  if (read.length < names.length) {
+    ctx.report.add(
+      JS_SCRIPT,
+      where,
+      `${what} has a new with more than ${PARENS_MAX} opening parentheses, which the worker check cannot read, and features.workers is off (9.5)`,
+    );
+  }
+}
 
 // js-prefetch-attr
 
