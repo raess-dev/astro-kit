@@ -338,6 +338,10 @@ test('js-script reads a run of comments in linear time, and a comment ends at it
     `new ${'//new\n'.repeat(16_000)}a${'.b'.repeat(16_000)}`,
     `new ${'//new\n'.repeat(16_000)}${'('.repeat(16_000)}D()`,
     `serviceWorker ${'//serviceWorker\n'.repeat(16_000)}.${'a'.repeat(16_000)}`,
+    // Nor read again a string literal that many `[` reach through one comment (Codex, #31).
+    `${'[/*'.repeat(16_000)}*/"${'a'.repeat(16_000)}"]`,
+    `${'[/*'.repeat(16_000)}*/'${'a'.repeat(16_000)}']`,
+    `${'[/*'.repeat(16_000)}*/\`${'a'.repeat(16_000)}\`]`,
   ];
   const started = performance.now();
   for (const text of runs) assert.deepEqual(workerStarts(text), []);
