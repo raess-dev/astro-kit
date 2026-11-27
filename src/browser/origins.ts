@@ -40,6 +40,14 @@ export const URL_TEXT_MAX = 200;
 const CALM_ROUNDS = 2;
 const ROUNDS_MAX = 10;
 
+/**
+ * One scroll step, in px: less than the height of the view (800 px), so each part of the page is in view at one step,
+ * and an element in the middle of a long page intersects the view (Codex, #30). At most `SCROLL_STEPS_MAX` steps
+ * (60,000 px); then one wheel to the end.
+ */
+export const SCROLL_STEP_PX = 600;
+export const SCROLL_STEPS_MAX = 100;
+
 /** The longest wait for two animation frames, and for the end of the started requests, in one round. */
 const FRAMES_LIMIT_MS = 5_000;
 const DRAIN_LIMIT_MS = 2_000;
@@ -448,16 +456,36 @@ async function calm(visit: Visit): Promise<void> {
   }
 }
 
+/**
+ * Scrolls to the end of the page with the mouse wheel, `SCROLL_STEP_PX` at a time, and waits until the page is calm
+ * after each step, so an `IntersectionObserver` or a `client:visible` island anywhere on the page sees its element.
+ * It stops at the end of the page, or when a step moves the page no more.
+ */
+async function scrollToEnd(visit: Visit): Promise<void> {
+  const { tab } = visit;
+  const position = (): Promise<{ top: number; end: boolean }> =>
+    tab.evaluate(() => ({
+      top: scrollY,
+      end: scrollY + innerHeight >= document.documentElement.scrollHeight - 1,
+    }));
+  await tab.mouse.move(DESKTOP.width / 2, DESKTOP.height / 2);
+  for (let step = 0; step < SCROLL_STEPS_MAX; step += 1) {
+    const before = await position();
+    if (before.end) return;
+    await tab.mouse.wheel(0, SCROLL_STEP_PX);
+    await calm(visit);
+    if ((await position()).top === before.top) return;
+  }
+  await tab.mouse.wheel(0, 1_000_000);
+}
+
 /** The acts of the check after `load`, in order: none of them is a gesture. Each one ends when the page is calm. */
 async function act(visit: Visit): Promise<void> {
   const { tab } = visit;
   const steps: readonly (() => Promise<unknown>)[] = [
     async () => undefined,
     () => tab.clock.runFor(PAGE_TIME_MS),
-    async () => {
-      await tab.mouse.move(DESKTOP.width / 2, DESKTOP.height / 2);
-      await tab.mouse.wheel(0, 1_000_000);
-    },
+    () => scrollToEnd(visit),
     async () => {
       await tab.mouse.move(0, 0);
       await tab.mouse.move(DESKTOP.width - 1, DESKTOP.height - 1, { steps: 8 });
@@ -486,10 +514,29 @@ async function leave(visit: Visit): Promise<void> {
   await drained(visit);
 }
 
+/**
+ * Serves each request of `context` to `origin`, the origin of `site`, from the test server at `served`: a route
+ * fetches the same path and query there and answers with its status, headers and body, and follows no redirect (the
+ * server writes a redirect on its own origin as a path). So the page runs under the origin of the site, `https`
+ * with no port, as in production: `'self'` of its CSP is that origin, and an absolute URL of the site loads from the
+ * built `dist` (Codex, #30). A later route of Playwright runs first, so this route comes after `answerOtherOrigins`.
+ */
+async function serveUnder(context: BrowserContext, origin: string, served: string): Promise<void> {
+  await context.route(
+    (url) => url.origin === origin,
+    async (route) => {
+      const url = new URL(route.request().url());
+      const response = await route.fetch({ url: `${served}${url.pathname}${url.search}`, maxRedirects: 0 });
+      await route.fulfill({ response });
+    },
+  );
+}
+
 /** A context of the visitor's browser for one check, with its records. */
 async function visitorContext(
   browser: Browser,
   origin: string,
+  served: string,
   proxy: Visit['proxy'],
   recorder: Recorder,
 ): Promise<BrowserContext> {
@@ -510,6 +557,7 @@ async function visitorContext(
     tab.on('dialog', (dialog) => void dialog.accept().catch(() => undefined));
   });
   await answerOtherOrigins(context, origin);
+  await serveUnder(context, origin, served);
   await context.exposeBinding(WATCH_NAMES.binding, (_source, kind: unknown, data: unknown) =>
     recorder.report(kind, data),
   );
@@ -534,7 +582,7 @@ export const gesture: BrowserRule = {
     const proxy = await startRefusingProxy();
     let context: BrowserContext | undefined;
     try {
-      context = await visitorContext(await run.visitor(), run.visitorOrigin, proxy, recorder);
+      context = await visitorContext(await run.visitor(), run.visitorOrigin, run.origin, proxy, recorder);
       const tab = await context.newPage();
       const response = await tab.goto(`${run.visitorOrigin}${check.page.path}`, { waitUntil: 'load' });
       const status = response?.status() ?? 200;

@@ -135,6 +135,30 @@ test('origins-gesture makes the acts that give no consent: scroll, hover, Tab an
   ]);
 });
 
+test('origins-gesture scrolls one view at a time: an island in the middle of a long page hydrates (Codex, #30)', async () => {
+  const files = {
+    'index.html': pageWith(
+      '<div style="block-size:6000px"></div><div id="mid">Mitte</div><div style="block-size:6000px"></div>' +
+        '<script>new IntersectionObserver((entries, o) => { if (entries.some((e) => e.isIntersecting)) { o.disconnect(); ' +
+        'fetch("https://middle.example.org/"); } }).observe(document.getElementById("mid"))</script>',
+    ),
+  };
+  assert.deepEqual(await originsOf(files), ['/ https://middle.example.org']);
+});
+
+test('origins-gesture serves the site under its own https origin: an absolute same-site module runs (Codex, #30)', async () => {
+  // 'self' must be the origin of the site, or the browser refuses the module.
+  const csp = `<meta http-equiv="Content-Security-Policy" content="script-src 'self'">`;
+  const files = {
+    'index.html': pageWith('<script type="module" src="https://example.ch/abs.js"></script>', csp),
+    'abs.js': 'fetch("https://abs.example.org/")',
+    'proto/index.html': scripted(
+      'if (location.protocol !== "https:" || location.port !== "") fetch("https://proto.example.org/")',
+    ),
+  };
+  assert.deepEqual(await originsOf(files), ['/ https://abs.example.org']);
+});
+
 test('origins-gesture opens the page as a visitor: no webdriver, no HeadlessChrome, the host of site', async () => {
   const unless = (condition: string, host: string): string =>
     scripted(`if (!(${condition})) fetch("https://${host}.example.org/")`);
