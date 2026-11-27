@@ -265,6 +265,7 @@ class WorkerScanner {
   private readonly tails = new Map<number, Step | undefined>();
   private readonly computeds = new Map<number, Step | undefined>();
   private readonly chains = new Map<number, Step | { stop: number }>();
+  private readonly nameEnds = new Map<number, number>();
   private readonly literals = new Map<number, { value: string; end: number } | undefined>();
 
   constructor(text: string) {
@@ -316,8 +317,12 @@ class WorkerScanner {
 
   /** The end of the name at `start`, or `start` when none stands there. */
   private nameEnd(start: number): number {
+    const known = this.nameEnds.get(start);
+    if (known !== undefined) return known;
     let index = start;
     while (index < this.length && NAME_CHAR.test(this.text[index] ?? '')) index += 1;
+    // Kept by its start: many member dots may reach one long name through comments (Codex, #31).
+    this.nameEnds.set(start, index);
     return index;
   }
 

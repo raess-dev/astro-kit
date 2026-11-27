@@ -401,3 +401,5 @@
   acceptance:origins`). With it in `kit / acceptance (browser)`, that job took 14.8 of its 15 min half budget, and the
   `prefetch` set's `test --all` passed the 600 s limit of the harness for one command. `kit / merge` needs the new job
   (owner decision of 2026-11-27).
+- The worker scanner of `js-script` keeps the end of each name by its start, so member dots that reach one long name
+  through comments read it once (the Codex finding of round 9 on #31, which the owner moved to this follow-up).
