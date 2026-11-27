@@ -20,6 +20,7 @@ import {
   auditJsPrefetchAttr,
   auditJsScript,
   auditOriginsThirdParty,
+  workerStarts,
 } from '../../src/audit/page/scripts.ts';
 import { auditLegalOrigins } from '../../src/audit/site.ts';
 import type { BuildContext } from '../../src/context.ts';
@@ -318,6 +319,22 @@ test('js-script reports one finding for each page, which lists its scripts, also
   const ctx = contextOf(files, { options });
   assert.deepEqual(findingsOf(auditJsScript, ctx, 'js-script'), ['/ <script>: a(); <script src="/x.js">']);
   assert.equal(getRule('js-script').waivable, false);
+});
+
+test('js-script reads a run of comments in linear time, and a comment ends at its first closing mark (Codex, #31)', () => {
+  // A lazy block comment could run past its first closing mark, so 30 comments took over 10 s.
+  const runs = [
+    `new ${'/*x*/ '.repeat(30)}Date()`,
+    `new ${'/*x*/'.repeat(40_000)}Date()`,
+    `new ${'//a'.repeat(40_000)}\nDate()`,
+    `new ${'/*a*//*b*/ //c\n'.repeat(5_000)}Date()`,
+  ];
+  const started = performance.now();
+  for (const text of runs) assert.deepEqual(workerStarts(text), []);
+  assert.ok(performance.now() - started < 1_000, 'the runs of comments take less than 1 s together');
+  // The comments between the tokens still count as white space, stars included.
+  assert.deepEqual(workerStarts('new /* a * b **/ // c\n /***/ Worker("/w.js")'), ['new Worker']);
+  assert.deepEqual(workerStarts('new /* x */ Date(); /* Worker */'), []);
 });
 
 test('js-script without features.workers fails every start of a worker in a bundled file or an inline script (9.5)', () => {

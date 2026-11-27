@@ -228,8 +228,13 @@ export function auditJsScript(ctx: BuildContext): void {
  */
 const JS_FILE = /\.[mc]?js$/i;
 
-/** White space and comments between two tokens of JavaScript: a comment between `new` and `Worker` is as white space. */
-const GAP = String.raw`(?:\s|/\*[\s\S]*?\*/|//[^\n]*(?:\n|$))*`;
+/**
+ * White space and comments between two tokens of JavaScript: a comment between `new` and `Worker` is as white space.
+ * Each form has one reading only, so a run of comments matches in linear time: a block comment ends at its first
+ * closing star and slash (no lazy `[\s\S]*?`, which may run past it and so try every split of a run, Codex #31),
+ * and a line comment ends with its own newline.
+ */
+const GAP = String.raw`(?:\s|/\*[^*]*\*+(?:[^/*][^*]*\*+)*/|//[^\n]*(?:\n|$))*`;
 
 /** A backtick, for the regex sources below. */
 const BACKTICK = '`';
