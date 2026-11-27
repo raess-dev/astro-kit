@@ -335,6 +335,10 @@ test('js-script reads a run of comments in linear time, and a comment ends at it
   // The comments between the tokens still count as white space, stars included.
   assert.deepEqual(workerStarts('new /* a * b **/ // c\n /***/ Worker("/w.js")'), ['new Worker']);
   assert.deepEqual(workerStarts('new /* x */ Date(); /* Worker */'), []);
+  // A line comment ends at every line terminator of JavaScript, not only at a line feed.
+  for (const end of ['\n', '\r', '\r\n', '\u2028', '\u2029']) {
+    assert.deepEqual(workerStarts(`new //c${end}Worker("/w.js")`), ['new Worker'], JSON.stringify(end));
+  }
 });
 
 test('js-script without features.workers fails every start of a worker in a bundled file or an inline script (9.5)', () => {
