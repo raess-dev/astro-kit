@@ -381,3 +381,11 @@
   - The acceptance suite has the `islands`, `scripts` and `origins` variants and the `origins` set. The `scripts`
     and `origins` variants and the set share one build in `planted-origins.test.ts`, which runs in
     `kit / acceptance (browser)`. The `islands` case also waits in Chromium until the island hydrated.
+- With `features.workers` off, `js-script` fails every start of a worker, whatever its argument: `new Worker`,
+  `new SharedWorker` (also through `globalThis`, `window`, `self` or another member), `serviceWorker.register` and
+  `importScripts`, in each JavaScript file of `dist` and in each inline script. The detail names `features.workers`
+  and 9.5. The CSP already set `worker-src 'none'`; the build now says so first. With `features.workers` on, nothing
+  changes.
+- `origins-gesture`: a unit test pins that a new `about:blank`, `srcdoc`, nested or sandboxed frame and a popup of
+  `window.open('')` carry the wrapped `RTCPeerConnection` before a script can read it, because Playwright runs the
+  init script in their first document. The row no longer lists frames under what the check cannot see.
