@@ -262,6 +262,8 @@ class WorkerScanner {
    */
   private readonly members = new Map<number, Step | undefined>();
   private readonly tails = new Map<number, Step | undefined>();
+  private readonly computeds = new Map<number, Step | undefined>();
+  private readonly literals = new Map<number, { value: string; end: number } | undefined>();
 
   constructor(text: string) {
     this.text = text;
@@ -324,6 +326,15 @@ class WorkerScanner {
 
   /** The string literal at `start` (`"…"`, `'…'` or a template with no `${`, no escape): its text and end. */
   private literal(start: number): { value: string; end: number } | undefined {
+    if (!this.literals.has(start)) this.literals.set(start, this.literalAt(start));
+    return this.literals.get(start);
+  }
+
+  /**
+   * The string literal at `start`, read once: it ends at the next quote of its own kind, so each character is read
+   * at most once for each of the three kinds of quote.
+   */
+  private literalAt(start: number): { value: string; end: number } | undefined {
     const quote = this.text[start];
     if (quote !== '"' && quote !== "'" && quote !== '`') return undefined;
     for (let index = start + 1; index < this.length; index += 1) {
@@ -363,6 +374,12 @@ class WorkerScanner {
 
   /** A computed member `[literal]` at `start`, with gaps inside. */
   computed(start: number): Step | undefined {
+    if (!this.computeds.has(start)) this.computeds.set(start, this.computedAt(start));
+    return this.computeds.get(start);
+  }
+
+  /** The computed member at `start`, read once. */
+  private computedAt(start: number): Step | undefined {
     const value = this.literal(this.gap(start + 1));
     if (value === undefined) return undefined;
     const close = this.gap(value.end);
