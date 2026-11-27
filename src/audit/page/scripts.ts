@@ -458,8 +458,16 @@ class WorkerScanner {
       end = start + 'serviceWorker'.length;
     }
     if (end === undefined) return undefined;
-    const step = this.member(end);
-    return step?.name === 'register' ? step.end : undefined;
+    // A `)` may close a parenthesis around the receiver: `(navigator.serviceWorker).register(u)` (Codex, #31). The
+    // check does not look for its opening one, so `f(navigator.serviceWorker).register` counts too: it fails closed.
+    for (let close = 0; close <= PARENS_MAX; close += 1) {
+      const step = this.member(end);
+      if (step !== undefined) return step.name === 'register' ? step.end : undefined;
+      const after = this.gap(end);
+      if (this.text[after] !== ')') return undefined;
+      end = after + 1;
+    }
+    return undefined;
   }
 
   /** Each start of a worker, in the order of the text; the search goes on after the end of each start. */
@@ -469,7 +477,9 @@ class WorkerScanner {
     while (index < this.length) {
       const char = this.text[index];
       const before = this.text[index - 1] ?? '';
-      if (char === 'n' && this.wordAt(index, 'new') && !NAME_CHAR.test(before) && before !== '.') {
+      // A `.` before `new` makes it a member name, but the last dot of a spread `...` does not (Codex, #31).
+      const member = before === '.' && this.text.slice(index - 3, index) !== '...';
+      if (char === 'n' && this.wordAt(index, 'new') && !NAME_CHAR.test(before) && !member) {
         const start = this.newAt(index);
         if (start !== undefined) {
           found.push(start.name);

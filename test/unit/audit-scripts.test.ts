@@ -371,6 +371,14 @@ test('js-script reads a run of comments in linear time, and a comment ends at it
   assert.equal(PARENS_MAX, 64);
   assert.deepEqual(workerStarts(`new ${'('.repeat(64)}Worker(u)`), ['new Worker']);
   assert.deepEqual(workerStarts(`new ${'('.repeat(65)}Date()`), [UNREAD_NEW]);
+  // A spread before `new` is no member dot, and a `)` may close a receiver before `register` (Codex, #31).
+  assert.deepEqual(workerStarts('const x = {...new Worker("/w.js")}'), ['new Worker']);
+  assert.deepEqual(workerStarts('f(...new SharedWorker(u))'), ['new SharedWorker']);
+  assert.deepEqual(workerStarts('a.new Worker'), []);
+  assert.deepEqual(workerStarts('(navigator.serviceWorker).register("/sw.js")'), ['serviceWorker.register']);
+  assert.deepEqual(workerStarts('(navigator["serviceWorker"])?.register("/sw.js")'), ['serviceWorker.register']);
+  assert.deepEqual(workerStarts('((navigator.serviceWorker) /*c*/ ).register(u)'), ['serviceWorker.register']);
+  assert.deepEqual(workerStarts('(navigator.serviceWorker).ready'), []);
   // A line comment ends at every line terminator of JavaScript, not only at a line feed.
   for (const end of ['\n', '\r', '\r\n', '\u2028', '\u2029']) {
     assert.deepEqual(workerStarts(`new //c${end}Worker("/w.js")`), ['new Worker'], JSON.stringify(end));
