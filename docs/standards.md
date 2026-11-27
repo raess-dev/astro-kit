@@ -24,14 +24,14 @@ Every failing check prints the same three lines:
 | config | `npx --no astro-kit check`, and the start of `astro build` and `astro dev`. | config, routes, images, facts, css, design, modes, forms, legal |
 | config + build | On the source like a config rule, and again on `dist/`. The output is the authority. | routes, js, css, design, modes, csp |
 | build | The end of `astro build`, on the files in `dist/`. | routes, js, speculation, budgets, images, fonts, origins, head, headings, hreflang, indexing, links, facts, content, css, modes, csp, edge, html, forms, legal, media, svg |
-| browser | `npx --no astro-kit test`, in Chromium on the built site. | modes, a11y, contrast, perf |
+| browser | `npx --no astro-kit test`, in Chromium on the built site. | origins, modes, a11y, contrast, perf |
 | ci | `npx --no astro-kit ci` and the site workflow. |  |
 | smoke | `npx --no astro-kit smoke <origin>`, against production. |  |
 | zone | `npx --no astro-kit provision zone`. |  |
 
 ## Rules
 
-121 rules in 28 groups.
+122 rules in 28 groups.
 
 ### config
 
@@ -93,6 +93,7 @@ Every failing check prints the same three lines:
 ### origins
 
 - <a id="origins-third-party"></a>**origins-third-party** — No `img`, `script`, `link` (resource rels: stylesheet, preload, modulepreload, prefetch, preconnect, dns-prefetch, icon, apple-touch-icon, manifest), `iframe`, `source`, `video`, `audio`, `track`, `object`, `embed` or `form` uses another origin in `src`, `href`, `srcset`, `poster`, `action` or `data`. No `button` or `input` uses one in `formaction`, no `input` whose `type` is `image` (trimmed, in any ASCII case) in `src`, no `a` or `area` in `ping` (each URL of its list), and no SVG `image` or `use` in `href` or `xlink:href`: each of them makes a request. Three exceptions, each for a declared origin (9.4): a `form` `action`, or the `formaction` of a submit control, on a host with `form`; a `script` `src` on a host with `script` and `load: "page"`; an `iframe` `src` with a `title`, on a host with `frame` and `load: "page"`. An `a` or `area` `href` may name any address: this rule does not read links. Each candidate of a `srcset` counts, and so does each candidate of the `imagesrcset` of a `link`, which a browser fetches too. The elements inside a `noscript` count too, parsed as markup: a browser without JavaScript loads them. So do the elements of the markup of an `iframe` `srcdoc`, and the content of a `noscript` inside that markup or inside a `noscript`, parsed as markup in the same way, at any depth up to 8: the browser renders that markup in the frame, and a frame without `allow-scripts` shows the `noscript` content. Another origin is a URL with another host or port, `http:` on the host of the site, or another scheme with a host (`ftp://`); a URL without a host (`data:`, `blob:`, `about:`, `javascript:`) is not this rule's. An exception URL is `https`, with no port and no user, and a `title` is not empty after a trim. Template content is not read. One finding for each element, attribute and URL. Fix: Download the image, font, style sheet or script into the project. A frame, a script or a form of a third party needs an origin in `astro-kit.json`, which the owner declares.
+- <a id="origins-gesture"></a>**origins-gesture** — On each tested page at 1280×800, with JavaScript on, opened as a visitor opens it (under the host of `site`, no `navigator.webdriver`, the user agent of Chrome), from the navigation until the tab is closed: nothing goes to another host before a gesture, a click on the control or a key that activates it (9.4), except to the host of an origin with `load: "page"`. The page clock is paused; the check advances it by 60 s, scrolls, moves the mouse, presses Tab, dispatches `focus`, advances it by 60 s again, and leaves the page. Each request, WebSocket, connection at the proxy of the check, fetching `link` and peer connection counts, also when the CSP blocked it. The harness answers each request to another origin itself, with status 204 and an empty body, so the check needs no network. One finding for each other origin, with its first URL, and one for each peer connection. Fix: Load the frame, script or connection of a `gesture` origin only after a click on its control or a key that activates it, from a bundled script or an island: not on a timer, a scroll, a hover, focus or when the visitor leaves. A host that the page needs while it loads needs `load: "page"`, which the owner declares (9.4).
 
 ### head
 

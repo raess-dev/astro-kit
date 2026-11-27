@@ -84,6 +84,8 @@ test('M6 planted: the prefetch set gives exactly its ids', () => {
   assert.ok(!read(dir, `${CLIENT}/index.html`).includes('speculationrules'), 'the speculation block is off');
   for (const plant of PLANTS) if (plant.id !== drop) plant.plant(dir);
   const result = run(dir, ['test', '--all']);
+  // A killed command has no findings: it must read as a kill, not as a set that gives no id.
+  assert.equal(result.killed, undefined, tail(result.output));
   assert.deepEqual(
     result.ids,
     PREFETCH_IDS.filter((id) => id !== drop),

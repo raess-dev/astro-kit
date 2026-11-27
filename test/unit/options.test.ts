@@ -202,6 +202,7 @@ test('the registry holds the rules of milestones M2 to M7 and part 8a of M8 in t
       ['images-original', 'images', 'config'],
       ['fonts-limit', 'fonts', 'build'],
       ['origins-third-party', 'origins', 'build'],
+      ['origins-gesture', 'origins', 'browser'],
       ['head-canonical', 'head', 'build'],
       ['head-lang', 'head', 'build'],
       ['head-title', 'head', 'build'],
