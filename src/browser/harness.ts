@@ -96,8 +96,8 @@ export interface TestRun {
    */
   proxy: { server: string; bypass: string };
   /**
-   * `http://<host of site>:<port>`: the origin under which `origins-gesture` opens the served `dist`, as a visitor
-   * opens the site under its host.
+   * The origin of `site` (`https://<host>`): the origin under which `origins-gesture` opens the served `dist`, as a
+   * visitor opens the site. A route of its context answers it from the test server.
    */
   visitorOrigin: string;
   /**

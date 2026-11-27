@@ -74,8 +74,8 @@ export interface LaunchOptions {
   /** `--outline <https URL>`: the one use of the network of `test`. The browser gets no lock. */
   network?: boolean;
   /**
-   * The browser of `origins-gesture`: it maps the host of `site` to 127.0.0.1, treats the served origin under that
-   * host as a secure context, and hides `navigator.webdriver`, so a page sees the browser of a visitor.
+   * The browser of `origins-gesture`: it maps the host of `site` to 127.0.0.1 and hides `navigator.webdriver`, so a
+   * page sees the browser of a visitor. A route of its context serves the origin of `site` (`origins.ts`).
    */
   visitor?: { host: string; origin: string };
 }
@@ -124,11 +124,7 @@ export async function launchBrowser(env: Env, options: LaunchOptions = {}): Prom
           `--autofill-server-url=${proxy.server}/`,
         ];
   if (options.visitor !== undefined) {
-    args.push(
-      '--disable-blink-features=AutomationControlled',
-      '--disable-smooth-scrolling',
-      `--unsafely-treat-insecure-origin-as-secure=${options.visitor.origin}`,
-    );
+    args.push('--disable-blink-features=AutomationControlled', '--disable-smooth-scrolling');
   }
   try {
     const browser = await chromium.launch({
@@ -448,9 +444,9 @@ export async function runBrowser(input: BrowserInput): Promise<void> {
     const pages = testPages(served.root, input.options, input.components);
     const sample = samplePages(pages);
     const browser = input.browser ?? (await launchBrowser(input.env ?? {}));
-    // The browser of `origins-gesture`, launched once at its first use: its switches name the served origin.
+    // The browser of `origins-gesture`, launched once at its first use: its switches name the host of `site`.
     const siteHost = new URL(input.options.site).hostname;
-    const visitorOrigin = `http://${siteHost}:${new URL(served.origin).port}`;
+    const visitorOrigin = new URL(input.options.site).origin;
     let visitor: Promise<Browser> | undefined;
     try {
       const run: TestRun = {
