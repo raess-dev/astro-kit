@@ -349,6 +349,15 @@ test('js-script reads a run of comments in linear time, and a comment ends at it
   // The comments between the tokens still count as white space, stars included.
   assert.deepEqual(workerStarts('new /* a * b **/ // c\n /***/ Worker("/w.js")'), ['new Worker']);
   assert.deepEqual(workerStarts('new /* x */ Date(); /* Worker */'), []);
+  // A `)` that closes an opening parenthesis may stand before the member that names the worker (Codex, #31).
+  assert.deepEqual(workerStarts('new (globalThis).Worker("/w.js")'), ['new Worker']);
+  assert.deepEqual(workerStarts('new (self)["SharedWorker"](u)'), ['new SharedWorker']);
+  assert.deepEqual(workerStarts('new ( (window) /*c*/ ) . Worker(u)'), ['new Worker']);
+  assert.deepEqual(workerStarts('new (a.b).c.Worker(u)'), ['new Worker']);
+  // A `)` with no opening parenthesis of the `new` ends it, and `new (a)(b).Worker` constructs `a`.
+  assert.deepEqual(workerStarts('new a).Worker(u)'), []);
+  assert.deepEqual(workerStarts('new (a)(b).Worker'), []);
+  assert.deepEqual(workerStarts('new (a)).Worker(u)'), []);
   // A line comment ends at every line terminator of JavaScript, not only at a line feed.
   for (const end of ['\n', '\r', '\r\n', '\u2028', '\u2029']) {
     assert.deepEqual(workerStarts(`new //c${end}Worker("/w.js")`), ['new Worker'], JSON.stringify(end));

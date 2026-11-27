@@ -396,17 +396,30 @@ class WorkerScanner {
   /** What follows `new` and its gap at `start`: parentheses, then a worker name or a name and its members. */
   private tailAt(start: number): Step | undefined {
     let index = start;
-    while (this.text[index] === '(') index = this.gap(index + 1);
+    let open = 0;
+    while (this.text[index] === '(') {
+      index = this.gap(index + 1);
+      open += 1;
+    }
     for (const name of WORKER_NAMES) {
       if (this.wordAt(index, name)) return { name: `new ${name}`, end: index + name.length };
     }
     let end = this.nameEnd(index);
     if (end === index) return undefined;
-    for (let step = this.member(end); step !== undefined; step = this.member(end)) {
-      end = step.end;
-      if ((WORKER_NAMES as readonly string[]).includes(step.name)) return { name: `new ${step.name}`, end };
+    // Members follow the name, and a `)` that closes one of the opening parentheses may stand between them:
+    // `new (globalThis).Worker(u)` and `new (self)["Worker"](u)` start a worker too (Codex, #31).
+    for (;;) {
+      const step = this.member(end);
+      if (step !== undefined) {
+        end = step.end;
+        if ((WORKER_NAMES as readonly string[]).includes(step.name)) return { name: `new ${step.name}`, end };
+        continue;
+      }
+      const close = this.gap(end);
+      if (open === 0 || this.text[close] !== ')') return undefined;
+      end = close + 1;
+      open -= 1;
     }
-    return undefined;
   }
 
   /** A start of a worker through `serviceWorker` at `start`, as a name or a computed member, then `register`. */
