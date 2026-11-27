@@ -328,6 +328,11 @@ test('js-script reads a run of comments in linear time, and a comment ends at it
     `new ${'/*x*/'.repeat(40_000)}Date()`,
     `new ${'//a'.repeat(40_000)}\nDate()`,
     `new ${'/*a*//*b*/ //c\n'.repeat(5_000)}Date()`,
+    // A failed search must not read a gap again from each candidate inside it (Codex, #31).
+    `new ${'//new\n'.repeat(16_000)}Date()`,
+    '[//'.repeat(30_000),
+    `new ${'/*new*/'.repeat(30_000)}Date()`,
+    '[/*["serviceWorker"]*/'.repeat(20_000),
   ];
   const started = performance.now();
   for (const text of runs) assert.deepEqual(workerStarts(text), []);

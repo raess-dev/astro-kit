@@ -335,7 +335,7 @@ astro-kit/
 | `src/audit/page/shell.ts` | `speculation-block`, `modes-script`, `modes-switch`, `csp-meta`, the built half of `csp-hash`, `csp-base` and `html-shell`, and the elements of the `noscript` content of a page, parsed as markup. |
 | `src/audit/page/assets.ts` | `images-src`, `images-attrs`, `images-format`, `images-priority`, `fonts-limit`, `media-*` and `svg-name`. |
 | `src/audit/page/forms.ts` | `forms-declared`, `forms-fields` and `forms-safety`. |
-| `src/audit/page/scripts.ts` | `js-script`, `js-prefetch-attr`, `js-directive` (their built halves) and `origins-third-party`. `js-script` also reads every JavaScript file of dist for a start of a worker (`WORKER_START`) when `features.workers` is off. |
+| `src/audit/page/scripts.ts` | `js-script`, `js-prefetch-attr`, `js-directive` (their built halves) and `origins-third-party`. `js-script` also reads every JavaScript file of dist for a start of a worker (`workerStarts`, a scanner in linear time) when `features.workers` is off. |
 | `src/audit/site.ts` | Cross-page checks, in the order of section 8: routes, hreflang, links, depth, facts, content, legal (the legal lock and the origins included). It runs the text rules of `src/audit/text.ts` at their place. |
 | `src/audit/budgets.ts` | Compressed sizes, DOM counts, fonts, JS import closures (`js-budget`, which runs first in the budgets audit). |
 | `src/audit/edge.ts` | `_headers` and `_redirects`. |
