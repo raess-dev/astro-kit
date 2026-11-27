@@ -19,7 +19,10 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { edit, passedLine, read, run, siteCase, write } from './harness.ts';
 
-/** The ids of the set at M5, with `edge-private` of M6, the forms rules of M7 and the origins rules of M8, sorted. */
+/**
+ * The ids of the set at M5, with `edge-private` of M6, the forms rules of M7, the origins rules of M8 and
+ * `legal-approved` of M9, sorted.
+ */
 const BUILD_IDS = [
   'content-copied',
   'content-glossary',
@@ -49,6 +52,7 @@ const BUILD_IDS = [
   'images-priority',
   'images-src',
   'indexing-noindex',
+  'legal-approved',
   'legal-origins',
   'legal-pages',
   'legal-statement',
@@ -382,6 +386,11 @@ const PLANTS: readonly Plant[] = [
       ),
   },
   {
+    // One word changed in the legal text of the English privacy page, and `legal.lock.json` keeps its old hash.
+    id: 'legal-approved',
+    plant: (dir) => edit(dir, 'src/pages/en/privacy.astro', 'Cloudflare needs this data', 'Cloudflare uses this data'),
+  },
+  {
     // The origin of 14.2: a map of OpenStreetMap on page load, which no privacy page names. Its frame changes only
     // the CSP and the headers, which the kit writes for the settings, so no page needs another change.
     id: 'legal-origins',
@@ -410,13 +419,20 @@ const PLANTS: readonly Plant[] = [
   },
   {
     // The legal note is declared as the German accessibility page and claims conformance, and `site.json` has no
-    // `accessibilityAudit`.
+    // `accessibilityAudit`. The claim stands after `main`, in a slot of the layout that only this page fills: the
+    // page text holds it, and the legal text of `main` stays the one of `legal.lock.json` (`legal-approved`).
     id: 'legal-statement',
     plant: (dir) => {
       legal(dir, (block) => {
         block.accessibility = { ...block.accessibility, de: '/impressum/' };
       });
-      after(dir, 'src/pages/impressum.astro', '<h1>Impressum</h1>', '<p>Diese Website ist konform.</p>');
+      edit(dir, PAGE, '    </main>\n', '    </main>\n    <slot name="after-main" />\n');
+      edit(
+        dir,
+        'src/pages/impressum.astro',
+        '</Page>',
+        '  <p slot="after-main">Diese Website ist konform.</p>\n</Page>',
+      );
     },
   },
   {

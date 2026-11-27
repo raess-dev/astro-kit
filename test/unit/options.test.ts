@@ -161,7 +161,7 @@ function outcomes(cases: readonly Case[]): Outcome[] {
 
 const text = (length: number): string => 'x'.repeat(length);
 
-test('the registry holds the rules of milestones M2 to M7 and part 8a of M8 in the order of section 8', () => {
+test('the registry holds the rules of milestones M2 to M8 and part 9b of M9 in the order of section 8', () => {
   assert.deepEqual(
     RULES.map((rule) => [rule.id, rule.group, rule.stage]),
     [
@@ -266,6 +266,7 @@ test('the registry holds the rules of milestones M2 to M7 and part 8a of M8 in t
       ['legal-pages', 'legal', 'build'],
       ['legal-processing', 'legal', 'config'],
       ['legal-statement', 'legal', 'build'],
+      ['legal-approved', 'legal', 'build'],
       ['legal-origins', 'legal', 'build'],
       ['media-animated', 'media', 'build'],
       ['media-captions', 'media', 'build'],

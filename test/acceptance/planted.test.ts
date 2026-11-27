@@ -2,8 +2,8 @@
  * The planted-violation sets of milestone M5 and the five typical agent mistakes (specification, 14 and 14.2).
  *
  * - **A set** plants every violation of its list in one copy of the site, runs `build` once, and asserts exactly
- *   that list of rule ids, and that the output holds no passed line. This file holds the sets `css`, `design`,
- *   `modes` and `route`. Each plant changes as little as it can, and its comment says which id it plants.
+ *   that list of rule ids, and that the output holds no passed line. This file holds the sets `config` (M9), `css`,
+ *   `design`, `modes` and `route`. Each plant changes as little as it can, and its comment says which id it plants.
  * - **A mistake** is one change that agents often make, each on its own copy of the site. Its case runs `build` and
  *   asserts exactly one id.
  *
@@ -327,6 +327,287 @@ test('M7 planted set route: the static site with an on-demand route of its own g
   const passes = drop !== undefined;
   assert.equal(result.status, passes ? 0 : 1, tail(result));
   assert.deepEqual(passedLine(result), passes ? { last: true, count: 1 } : NOT_PASSED, tail(result));
+});
+
+// The config set
+
+/** The ids of the `config` set (14.2), sorted. Every id is a config-stage rule or the source half of one. */
+const CONFIG_SET = [
+  'config-dep-allowlist',
+  'config-dep-spec',
+  'config-experimental',
+  'config-i18n',
+  'config-imports',
+  'config-overrides',
+  'config-public-shadow',
+  'config-server',
+  'config-shim',
+  'config-suppression',
+  'config-waiver',
+  'config-wrangler',
+  'csp-hash',
+  'css-banned',
+  'css-component-file',
+  'css-layer-file',
+  'css-literal',
+  'css-local-var',
+  'css-media',
+  'css-page',
+  'css-selector',
+  'css-sources',
+  'css-token-family',
+  'css-var-undefined',
+  'design-pairs',
+  'design-specs',
+  'design-tokens',
+  'facts-schedule',
+  'forms-binding',
+  'images-original',
+  'images-public',
+  'js-directive',
+  'js-prefetch-attr',
+  'js-script',
+  'legal-processing',
+  'routes-redirects',
+];
+
+/** The first 24 bytes of a PNG file: the signature and the IHDR chunk start with the width and the height. */
+function pngHeader(width: number, height: number): Uint8Array {
+  const bytes = new Uint8Array(24);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(16, width);
+  view.setUint32(20, height);
+  return bytes;
+}
+
+/** Reads a JSON file of a case, lets `change` edit it, and writes it back. */
+function changeJson<T>(dir: string, file: string, change: (value: T) => void): void {
+  const value = JSON.parse(read(dir, file)) as T;
+  change(value);
+  write(dir, { [file]: `${JSON.stringify(value, null, 2)}\n` });
+}
+
+/** The component CSS file that the css plants of the config set use, and the end of its root rule. */
+const CARD_CSS = 'src/styles/components/feature-card.css';
+const CARD_ROOT = '    --stack-gap: var(--space-3);\n';
+
+/**
+ * The plants of the `config` set. The build stops in the config stage, so no page is built and no build rule runs.
+ * One change of `astro.config.mjs` plants three ids: the shim differs, and the config sets an experimental flag and
+ * `i18n`. The other plants give one id each.
+ */
+const CONFIG_PLANTS: readonly { ids: readonly string[]; plant: (dir: string) => void }[] = [
+  {
+    // The shim with an experimental flag and an `i18n` of its own.
+    ids: ['config-experimental', 'config-i18n', 'config-shim'],
+    plant: (dir) =>
+      edit(
+        dir,
+        'astro.config.mjs',
+        'integrations: [astroKit()]',
+        "integrations: [astroKit()], experimental: { clientPrerender: true }, i18n: { locales: ['de'], defaultLocale: 'de' }",
+      ),
+  },
+  {
+    // A package that the allowlist does not hold, a dependency from a file, and an override.
+    ids: ['config-dep-allowlist', 'config-dep-spec', 'config-overrides'],
+    plant: (dir) =>
+      changeJson<Record<string, Record<string, string>>>(dir, 'package.json', (manifest) => {
+        manifest.dependencies = { ...manifest.dependencies, 'left-pad': '1.3.0' };
+        manifest.devDependencies = { ...manifest.devDependencies, wrangler: 'file:../wrangler' };
+        manifest.overrides = { 'left-pad': '1.3.0' };
+      }),
+  },
+  {
+    // A source that imports the client router.
+    ids: ['config-imports'],
+    plant: (dir) => write(dir, { 'src/data/router.ts': "export { ClientRouter } from 'astro:transitions';\n" }),
+  },
+  {
+    // A `robots.txt` of the project, which the kit writes itself.
+    ids: ['config-public-shadow'],
+    plant: (dir) => write(dir, { 'public/robots.txt': 'User-agent: *\nAllow: /\n' }),
+  },
+  {
+    // Server code of the project: a middleware.
+    ids: ['config-server'],
+    plant: (dir) => write(dir, { 'src/middleware.ts': 'export const onRequest = (_context, next) => next();\n' }),
+  },
+  {
+    // A comment that takes a line out of the type check.
+    ids: ['config-suppression'],
+    plant: (dir) => write(dir, { 'src/data/routes.ts': `${read(dir, 'src/data/routes.ts')}// @ts-ignore\n` }),
+  },
+  {
+    // A waiver whose `until` was yesterday (UTC).
+    ids: ['config-waiver'],
+    plant: (dir) =>
+      changeJson<Record<string, unknown>>(dir, 'astro-kit.json', (settings) => {
+        const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+        settings.waivers = [
+          { rule: 'head-title', where: '/jobs/', reason: 'Planted waiver of the config set', until: yesterday },
+        ];
+      }),
+  },
+  {
+    // A second wrangler file next to `wrangler.jsonc`.
+    ids: ['config-wrangler'],
+    plant: (dir) => write(dir, { 'wrangler.toml': 'name = "laerchenwald-example"\n' }),
+  },
+  {
+    // A form rate limit that is not the one of 9.1, in `wrangler.jsonc`. The file is no longer the rendering
+    // either, which `config-wrangler` reports too.
+    ids: ['forms-binding', 'config-wrangler'],
+    plant: (dir) =>
+      edit(dir, 'wrangler.jsonc', '"simple": { "limit": 3, "period": 60 }', '"simple": { "limit": 30, "period": 60 }'),
+  },
+  {
+    // A page with an inline script with `is:inline`, a script without the feature, a prefetch attribute and an
+    // island that hydrates on load.
+    ids: ['csp-hash', 'js-directive', 'js-prefetch-attr', 'js-script'],
+    plant: (dir) =>
+      edit(
+        dir,
+        'src/pages/jobs.astro',
+        '<h1>Arbeiten im Hotel Lärchenwald</h1>',
+        [
+          '<h1>Arbeiten im Hotel Lärchenwald</h1>',
+          '    <script is:inline type="application/ld+json">{}</script>',
+          '    <script>document.title = "Jobs";</script>',
+          '    <a href="/zimmer/" data-astro-prefetch>Zimmer</a>',
+          '    <span client:load>Jetzt</span>',
+        ].join('\n'),
+      ),
+  },
+  {
+    // In a component file: `!important`, a literal length, a color token for a length, an undeclared token, a
+    // local custom property set off the root, an id selector, a breakpoint that `docs/design.md` does not declare,
+    // and a second top-level layer.
+    ids: [
+      'css-banned',
+      'css-layer-file',
+      'css-literal',
+      'css-local-var',
+      'css-media',
+      'css-selector',
+      'css-token-family',
+      'css-var-undefined',
+    ],
+    plant: (dir) => {
+      edit(
+        dir,
+        CARD_CSS,
+        CARD_ROOT,
+        [
+          CARD_ROOT,
+          '    color: var(--color-text) !important;',
+          '    padding: 13px;',
+          '    margin: var(--color-accent);',
+          '    gap: var(--space-99);',
+          '',
+          '    .feature-card__body {',
+          '      --feature-card-pad: var(--space-2);',
+          '    }',
+          '',
+          '    #hero {',
+          '      color: var(--color-title);',
+          '    }',
+          '',
+          '    @media (width < 777px) {',
+          '      gap: var(--space-2);',
+          '    }',
+          '',
+        ].join('\n'),
+      );
+      write(dir, {
+        [CARD_CSS]: `${read(dir, CARD_CSS)}\n@layer components {\n  .feature-card {\n    gap: var(--space-2);\n  }\n}\n`,
+      });
+    },
+  },
+  {
+    // A component without its CSS file.
+    ids: ['css-component-file'],
+    plant: (dir) => write(dir, { 'src/components/Badge.astro': '<span class="badge">Neu</span>\n' }),
+  },
+  {
+    // A page file that sets a color.
+    ids: ['css-page'],
+    plant: (dir) =>
+      edit(
+        dir,
+        'src/styles/pages/index.css',
+        '      grid-column: 1 / -1;\n',
+        '      grid-column: 1 / -1;\n      color: var(--color-text);\n',
+      ),
+  },
+  {
+    // A style sheet in `public/`.
+    ids: ['css-sources'],
+    plant: (dir) => write(dir, { 'public/extra.css': '.x {\n  color: red;\n}\n' }),
+  },
+  {
+    // A background that no contrast pair holds, and an Elements row that `elements.css` does not implement.
+    ids: ['design-pairs', 'design-specs'],
+    plant: (dir) => {
+      edit(
+        dir,
+        CARD_CSS,
+        '    background-color: var(--color-surface);\n',
+        '    background-color: var(--color-brand);\n',
+      );
+      edit(
+        dir,
+        'docs/design.md',
+        '| `body` | `color` | `--color-text` |\n',
+        '| `body` | `color` | `--color-text` |\n| `body` | `outline-color` | `--color-focus` |\n',
+      );
+    },
+  },
+  {
+    // One value changed by hand in `tokens.css`.
+    ids: ['design-tokens'],
+    plant: (dir) => edit(dir, 'src/styles/tokens.css', /: [\d.]+rem;/, ': 77.7rem;'),
+  },
+  {
+    // An opening time that is no time of day.
+    ids: ['facts-schedule'],
+    plant: (dir) => edit(dir, 'schedule.json', '"closes": "22:00"', '"closes": "24:30"'),
+  },
+  {
+    // An original image under `src/` that is wider than 2,560 px, and a photo in `public/`.
+    ids: ['images-original', 'images-public'],
+    plant: (dir) =>
+      write(dir, { 'src/assets/huge.png': pngHeader(3000, 2000), 'public/photo.png': pngHeader(800, 600) }),
+  },
+  {
+    // `processing` without `previews`.
+    ids: ['legal-processing'],
+    plant: (dir) =>
+      changeJson<{ processing: string[] }>(dir, 'astro-kit.json', (settings) => {
+        settings.processing = settings.processing.filter((key) => key !== 'previews');
+      }),
+  },
+  {
+    // A redirect source with a query string.
+    ids: ['routes-redirects'],
+    plant: (dir) =>
+      write(dir, { 'redirects.json': `${JSON.stringify([{ from: '/angebot/?id=7', to: '/' }], null, 2)}\n` }),
+  },
+];
+
+test('M9 planted set config: the build stops in the config stage with exactly the ids of its list', () => {
+  assert.deepEqual([...new Set(CONFIG_PLANTS.flatMap(({ ids }) => ids))].sort(), CONFIG_SET);
+  const dir = siteCase('planted-config', (folder) => {
+    for (const { plant } of CONFIG_PLANTS) plant(folder);
+  });
+  const result = run(dir, 'build');
+  assert.equal(result.killed, undefined, tail(result));
+  assert.deepEqual(result.ids, CONFIG_SET, tail(result));
+  assert.equal(result.status, 1, tail(result));
+  assert.deepEqual(passedLine(result), NOT_PASSED, tail(result));
+  // The build stopped in `astro:config:setup`: Astro built no page.
+  assert.doesNotMatch(result.output, /generating static routes|\[build\] Complete!/i, tail(result));
 });
 
 // The design set

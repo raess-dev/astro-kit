@@ -1,7 +1,7 @@
 /**
  * The variants of 14.2 that milestone M7 adds. The `forms` variant is the site as it is, so its assertions stand in
  * `site.test.ts` on the one build of the site. This file holds the `static` variant: forms off (`toStatic` of
- * `variants.ts`). Before M9, a variant runs `build` and `test` (14.2, Variants). Run:
+ * `variants.ts`). From M9 a variant runs `check`, `build` and `test` (14.2, Variants). Run:
  * node --test test/acceptance/variants.test.ts
  */
 import assert from 'node:assert/strict';
@@ -18,7 +18,7 @@ const tail = (result: KitRun): string => result.output.slice(-6000);
 /** The passed line of a command that ran checks and passed: the last line of stdout, once in the output (6.4). */
 const PASSED = { last: true, count: 1 } as const;
 
-test('M7 variant static: forms off builds a static site with Trusted Types and the static wrangler.jsonc', async () => {
+test('M7 variant static: forms off passes check and builds a static site with Trusted Types and the static wrangler.jsonc', async () => {
   const dir = siteCase('variant-static');
   await toStatic(dir);
   // The static text of 10.4 for the host of the site: `WRANGLER_STATIC` names the Worker `example-ch` on `example.ch`.
@@ -26,6 +26,11 @@ test('M7 variant static: forms off builds a static site with Trusted Types and t
     read(dir, 'wrangler.jsonc'),
     WRANGLER_STATIC.replaceAll('example-ch', 'laerchenwald-example').replaceAll('example.ch', 'laerchenwald.example'),
   );
+
+  const checked = run(dir, 'check');
+  assert.equal(checked.status, 0, tail(checked));
+  assert.deepEqual(checked.ids, []);
+  assert.deepEqual(passedLine(checked), PASSED, tail(checked));
 
   const built = run(dir, 'build');
   assert.equal(built.status, 0, tail(built));

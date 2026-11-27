@@ -71,7 +71,7 @@
       "json": { "formatter": { "expand": "always" } }
     },
     {
-      "includes": ["**/src/styles/tokens.css"],
+      "includes": ["**/src/styles/tokens.css", "**/wrangler.jsonc"],
       "formatter": { "enabled": false }
     },
     {

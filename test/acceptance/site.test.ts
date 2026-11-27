@@ -1,9 +1,11 @@
 /**
  * The site cases of milestone M3 (specification, 14 and 14.2): the hotel site of `test/site/` with the packed kit.
  * Each case is a copy of the site in a folder of its own, with one change, and it runs a command of the kit CLI
- * there. M3 has the commands `build` and `tokens`, and M6 adds `test`. A failing case asserts the exact sorted rule ids, and that the
- * output holds no passed line. A passing case asserts status 0, and that the passed line is the last line of stdout
- * and stands once in the output (6.4). Run: node --test test/acceptance/site.test.ts
+ * there. M3 has the commands `build` and `tokens`, M6 adds `test`, and part 9b of M9 adds `check` and `legal`. A
+ * failing case asserts the exact sorted rule ids, and that the output holds no passed line. A passing case asserts
+ * status 0, and that the passed line is the last line of stdout and stands once in the output (6.4). The
+ * `check-config` variant of 14.2 stands here too, beside the planted `// @ts-ignore` of the build.
+ * Run: node --test test/acceptance/site.test.ts
  */
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
@@ -20,6 +22,7 @@ import {
   type KitRun,
   kitModule,
   passedLine,
+  plain,
   read,
   run,
   siteCase,
@@ -157,6 +160,36 @@ test('M3: tokens --check passes, so tokens.css is the rendering of docs/design.m
   assert.equal(read(dir, 'src/styles/tokens.css'), before);
 });
 
+test('M9: check passes on the site: preflight, biome ci and astro check', () => {
+  const { dir } = built();
+  const result = run(dir, 'check');
+  assert.equal(result.killed, undefined, tail(result));
+  assert.equal(result.status, 0, tail(result));
+  assert.deepEqual(result.ids, []);
+  assert.deepEqual(passedLine(result), PASSED, tail(result));
+  // `astro check` ran and found no problem in the files of the site.
+  assert.match(plain(result.output), /Result \(\d+ files\):\s*\n- 0 errors\n- 0 warnings\n- 0 hints/);
+});
+
+test('M9: legal --check passes, so legal.lock.json holds the legal texts of the build; legal --write keeps it', () => {
+  const { dir, run: build } = built();
+  assert.equal(build.status, 0, `astro-kit build failed in ${dir}:\n${tail(build)}`);
+  const result = run(dir, ['legal', '--check']);
+  assert.equal(result.status, 0, tail(result));
+  assert.deepEqual(result.ids, []);
+  assert.deepEqual(passedLine(result), PASSED, tail(result));
+  // `legal --write` runs no check: it writes the same file again and prints no passed line (6.4).
+  const before = read(dir, 'legal.lock.json');
+  const written = run(dir, ['legal', '--write']);
+  assert.equal(written.status, 0, tail(written));
+  assert.deepEqual(passedLine(written), NOT_PASSED, tail(written));
+  assert.equal(read(dir, 'legal.lock.json'), before);
+  // One entry for each declared legal path, and each of the six is built.
+  const lock = JSON.parse(before) as Record<string, string>;
+  assert.equal(Object.keys(lock).length, 6);
+  for (const hash of Object.values(lock)) assert.match(hash, /^sha256-[A-Za-z0-9+/]{43}=$/);
+});
+
 test('M3: the edge files exist, and robots.txt is the text of the kit', async () => {
   const { dir, run: result } = built();
   assert.equal(result.status, 0, `astro-kit build failed in ${dir}:\n${tail(result)}`);
@@ -232,6 +265,20 @@ test('M3 planted: // @ts-ignore in a source gives config-suppression', () => {
   assert.deepEqual(result.ids, ['config-suppression'], tail(result));
   assert.equal(result.status, 1);
   assert.deepEqual(passedLine(result), NOT_PASSED, tail(result));
+});
+
+test('M9 variant check-config: // @ts-ignore gives exactly config-suppression from check, and no tool runs', () => {
+  const dir = siteCase('variant-check-config', (folder) => {
+    const file = 'src/data/routes.ts';
+    write(folder, { [file]: `${read(folder, file)}// @ts-ignore\n` });
+  });
+  const result = run(dir, 'check');
+  assert.equal(result.killed, undefined, tail(result));
+  assert.deepEqual(result.ids, ['config-suppression'], tail(result));
+  assert.equal(result.status, 1);
+  assert.deepEqual(passedLine(result), NOT_PASSED, tail(result));
+  // The config part failed, so `check` started neither Biome nor `astro check` (6.4).
+  assert.doesNotMatch(plain(result.output), /Checked \d+ files? in|Getting diagnostics/);
 });
 
 test('M3 planted: a redirect row with a query string in from gives routes-redirects', () => {

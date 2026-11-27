@@ -69,7 +69,7 @@ export const ISLANDS_SHIM_FILE = 'eslint.config.mjs';
 
 /**
  * The exact text of the islands shim, as `templates/features/islands/` holds it. `check` compares it with the file of
- * an islands site (M9).
+ * an islands site (`checkIslandsShim`).
  */
 export const ISLANDS_SHIM = `import solid from 'eslint-plugin-solid/configs/typescript';
 import tseslint from 'typescript-eslint';
@@ -139,6 +139,14 @@ function checkFile(root: string, file: string, expected: string, report: Report)
  */
 export function checkFormsShim(root: string, report: Report): void {
   checkFile(root, FORMS_SHIM_FILE, FORMS_SHIM, report);
+}
+
+/**
+ * The islands part of `config-shim`, which only `astro-kit check` runs (M9): with `features.islands`,
+ * `eslint.config.mjs` equals the islands shim, compared like the other shims. `check` then runs ESLint with it.
+ */
+export function checkIslandsShim(root: string, report: Report): void {
+  checkFile(root, ISLANDS_SHIM_FILE, ISLANDS_SHIM, report);
 }
 
 /** The names in the project root, sorted. A root that is not a folder has none. */

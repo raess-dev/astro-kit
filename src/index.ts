@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AstroIntegration } from 'astro';
 import { runAudits } from './audit/index.ts';
+import { readLock } from './audit/site.ts';
 import { loadBuild } from './build.ts';
 import {
   checkConfigShape,
@@ -177,6 +178,7 @@ export default function astroKit(): AstroIntegration {
         if (injected.missing.length > 0) throw new Error(missingMetaMessage(injected.missing));
 
         // 2. Load. The facts, the redirects and the design passed preflight when this build started.
+        // `legal.lock.json` is read as a text: `legal-approved` reports a missing or broken file.
         const site = loadSite(root, report);
         const schedule = loadSchedule(root, report);
         const glossary = loadGlossary(root, report);
@@ -198,6 +200,7 @@ export default function astroKit(): AstroIntegration {
           kitVersion: KIT_VERSION,
           facts: { site, schedule, glossary },
           redirects,
+          legalLock: readLock(root),
           design,
           report,
           env: process.env,

@@ -911,6 +911,14 @@ export const RULES: readonly Rule[] = [
     'Remove the claim, or ask the owner to add the audit to `site.json` `accessibilityAudit`.',
   ),
   r(
+    'legal-approved',
+    'legal',
+    'build',
+    "For each declared legal path (`legal.legalNote`, `legal.privacy`, `legal.accessibility`) that is built: the `sha256` of the page's legal text equals the entry of that path in `legal.lock.json`, and the file has no other key. The legal text is the text of `main` that a visitor sees, in NFC, with each run of white space as one space. `npx --no astro-kit legal --write` writes the file from `dist`, and the owner approves each change to it. So no word of the legal text changes without the owner. A missing file has no entry. A text that is not JSON and a value that is not a JSON object are one finding each, at `legal.lock.json`. A built path without an entry, or with another hash, is a finding at the page. A key that is no declared legal path is a finding at its field. A path that is not built is left to `legal-pages`, and so is its key.",
+    'The legal text of a legal page is not the text that the owner approved in `legal.lock.json`.',
+    'Undo the change of the legal text. When the change is wanted, run `npx --no astro-kit legal --write` after the build and say so in the pull request: the owner approves the new `legal.lock.json`.',
+  ),
+  r(
     'legal-origins',
     'legal',
     'build',

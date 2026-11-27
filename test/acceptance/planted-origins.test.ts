@@ -4,9 +4,11 @@
  *
  * - The variant: `features.scripts` on and the origin of OpenStreetMap with `load: "gesture"`; a button on the three
  *   getting-here pages and a bundled script that adds the map frame on a click; the processor named on the three
- *   privacy pages (`toOrigins` of `variants.ts`). The build passes. The CSP meta of every page allows the frame of the
- *   host, and no built page holds a frame. `test` passes, `origins-gesture` with it: nothing reaches the host before
- *   a click. Before M9 a variant runs `build` and `test`; `check` and `legal --write` join at M9.
+ *   privacy pages (`toOrigins` of `variants.ts`). `check` passes. The new sentence changes the legal text of the
+ *   three privacy pages, so the first build fails with `legal-approved` alone, at those three pages; `legal --write`
+ *   then writes `legal.lock.json` from that build, as the owner approves it, and `legal --check` passes. The second
+ *   build passes. The CSP meta of every page allows the frame of the host, and no built page holds a frame. `test`
+ *   passes, `origins-gesture` with it: nothing reaches the host before a click.
  * - The `scripts` variant is this change without the origin: scripts on and a bundled script. Its extra assertions
  *   (a `<script type="module"`, no `trusted-types`) hold on this build, so it gets no build and no `test` of its own,
  *   which would cost about 4 minutes of `kit / acceptance`.
@@ -48,22 +50,55 @@ const PASSED = { last: true, count: 1 } as const;
 
 const drop = process.env.KIT_PLANTED_DROP;
 
-let made: { dir: string; build: KitRun } | undefined;
+/** The runs of the variant: `check`, the first build, `legal --write`, `legal --check` and the build that counts. */
+interface Made {
+  dir: string;
+  check: KitRun;
+  first: KitRun;
+  write: KitRun;
+  legal: KitRun;
+  build: KitRun;
+}
 
-/** The case folder of the variant and its build, made once for both tests of this file. */
-function built(): { dir: string; build: KitRun } {
+let made: Made | undefined;
+
+/** The case folder of the variant and its runs, made once for both tests of this file. */
+function built(): Made {
   if (made !== undefined) return made;
   const dir = siteCase(drop === undefined ? 'planted-origins' : `planted-origins-without-${drop}`);
   toOrigins(dir);
-  made = { dir, build: run(dir, 'build') };
+  const check = run(dir, 'check');
+  // `legal --write` needs the build of the changed pages, which fails `legal-approved` until the lock is written.
+  const first = run(dir, 'build');
+  const write = run(dir, ['legal', '--write']);
+  const legal = run(dir, ['legal', '--check']);
+  made = { dir, check, first, write, legal, build: run(dir, 'build') };
   return made;
 }
 
-test('M8 variants scripts and origins: a map frame behind a bundled click builds, holds no frame, and passes test', () => {
+/** The three privacy pages, which name the processor of the map in the variant. */
+const PRIVACY_PAGES = ['/datenschutz/', '/en/privacy/', '/fr/protection-des-donnees/'];
+
+test('M8 variants scripts and origins: a map frame behind a bundled click passes check, builds after legal --write, holds no frame, and passes test', () => {
   if (drop !== undefined && !ORIGINS_IDS.includes(drop)) {
     throw new Error(`KIT_PLANTED_DROP: ${drop} is no id of the origins set`);
   }
-  const { dir, build } = built();
+  const { dir, check, first, write, legal, build } = built();
+  assert.equal(check.killed, undefined, tail(check));
+  assert.equal(check.status, 0, tail(check));
+  assert.deepEqual(check.ids, []);
+  assert.deepEqual(passedLine(check), PASSED, tail(check));
+  // A change of the legal text fails the build with `legal-approved` alone, at each changed page.
+  assert.equal(first.killed, undefined, tail(first));
+  assert.deepEqual(first.ids, ['legal-approved'], tail(first));
+  assert.equal(first.status, 1, tail(first));
+  assert.deepEqual(passedLine(first), { last: false, count: 0 }, tail(first));
+  const places = [...first.output.matchAll(/✗ \[legal-approved\] (\S+):/g)].map((match) => match[1]);
+  assert.deepEqual([...new Set(places)].sort(), PRIVACY_PAGES, tail(first));
+  assert.equal(write.status, 0, tail(write));
+  assert.deepEqual(passedLine(write), { last: false, count: 0 }, tail(write));
+  assert.equal(legal.status, 0, tail(legal));
+  assert.deepEqual(passedLine(legal), PASSED, tail(legal));
   assert.equal(build.killed, undefined, tail(build));
   assert.equal(build.status, 0, tail(build));
   assert.deepEqual(build.ids, []);

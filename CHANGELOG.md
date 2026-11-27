@@ -407,3 +407,18 @@
   variants (`npm run acceptance:site`: `site.test.ts`, `variants.test.ts`, `variants-islands.test.ts`).
   `kit / acceptance` no longer runs them. M9 adds `check` to every variant and a `ci` case, and the core job could not
   take that time (11.1 min on #33). `kit / merge` needs the new job (owner decision of 2026-11-27).
+- Milestone M9, part 9b: the commands `check` and `legal`, and the rule `legal-approved`. The kit has 123 rules.
+  - `astro-kit check` runs preflight (the forms shim included), then with islands the comparison of
+    `eslint.config.mjs` (`config-shim`), then `biome ci --colors=off --error-on-warnings .`, with islands and a `.tsx`
+    source `eslint --max-warnings 0 src`, and `astro check`, through the tool runner. Each step runs only when every
+    earlier one passed. It ends with the passed line, or with 1.
+  - `astro-kit legal --write` writes `legal.lock.json` from the declared legal pages in `dist`: one hash of the legal
+    text for each page that is built, with sorted keys. `legal --check` compares the file with the build and reports
+    `legal-approved`, which the build runs too: a changed word of the legal text of a legal page fails the build
+    until the owner approves the new lock. A missing file has no entry.
+  - The Biome preset leaves `wrangler.jsonc` to the kit, as `tokens.css`: the rendering of 10.4 is not the form of
+    the formatter, so `check` failed on every site.
+  - The test site passes `check`: its sources have the form of the Biome preset, and it commits the
+    `legal.lock.json` that `legal --write` wrote. The `site` case runs `check` and `legal --check`; the `static`,
+    `islands` and `origins` variants run `check`; the `check-config` variant and the `config` set of the planted
+    sets join; the `build` set gets its `legal-approved` plant.

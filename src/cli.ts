@@ -5,8 +5,8 @@
  * This file loads no other module of the kit until a command needs it. So `help` and a usage error start fast, and
  * a command loads only what it uses.
  *
- * This milestone has the commands `build`, `test` and `tokens`. Every other command of 6.4 is an unknown command
- * until its milestone adds it (M9).
+ * The commands `check`, `build`, `test`, `tokens` and `legal` are here. Every other command of 6.4 is an unknown
+ * command until its part of milestone M9 adds it.
  */
 import type { ToolIo } from './ci.ts';
 import type { Finding } from './registry.ts';
@@ -15,6 +15,8 @@ import type { Finding } from './registry.ts';
 export const USAGE = `Usage: npx --no astro-kit <command>
 Run it in the project root.
 
+  check             Checks the project without a build: the kit's config rules, Biome, ESLint for the
+                    islands, and astro check. It stops at the first step that fails.
   build             Runs astro build. The kit checks the project and the built site inside it.
   test [--all]      Runs the browser checks on dist: one page for each locale and layout, or every page
                     with --all, for the perf rules too. --shots <dir> also writes a full-page image of each
@@ -22,6 +24,8 @@ Run it in the project root.
                     --outline <path|https URL> prints the accessibility outline of one page instead.
   tokens [--check]  Writes src/styles/tokens.css from docs/design.md and the mode options.
                     With --check it writes nothing and compares the file.
+  legal --write     Writes legal.lock.json from the legal pages in dist. The owner approves each change.
+  legal --check     Compares the legal pages in dist with legal.lock.json.
   help              Prints this text.`;
 
 /**
@@ -143,6 +147,15 @@ async function dispatch(argv: readonly string[], root: string, io: Io): Promise<
     io.out(`${USAGE}\n`);
     return 0;
   }
+  if (command === 'check') {
+    if (rest.length > 0) return undefined;
+    const { checkConfig, checkTools } = await import('./ci.ts');
+    // The config part prints its findings first. A tool runs only when every earlier step passed (6.4).
+    const config = await checkConfig(root);
+    const code = await outcome(config.findings, io);
+    if (code !== 0) return code;
+    return passed(await checkTools(root, config.islands, io), io);
+  }
   if (command === 'build') {
     if (rest.length > 0) return undefined;
     const { build } = await import('./ci.ts');
@@ -173,6 +186,18 @@ async function dispatch(argv: readonly string[], root: string, io: Io): Promise<
     if (result.written) io.out(`astro-kit tokens: wrote ${TOKENS_FILE}\n`);
     // Only `tokens --check` runs a check. `tokens` alone writes the file.
     return check ? passed(code, io) : code;
+  }
+  if (command === 'legal') {
+    // Exactly one of the two flags.
+    const flag = rest.length === 1 ? rest[0] : undefined;
+    if (flag !== '--write' && flag !== '--check') return undefined;
+    const { legal, LOCK_FILE } = await import('./ci.ts');
+    const write = flag === '--write';
+    const result = await legal(root, { write });
+    const code = await outcome(result, io);
+    if (result.written) io.out(`astro-kit legal: wrote ${LOCK_FILE}\n`);
+    // Only `legal --check` runs a check. `legal --write` writes the file.
+    return write ? code : passed(code, io);
   }
   return undefined;
 }

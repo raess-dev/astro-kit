@@ -26,9 +26,9 @@ const labelOf = (name: string, required: boolean): string =>
 ---
 
 <form class="request-form" action={actionOf(form)} method="post">
-  <input type="hidden" name="return" value={Astro.url.pathname} />
+  <input type="hidden" name="return" value={Astro.url.pathname}>
   <div class="visually-hidden" inert aria-hidden="true">
-    <input name="website" type="text" tabindex="-1" autocomplete="off" />
+    <input name="website" type="text" tabindex="-1" autocomplete="off">
   </div>
   {FIELDS[form].map((field) => {
     switch (field.type) {
@@ -101,6 +101,8 @@ const labelOf = (name: string, required: boolean): string =>
             {labelOf(field.name, true)}
           </label>
         );
+      default:
+        return null;
     }
   })}
   <p>

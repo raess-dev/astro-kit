@@ -11,7 +11,13 @@ export type FormId = 'contact' | 'booking';
 
 /** One field, as the page renders it. */
 export type Field =
-  | { name: string; type: 'text' | 'email' | 'tel' | 'textarea'; maxLength: number; autocomplete: string; required: boolean }
+  | {
+      name: string;
+      type: 'text' | 'email' | 'tel' | 'textarea';
+      maxLength: number;
+      autocomplete: string;
+      required: boolean;
+    }
   | { name: string; type: 'date'; autocomplete: string; required: boolean }
   | { name: string; type: 'number'; min: number; max: number; autocomplete: string; required: boolean }
   | { name: string; type: 'choice'; options: readonly string[]; autocomplete: string; required: boolean }
@@ -107,8 +113,7 @@ export const FORM_TEXT: Readonly<Record<Locale, FormText>> = {
     privacyAfter: '.',
     send: { contact: 'Envoyer le message', booking: 'Envoyer la demande' },
     sent: 'Merci. Votre message nous est parvenu, et nous vous répondrons bientôt.',
-    notSent:
-      'Votre message ne nous est malheureusement pas parvenu. Vérifiez vos données, ou écrivez-nous un e-mail.',
+    notSent: 'Votre message ne nous est malheureusement pas parvenu. Vérifiez vos données, ou écrivez-nous un e-mail.',
   },
   en: {
     required: 'required',

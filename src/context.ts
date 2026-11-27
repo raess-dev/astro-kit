@@ -57,6 +57,9 @@ export interface Facts {
 /** The file of the design document, from the project root. */
 export const DESIGN_FILE = 'docs/design.md';
 
+/** The file of the legal lock, from the project root (5.6, `legal-approved`). */
+export const LOCK_FILE = 'legal.lock.json';
+
 /** A token family of 7.3, named by its prefix: `--space-2` is of the family `space`. */
 export type TokenFamily =
   | 'color'
@@ -185,6 +188,8 @@ export interface BuildContext {
   facts: Facts;
   /** The rows of `redirects.json`. A missing file is an empty list. */
   redirects: RedirectRow[];
+  /** The text of `legal.lock.json` (`legal-approved`). Without it, or with `undefined`, the project has no such file. */
+  legalLock?: string | undefined;
   design: Design;
   report: Report;
   env: Env;

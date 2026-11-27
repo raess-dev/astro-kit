@@ -42,14 +42,25 @@ function recorder(env: Io['env'] = {}): { io: Io; out: () => string; err: () => 
 
 // The usage
 
-/** The commands of 6.4 that a later milestone adds (M9). */
-const LATER = ['init', 'check', 'ci', 'smoke', 'routes', 'provision', 'feedback', 'settings', 'legal'] as const;
+/**
+ * The commands of 6.4 that a later part of M9 adds. `legal` without its flag is a usage error, so it stays in the
+ * list; `check` and `legal --write | --check` exist from part 9b.
+ */
+const LATER = ['init', 'ci', 'smoke', 'routes', 'provision', 'feedback', 'settings', 'legal'] as const;
 
 test('the usage names the commands of this milestone and no later one', () => {
   assert.equal(USAGE.includes('npx --no astro-kit <command>'), true);
   assert.equal(SPEC.includes('In the project root: `npx --no astro-kit <command>`.'), true);
-  const commands = [...USAGE.matchAll(/^ {2}(\S+(?: \[--[a-z]+\])?) {2,}\S/gm)].map((match) => match[1]);
-  assert.deepEqual(commands, ['build', 'test [--all]', 'tokens [--check]', 'help']);
+  const commands = [...USAGE.matchAll(/^ {2}(\S+(?: \[?--[a-z]+\]?)?) {2,}\S/gm)].map((match) => match[1]);
+  assert.deepEqual(commands, [
+    'check',
+    'build',
+    'test [--all]',
+    'tokens [--check]',
+    'legal --write',
+    'legal --check',
+    'help',
+  ]);
   assert.equal(USAGE.endsWith('\n'), false);
 });
 
@@ -85,6 +96,15 @@ const USAGE_ERRORS: readonly (readonly string[])[] = [
   ['tokens', '--check', 'extra'],
   ['tokens', '--check=true'],
   ['tokens', '-c'],
+  ['check', '--x'],
+  ['check', 'extra'],
+  ['check', '--check'],
+  ['legal', '--write', '--check'],
+  ['legal', '--check', '--check'],
+  ['legal', '--check', 'extra'],
+  ['legal', '--x'],
+  ['legal', 'write'],
+  ['legal', '--write=true'],
 ];
 
 for (const argv of USAGE_ERRORS) {
@@ -584,7 +604,7 @@ test('the process: an unknown command or flag gives the usage on stderr and the 
   const seen = inTemp({}, (root) => [
     spawnCli(root, ['nope']),
     spawnCli(root, ['tokens', '--x']),
-    spawnCli(root, ['check']),
+    spawnCli(root, ['ci']),
   ]);
   const usage: Exit = { status: 2, stdout: '', stderr: `${USAGE}\n` };
   assert.deepEqual(seen, [usage, usage, usage]);

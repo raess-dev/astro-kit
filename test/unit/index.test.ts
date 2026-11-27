@@ -5,7 +5,10 @@ import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { AstroConfig, AstroIntegration, HookParameters } from 'astro';
 import { mergeConfig, validateConfig } from 'astro/config';
+import { lockEntries, renderLock } from '../../src/audit/site.ts';
+import { parseHtml } from '../../src/build.ts';
 import { FORMS_ADAPTER_OPTIONS } from '../../src/config.ts';
+import { LOCK_FILE, pagePathOf } from '../../src/context.ts';
 import { type Sha256, sha256 } from '../../src/csp.ts';
 import { parseDesign } from '../../src/design/parse.ts';
 import { renderTokens } from '../../src/design/tokens.ts';
@@ -1791,7 +1794,22 @@ const distFiles = (folder: string, settings: unknown, pages = builtPages(setting
   [`${folder}/_astro/index.a1b2c3.css`]: '@layer reset{h1{margin:0}}',
   [`${folder}/docs/preise.pdf`]: PDF,
   'site.json': json(SITE_WITH_PDF),
+  [LOCK_FILE]: lockOf(settings, pages),
 });
+
+/**
+ * The `legal.lock.json` that `legal --write` writes for the pages: the hash of the legal text of each declared legal
+ * page (`legal-approved`). The inserts of `build:done` go into the head, so they change no legal text.
+ */
+function lockOf(settings: unknown, pages: Readonly<Record<string, Page>>): string {
+  const options = optionsOf(settings);
+  const built = Object.entries(pages).map(([file, page]) => {
+    const html = sourceOf(page);
+    const path = pagePathOf(file);
+    return [path, { file, path, locale: '', is404: false, html, root: parseHtml(html) }] as const;
+  });
+  return renderLock(lockEntries(options, new Map(built)));
+}
 
 const REDIRECTS = [
   { from: '/blog/*', to: '/' },
