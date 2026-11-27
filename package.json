@@ -56,7 +56,8 @@
     "check": "biome ci --error-on-warnings . && tsc -p tsconfig.json --noEmit",
     "test": "node --test 'test/unit/**/*.test.ts'",
     "acceptance": "node --test 'test/acceptance/**/*.test.ts'",
-    "acceptance:core": "node --test 'test/acceptance/**/!(planted-browser|planted-prefetch|planted-origins).test.ts'",
+    "acceptance:core": "node --test 'test/acceptance/**/!(planted-browser|planted-prefetch|planted-origins|site|variants|variants-islands).test.ts'",
+    "acceptance:site": "node --test test/acceptance/site.test.ts test/acceptance/variants.test.ts test/acceptance/variants-islands.test.ts",
     "acceptance:browser": "node --test test/acceptance/planted-browser.test.ts test/acceptance/planted-prefetch.test.ts",
     "acceptance:origins": "node --test test/acceptance/planted-origins.test.ts",
     "docs": "node src/docs.ts --write"

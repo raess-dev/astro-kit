@@ -1,9 +1,10 @@
 # The kit's CI (specification, 11.1). test: types, lint, unit tests and the generated docs. acceptance: the
-# acceptance suite of test/acceptance/ with the test site of test/site/, without the three planted sets that run
-# `test --all`. acceptance-browser: the browser and prefetch sets. acceptance-origins: the scripts and origins
-# variants and the origins set. Each set runs `test --all` on a copy of the test site, so the sets get jobs and time
-# budgets of their own. scan: zizmor on the workflows and gitleaks on the history. merge: squashes a green
-# pull request of an agent account or Dependabot.
+# acceptance suite of test/acceptance/ with the test site of test/site/, without the files of the other three
+# acceptance jobs. acceptance-browser: the browser and prefetch sets. acceptance-origins: the scripts and origins
+# variants and the origins set. acceptance-site: the site case and the static, forms and islands variants. The sets,
+# the site case and the variants each build or test a copy of the test site, so they get jobs and time budgets of
+# their own. scan: zizmor on the workflows and gitleaks on the history. merge: squashes a green pull request of an
+# agent account or Dependabot.
 # A pull request that changes the root .github/ or the root .npmrc is never merged here: the owner approves it and
 # merges it by hand. The kit repository deploys nothing, so no wrangler file is protected here.
 # The merge after an approval is in kit-approved.yml: a job that is skipped here on a review event would report a
@@ -65,7 +66,7 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Chromium for the browser cases
         run: npx --no playwright-core install --with-deps chromium
-      - name: The acceptance suite without the browser sets, with the kit that the harness builds and packs
+      - name: The acceptance suite without the files of the other acceptance jobs, with the kit that the harness packs
         run: npm run acceptance:core
 
   # The planted sets of the browser rules (specification, 14.2): planted-browser and planted-prefetch. The same
@@ -110,6 +111,28 @@ jobs:
       - name: The origins set and variants, with the kit that the harness builds and packs from this checkout
         run: npm run acceptance:origins
 
+  # The site case and the static, forms and islands variants (specification, 14.2): site.test.ts, variants.test.ts
+  # and variants-islands.test.ts. The same setup and the same rules. The site case runs `test --all` on the test site
+  # and each variant builds a copy of it, so they run apart from the rest of the suite.
+  acceptance-site:
+    name: kit / acceptance (site)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Chromium for the browser cases
+        run: npx --no playwright-core install --with-deps chromium
+      - name: The site case and the variants, with the kit that the harness builds and packs from this checkout
+        run: npm run acceptance:site
+
   scan:
     name: kit / scan
     runs-on: ubuntu-latest
@@ -134,7 +157,7 @@ jobs:
 
   merge:
     name: kit / merge
-    needs: [test, scan, acceptance, acceptance-browser, acceptance-origins]
+    needs: [test, scan, acceptance, acceptance-browser, acceptance-origins, acceptance-site]
     if: >-
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository
