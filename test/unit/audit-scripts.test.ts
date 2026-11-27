@@ -320,6 +320,114 @@ test('js-script reports one finding for each page, which lists its scripts, also
   assert.equal(getRule('js-script').waivable, false);
 });
 
+test('js-script without features.workers fails every start of a worker in a bundled file or an inline script (9.5)', () => {
+  const module = '<script type="module" src="/_astro/a.Bc12.js"></script>';
+  const off = (text: string, file = '_astro/a.Bc12.js'): string[] =>
+    findingsOf(
+      auditJsScript,
+      contextOf({ ...withMain(SCRIPTS, module), '_astro/a.Bc12.js': 'x()', [file]: text }, { options: SCRIPTS }),
+      'js-script',
+    );
+  const at = (detail: string, where = '/_astro/a.Bc12.js'): string[] => [
+    `${where} the script starts a worker (${detail}), but features.workers is off (9.5)`,
+  ];
+  const cases: readonly [name: string, text: string, findings: string[]][] = [
+    // Whatever the argument: a literal, a variable, a blob URL, no argument.
+    [
+      'the worker form of Rolldown',
+      'new Worker(new URL(`/_astro/w.js`,``+import.meta.url),{type:`module`})',
+      at('new Worker'),
+    ],
+    ['a worker of a variable', 'new Worker(url)', at('new Worker')],
+    ['a worker of a blob', 'new Worker(URL.createObjectURL(new Blob(["x"])))', at('new Worker')],
+    ['a shared worker', 'new SharedWorker("/_astro/s.js")', at('new SharedWorker')],
+    ['a service worker', 'navigator.serviceWorker.register("/sw.js")', at('serviceWorker.register')],
+    [
+      'a service worker of a variable',
+      'const n = navigator; n.serviceWorker.register(u)',
+      at('serviceWorker.register'),
+    ],
+    [
+      'a service worker, computed and optional',
+      'navigator["serviceWorker"]?.["register"](u)',
+      at('serviceWorker.register'),
+    ],
+    ['importScripts', 'importScripts("/_astro/i.js")', at('importScripts')],
+    ['importScripts of self, not called', 'const load = self.importScripts', at('importScripts')],
+    // The constructor reached through a member, in parentheses, with white space or a comment.
+    ['through globalThis', 'new globalThis.Worker(u)', at('new Worker')],
+    ['through window, optional', 'new window?.SharedWorker(u)', at('new SharedWorker')],
+    ['through self, computed', "new self['Worker'](u)", at('new Worker')],
+    ['in parentheses', 'new (window.Worker)(u)', at('new Worker')],
+    ['a comment and a line break', 'new /* w */\n Worker(u)', at('new Worker')],
+    ['a line comment', 'new // w\nSharedWorker(u)', at('new SharedWorker')],
+    [
+      'minified, two kinds',
+      'a=new Worker(b);c=new SharedWorker(d);e=new Worker(f)',
+      at('new Worker, new SharedWorker'),
+    ],
+    // No start: a member named Worker without new, a longer name, a feature test.
+    ['a property named Worker', 'const w = x.Worker; y.SharedWorker = 1', []],
+    ['an object key', 'const o = { Worker: 1, SharedWorker: 2 }', []],
+    ['a feature test', 'if (typeof Worker === "function" && "serviceWorker" in navigator) x()', []],
+    ['a longer name', 'new WorkerPool(); new Workers(); newWorker(); renew.Worker()', []],
+    ['serviceWorker without register', 'navigator.serviceWorker.ready.then(x); navigator.serviceWorker.controller', []],
+    ['register of another object', 'customElements.register(x); sw.register(u)', []],
+    ['a longer name than importScripts', 'importScriptsLater(); myimportScripts()', []],
+  ];
+  assert.deepEqual(
+    cases.map(([name, text]) => [name, off(text)]),
+    cases.map(([name, , findings]) => [name, findings]),
+  );
+  // Every file that the host serves as JavaScript counts, wherever it is and whether a page loads it or not.
+  assert.deepEqual(off('new Worker(u)', 'w.js'), at('new Worker', '/w.js'));
+  assert.deepEqual(off('new Worker(u)', '_astro/lib/x.MJS'), at('new Worker', '/_astro/lib/x.MJS'));
+  assert.deepEqual(off('new Worker(u)', '_astro/x.cjs'), at('new Worker', '/_astro/x.cjs'));
+  assert.deepEqual(off('new Worker(u)', '_astro/x.json'), []);
+  assert.deepEqual(off('new Worker(u)', 'notes.txt'), []);
+});
+
+test('js-script without features.workers fails a worker in an inline script; with it, the rule is unchanged', () => {
+  const onPage = (detail: string): string =>
+    `/ an inline script starts a worker (${detail}), but features.workers is off (9.5)`;
+  const inline = (options: Options, markup: string, files: Files = {}): string[] =>
+    findingsOf(auditJsScript, contextOf({ ...withMain(options, markup), ...files }, { options }), 'js-script');
+  const WORKERS = settings({ features: { scripts: true, workers: true } });
+  assert.deepEqual(inline(SCRIPTS, '<script type="module">new Worker("/_astro/w.js")</script>'), [
+    onPage('new Worker'),
+  ]);
+  // A classic inline script that js-script fails anyway also names the worker.
+  assert.deepEqual(inline(SCRIPTS, '<script>navigator.serviceWorker.register("/sw.js")</script>'), [
+    '/ <script>: navigator.serviceWorker.register("/sw.js")',
+    onPage('serviceWorker.register'),
+  ]);
+  // Two scripts of one page give one finding.
+  assert.deepEqual(
+    inline(SCRIPTS, '<script type="module">new Worker(a)</script><script type="module">importScripts(b)</script>'),
+    [onPage('new Worker, importScripts')],
+  );
+  // A data block, JSON-LD and template content run no code.
+  assert.deepEqual(
+    inline(
+      SCRIPTS,
+      '<script type="application/ld+json">{"x":"new Worker(a)"}</script><template><script type="module">new Worker(a)</script></template>',
+    ),
+    [],
+  );
+  // With features.workers, no worker is a finding of js-script.
+  assert.deepEqual(
+    inline(
+      WORKERS,
+      '<script type="module">new Worker("/_astro/w.js")</script><script type="module" src="/_astro/a.js"></script>',
+      {
+        '_astro/a.js': 'new SharedWorker(u); navigator.serviceWorker.register(u); importScripts(u)',
+        'w.js': 'new Worker(u)',
+      },
+    ),
+    [],
+  );
+});
+
 // js-prefetch-attr
 
 test('js-prefetch-attr fails an element with data-astro-prefetch in any letter case, and not in template content', () => {

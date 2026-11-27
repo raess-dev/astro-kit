@@ -15,7 +15,7 @@
  * - A third-party `src` on an `img` is `images-src`'s too (it is no `/_astro/` file): two facts, two ids.
  */
 import type { HTMLElement } from 'node-html-parser';
-import type { BuildContext, BuiltPage } from '../../context.ts';
+import { type BuildContext, type BuiltPage, readText } from '../../context.ts';
 import { asciiLower } from '../../css/parse.ts';
 import { snippet } from '../../css/rules.ts';
 import { islandScriptTexts, solidHydrationText } from '../../islands.ts';
@@ -183,15 +183,24 @@ function unreadTexts(ctx: BuildContext): string {
  * and Solid's exact hydration script (`solidHydrationText`); with an origin that has `script` and `load: "page"`, a
  * script of that host with `async`, `defer` or `type="module"`. Every other `script` element is a problem: a classic
  * or module script, an import map and a data block. One finding for each page, which lists its scripts.
+ *
+ * With `features.workers` off, each start of a worker (`WORKER_START`) is a finding too, whatever its argument: one for
+ * each JavaScript file of the client directory (`JS_FILE`) at its path, and one for each page whose inline scripts hold
+ * one (9.5).
  */
 export function auditJsScript(ctx: BuildContext): void {
   const policy = scriptPolicy(ctx.options);
+  const workers = ctx.options.features.workers;
   for (const page of ctx.pages) {
     const problems: string[] = [];
+    const starts: string[] = [];
     for (const script of domOf(page).byTag('script')) {
       const kind = scriptKind(script);
-      if (kind === 'json-ld' || kind === 'speculationrules') continue;
       const src = attr(script, 'src');
+      if (!workers && src === undefined && (kind === 'classic' || kind === 'module')) {
+        starts.push(...workerStarts(rawContentOf(script)));
+      }
+      if (kind === 'json-ld' || kind === 'speculationrules') continue;
       if (src === undefined && isModeScriptLike(script)) continue;
       const allowed =
         src === undefined ? allowedInline(ctx, policy, script) : allowedSource(ctx, policy, page, script, src);
@@ -201,8 +210,83 @@ export function auditJsScript(ctx: BuildContext): void {
       problems.push(`${startTag(page, script)}${text}${missing}`);
     }
     reportPage(ctx, JS_SCRIPT, page, problems);
+    if (starts.length > 0) ctx.report.add(JS_SCRIPT, page.path, workerDetail('an inline script', starts));
+  }
+  if (workers) return;
+  for (const file of ctx.files) {
+    if (!JS_FILE.test(file)) continue;
+    const starts = workerStarts(readText(ctx, file) ?? '');
+    if (starts.length > 0) ctx.report.add(JS_SCRIPT, `/${file}`, workerDetail('the script', starts));
   }
 }
+
+// js-script: workers
+
+/**
+ * A file that the host serves as JavaScript, by its extension in any ASCII case: `.js`, `.mjs` and `.cjs`. A module
+ * script and a worker script need a JavaScript MIME type, and the asset worker takes the type from the extension.
+ */
+const JS_FILE = /\.[mc]?js$/i;
+
+/** White space and comments between two tokens of JavaScript: a comment between `new` and `Worker` is as white space. */
+const GAP = String.raw`(?:\s|/\*[\s\S]*?\*/|//[^\n]*(?:\n|$))*`;
+
+/** A backtick, for the regex sources below. */
+const BACKTICK = '`';
+
+/** A string literal of exactly `name`, in quotes or as a template literal. */
+const literalOf = (name: string): string => `(?:"${name}"|'${name}'|${BACKTICK}${name}${BACKTICK})`;
+
+/** One member step: `.name`, `?.name`, or a computed member with a string literal (`["name"]`). */
+const MEMBER = String.raw`(?:${GAP}\??\.${GAP}[\w$]+|${GAP}(?:\?\.${GAP})?\[${GAP}(?:"[^"\\\n]*"|'[^'\\\n]*'|${BACKTICK}[^${BACKTICK}\\$]*${BACKTICK})${GAP}\])`;
+
+/** The last member step to a name: `.Worker`, `?.Worker` or `["Worker"]`. */
+const memberTo = (name: string): string =>
+  String.raw`(?:${GAP}\??\.${GAP}${name}(?![\w$])|${GAP}(?:\?\.${GAP})?\[${GAP}${literalOf(name)}${GAP}\])`;
+
+const WORKER_NAME = '(?:Shared)?Worker';
+
+/**
+ * Every start of a worker that `js-script` reads when `features.workers` is off (section 8 and 9.5), whatever its
+ * argument:
+ *
+ * - `new` before `Worker` or `SharedWorker`, also reached through members (`new globalThis.Worker`,
+ *   `new self["SharedWorker"]`, `new (window.Worker)`). A member named `Worker` without `new` is no start.
+ * - `serviceWorker` (or `["serviceWorker"]`) then a member `register`: `navigator.serviceWorker.register`, also not
+ *   called.
+ * - The name `importScripts`, anywhere: it exists only in a worker.
+ *
+ * White space and comments may stand between the tokens. The text is read as it is, so a match inside a string or a
+ * comment counts too.
+ */
+export const WORKER_START = new RegExp(
+  [
+    String.raw`(?<![\w$.])new(?![\w$])${GAP}(?:\(${GAP})*(?:${WORKER_NAME}(?![\w$])|[\w$]+(?:${MEMBER})*?${memberTo(WORKER_NAME)})`,
+    String.raw`(?:(?<![\w$])serviceWorker(?![\w$])|\[${GAP}${literalOf('serviceWorker')}${GAP}\])${memberTo('register')}`,
+    String.raw`(?<![\w$])importScripts(?![\w$])`,
+  ].join('|'),
+  'g',
+);
+
+/**
+ * The name of one start of a worker in a finding: `new Worker`, `new SharedWorker`, `serviceWorker.register` or
+ * `importScripts`. A `new` start names the last `Worker` of its text.
+ */
+function workerName(match: string): string {
+  if (match === 'importScripts') return 'importScripts';
+  if (!match.startsWith('new')) return 'serviceWorker.register';
+  const last = match.lastIndexOf('Worker');
+  return match.slice(Math.max(0, last - 6), last) === 'Shared' ? 'new SharedWorker' : 'new Worker';
+}
+
+/** The names of the starts of a worker in a JS text (`WORKER_START`), in the order of the text. */
+export function workerStarts(text: string): string[] {
+  return [...text.matchAll(WORKER_START)].map((match) => workerName(match[0]));
+}
+
+/** The detail of a finding for the starts of a worker: each name once, in the order of the text. */
+const workerDetail = (what: string, starts: readonly string[]): string =>
+  `${what} starts a worker (${[...new Set(starts)].join(', ')}), but features.workers is off (9.5)`;
 
 // js-prefetch-attr
 
