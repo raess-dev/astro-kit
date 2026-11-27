@@ -555,8 +555,13 @@ test('perf-bfcache passes a page that the browser restores from the back/forward
 });
 
 test('perf-bfcache fails a page with Cache-Control: no-store, with the reason of Chromium', async () => {
+  // `no-store` alone does not block the cache in Chromium 153 in every run: under load it restored such a page in
+  // 42 of 2000 checks. A request from script for a `no-store` answer blocks it in 153 and in 158 (13.1 item 76).
+  // The request is synchronous, so it ends before `load`, and the check leaves the page only after `load`.
+  const request = "const request = new XMLHttpRequest(); request.open('GET', '/x.txt', false); request.send();";
   const files: Files = {
-    'index.html': html(BODY, { css: CSS }),
+    'index.html': html(`${BODY}<script>${request}</script>`, { css: CSS }),
+    'x.txt': 'x',
     _headers: '/*\n  Cache-Control: no-store\n',
   };
   const details = await detailsOf(files, bfcache);
