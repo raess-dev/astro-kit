@@ -256,6 +256,12 @@ class WorkerScanner {
   private readonly blockEnd: Int32Array;
   /** For each position that a gap read, where that gap ends; -1 where no gap was read yet. */
   private readonly gapEnd: Int32Array;
+  /**
+   * The results of the steps after a gap, by the position where the step starts. Each step depends on its start
+   * only, so many candidates that reach one position read what follows once (Codex, #31).
+   */
+  private readonly members = new Map<number, Step | undefined>();
+  private readonly tails = new Map<number, Step | undefined>();
 
   constructor(text: string) {
     this.text = text;
@@ -332,8 +338,15 @@ class WorkerScanner {
    * One member step at `start`: `.name` or `?.name` (gaps around the dot), or `[literal]` or `?.[literal]` (gaps
    * inside). Its name and its end, or undefined when no step stands there. A template literal must close.
    */
-  member(start: number): { name: string; end: number } | undefined {
-    let index = this.gap(start);
+  member(start: number): Step | undefined {
+    const index = this.gap(start);
+    if (!this.members.has(index)) this.members.set(index, this.memberAt(index));
+    return this.members.get(index);
+  }
+
+  /** The member step at `start`, after its gap. */
+  private memberAt(start: number): Step | undefined {
+    let index = start;
     if (this.text[index] === '?' && this.text[index + 1] === '.') {
       const after = this.gap(index + 2);
       if (this.text[after] === '[') return this.computed(after);
@@ -349,7 +362,7 @@ class WorkerScanner {
   }
 
   /** A computed member `[literal]` at `start`, with gaps inside. */
-  computed(start: number): { name: string; end: number } | undefined {
+  computed(start: number): Step | undefined {
     const value = this.literal(this.gap(start + 1));
     if (value === undefined) return undefined;
     const close = this.gap(value.end);
@@ -357,8 +370,15 @@ class WorkerScanner {
   }
 
   /** A start of a worker with `new` at `start`: its name and end. */
-  private newAt(start: number): { name: string; end: number } | undefined {
-    let index = this.gap(start + 3);
+  private newAt(start: number): Step | undefined {
+    const index = this.gap(start + 3);
+    if (!this.tails.has(index)) this.tails.set(index, this.tailAt(index));
+    return this.tails.get(index);
+  }
+
+  /** What follows `new` and its gap at `start`: parentheses, then a worker name or a name and its members. */
+  private tailAt(start: number): Step | undefined {
+    let index = start;
     while (this.text[index] === '(') index = this.gap(index + 1);
     for (const name of WORKER_NAMES) {
       if (this.wordAt(index, name)) return { name: `new ${name}`, end: index + name.length };
@@ -418,6 +438,12 @@ class WorkerScanner {
     }
     return found;
   }
+}
+
+/** A name that the scanner read, and the end of its text. */
+interface Step {
+  name: string;
+  end: number;
 }
 
 /** One character of white space as JavaScript reads it (`\s`). */

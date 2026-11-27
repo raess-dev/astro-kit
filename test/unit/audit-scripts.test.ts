@@ -333,6 +333,11 @@ test('js-script reads a run of comments in linear time, and a comment ends at it
     '[//'.repeat(30_000),
     `new ${'/*new*/'.repeat(30_000)}Date()`,
     '[/*["serviceWorker"]*/'.repeat(20_000),
+    // Nor read again the name, the parentheses or the members that many candidates reach (Codex, #31).
+    `new ${'//new\n'.repeat(16_000)}D${'a'.repeat(16_000)}()`,
+    `new ${'//new\n'.repeat(16_000)}a${'.b'.repeat(16_000)}`,
+    `new ${'//new\n'.repeat(16_000)}${'('.repeat(16_000)}D()`,
+    `serviceWorker ${'//serviceWorker\n'.repeat(16_000)}.${'a'.repeat(16_000)}`,
   ];
   const started = performance.now();
   for (const text of runs) assert.deepEqual(workerStarts(text), []);
