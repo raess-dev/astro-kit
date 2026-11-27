@@ -44,11 +44,13 @@ import {
   decodePath,
   domOf,
   type HrefTarget,
+  hidingMarks,
   isIndexable,
   legalText,
   linkedPages,
   linksOf,
   localeOf,
+  lockedText,
   MAX_NAME,
   nameKey,
   type PageDom,
@@ -658,8 +660,9 @@ export function auditLegalStatement(ctx: BuildContext): void {
 }
 
 // The legal lock (5.6, `legal-approved`): `legal.lock.json` holds one hash for each declared legal path that is built,
-// and the owner approves each change to it. `lockEntries` hashes the legal text, `renderLock` gives the text that
-// `astro-kit legal --write` writes, and `checkLock` is the rule, which the build audit and `legal --check` run.
+// and the owner approves each change to it. `lockEntries` hashes the locked text, `renderLock` gives the text that
+// `astro-kit legal --write` writes, and `checkLock` is the build half of the rule, which the build audit and
+// `legal --check` run. The browser half is `src/browser/legal.ts`.
 
 /** The text of `legal.lock.json` in a project root, or `undefined` when the root holds no such file. */
 export function readLock(root: string): string | undefined {
@@ -677,7 +680,7 @@ export function declaredLegalPaths(options: Pick<Options, 'legal'>): string[] {
   return [...paths].sort();
 }
 
-/** The hash of each declared legal path that is built, by path, in the sorted order of the paths. */
+/** The hash of the locked text (`lockedText`) of each declared legal path that is built, in the sorted order of the paths. */
 export function lockEntries(
   options: Pick<Options, 'legal'>,
   pages: ReadonlyMap<string, BuiltPage>,
@@ -685,13 +688,16 @@ export function lockEntries(
   const entries = new Map<string, string>();
   for (const path of declaredLegalPaths(options)) {
     const page = pages.get(path);
-    if (page !== undefined) entries.set(path, sha256(legalText(page)));
+    if (page !== undefined) entries.set(path, sha256(lockedText(page)));
   }
   return entries;
 }
 
-/** The text of `legal.lock.json`: the entries with sorted keys, two-space indentation and a final newline (6.4). */
-export function renderLock(entries: ReadonlyMap<string, string>): string {
+/**
+ * The text of `legal.lock.json`: the entries with sorted keys, two-space indentation and a final newline (6.4). A
+ * value that is not a text is written as JSON writes it, so the format check of `checkLock` can render any object.
+ */
+export function renderLock(entries: ReadonlyMap<string, unknown>): string {
   const sorted = [...entries].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return `${JSON.stringify(Object.fromEntries(sorted), null, 2)}\n`;
 }
@@ -699,15 +705,29 @@ export function renderLock(entries: ReadonlyMap<string, string>): string {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+/** The fix of a lock that is not in the kit's format. */
+export const LOCK_FORMAT_HINT =
+  'Review the legal pages of the build, then run `npx --no astro-kit legal --write`: it writes the file in the format of the kit. Say so in the pull request: the owner approves the new `legal.lock.json`.';
+
+/** The fix of a legal text with a part that a visitor does not see. */
+export const LEGAL_HIDDEN_HINT =
+  'Show the whole legal text: remove `hidden`, `aria-hidden`, `dialog`, `template` and the class `visually-hidden` from `main` of the legal page and from the elements around it, and hide no part of it with CSS. A text that is not wanted is removed, and the owner approves the change.';
+
 /**
- * `legal-approved`: for each declared legal path that is built, the hash of its legal text equals the entry of that
- * path in `legal.lock.json`, and the file has no other key.
+ * The build half of `legal-approved`: for each declared legal path that is built, the hash of its locked text
+ * (`lockedText`) equals the entry of that path in `legal.lock.json`, the file has no other key, its text is the
+ * text of `renderLock` for its own entries, and `main` holds no hiding markup (`hidingMarks`).
  *
  * - `lock` is the text of the file, or `undefined` when there is no file. A missing file has no entry, so each
  *   built path is a finding, and a project with no built legal page has none. A text that is not JSON and a JSON
  *   value that is not an object are one finding each, at `legal.lock.json`, and nothing else is compared.
- * - A built path without an entry, or whose hash differs, is one finding at the page path. A value that is not a
- *   text differs from every hash.
+ * - A text that differs from `renderLock` of its own entries (another order, a duplicate key, another format) is
+ *   one finding at `legal.lock.json`, with the hint `LOCK_FORMAT_HINT`. The pages are still compared, with the value
+ *   that JSON gives a key: the last one of a duplicate key.
+ * - A built path without an entry, or whose hash differs, is one finding at the page path, with both hashes. A
+ *   value that is not a text differs from every hash.
+ * - A built path whose `main`, or an element around it, holds hiding markup is one finding at the page path that
+ *   names the first mark and counts the others, with the hint `LEGAL_HIDDEN_HINT`.
  * - A key that is no declared legal path is one finding at its field: `legal.lock.json: /alt/`. A key of a
  *   declared path that is not built is no other key: that page is `legal-pages`'s.
  */
@@ -729,15 +749,34 @@ export function checkLock(
     return;
   }
   const locked = new Map(Object.entries(value));
+  if (lock !== undefined && lock !== renderLock(locked)) {
+    report.add(
+      'legal-approved',
+      LOCK_FILE,
+      'the text is not the text that `legal --write` writes: sorted keys, each key once, two-space indentation and a final newline',
+      LOCK_FORMAT_HINT,
+    );
+  }
   for (const [path, hash] of lockEntries(options, pages)) {
     if (!locked.has(path)) {
-      report.add('legal-approved', path, `${LOCK_FILE} has no entry for this page`);
-      continue;
+      report.add(
+        'legal-approved',
+        path,
+        `the legal text hashes to ${hash}, and ${LOCK_FILE} holds no hash for this page`,
+      );
+    } else {
+      const entry = locked.get(path);
+      if (entry !== hash) {
+        const held = typeof entry === 'string' ? entry : JSON.stringify(entry);
+        report.add('legal-approved', path, `the legal text hashes to ${hash}, and ${LOCK_FILE} holds ${held}`);
+      }
     }
-    const entry = locked.get(path);
-    if (entry !== hash) {
-      const held = typeof entry === 'string' ? entry : JSON.stringify(entry);
-      report.add('legal-approved', path, `the legal text hashes to ${hash}, and ${LOCK_FILE} holds ${held}`);
+    const page = pages.get(path);
+    const marks = page === undefined ? [] : hidingMarks(page);
+    const [first] = marks;
+    if (first !== undefined) {
+      const more = marks.length > 1 ? ` and ${marks.length - 1} more` : '';
+      report.add('legal-approved', path, `markup hides a part of the legal text: ${first}${more}`, LEGAL_HIDDEN_HINT);
     }
   }
   const declared = new Set(declaredLegalPaths(options));

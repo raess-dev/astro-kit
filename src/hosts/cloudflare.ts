@@ -708,6 +708,12 @@ export function destinations(options: Options): string[] {
  * The exact text of `wrangler.jsonc` for the settings (10.4): the text of a static site, or of a forms site. It has
  * full-line `//` comments only and no trailing commas, because the deploy job reads it with `jq`. Each address is
  * written as a JSON string, so a quote or a backslash in an address cannot change the structure of the file.
+ *
+ * The text is in the format that Biome gives it under the kit preset (12.2), whatever the settings, so `biome ci`
+ * passes it unchanged: an object whose text holds a setting, or that does not fit in 120 columns, is expanded (its
+ * first property on a line of its own, which Biome keeps); the other objects and the short fixed lists stay on one
+ * line, where they fit. The destination addresses stand one on each line after a comment line, which keeps Biome
+ * from joining them, however long they are.
  */
 export function renderWrangler(options: Options): string {
   const worker = workerName(options.site);
@@ -717,9 +723,19 @@ export function renderWrangler(options: Options): string {
   "name": "${worker}",
   "compatibility_date": "${COMPATIBILITY_DATE}",
 `;
-  const route = `  "routes": [{ "pattern": "${hostOf(options.site)}", "custom_domain": true }],
+  const route = `  "routes": [
+    {
+      "pattern": "${hostOf(options.site)}",
+      "custom_domain": true
+    }
+  ],
 `;
-  const preview = `    "preview": { "name": "${worker}-preview", "routes": [], "workers_dev": true, "preview_urls": true }
+  const preview = `    "preview": {
+      "name": "${worker}-preview",
+      "routes": [],
+      "workers_dev": true,
+      "preview_urls": true
+    }
   }
 }
 `;
@@ -731,12 +747,25 @@ ${route}  "env": {
 ${preview}`;
   }
   const addresses = destinations(options)
-    .map((address) => JSON.stringify(address))
-    .join(', ');
-  return `${head}  "assets": { "directory": "./dist/client", "not_found_handling": "404-page", "html_handling": "auto-trailing-slash", "run_worker_first": ["/api/forms/*"] },
+    .map((address) => `        ${JSON.stringify(address)}`)
+    .join(',\n');
+  return `${head}  "assets": {
+    "directory": "./dist/client",
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash",
+    "run_worker_first": ["/api/forms/*"]
+  },
   "workers_dev": false,
   "preview_urls": false,
-${route}  "send_email": [{ "name": "EMAIL", "allowed_destination_addresses": [${addresses}] }],
+${route}  "send_email": [
+    {
+      "name": "EMAIL",
+      "allowed_destination_addresses": [
+        // The destination set of the form endpoint, sorted.
+${addresses}
+      ]
+    }
+  ],
   "ratelimits": [
     { "name": "FORM_RATE_LIMIT", "namespace_id": "1001", "simple": { "limit": 3, "period": 60 } },
     { "name": "FORM_RATE_LIMIT_ALL", "namespace_id": "1002", "simple": { "limit": 20, "period": 60 } }

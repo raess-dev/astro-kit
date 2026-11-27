@@ -551,9 +551,46 @@ test('config-suppression: src/ holds no comment that switches a check off', () =
       (extension): Case => [
         `a ${extension} file`,
         page({ [`src/lib/a${extension}`]: ignore }),
-        [`src/lib/a${extension}:1`],
+        // A `.jsx` file is a finding of its own too (9.2: an island is a `.tsx` file).
+        extension === '.jsx' ? [`src/lib/a${extension}:1`, `src/lib/a${extension}`] : [`src/lib/a${extension}:1`],
       ],
     ),
+    ...['eslint-disable', 'eslint-disable-line', 'eslint-disable-next-line', 'ESLint-Disable'].map(
+      (word): Case => [
+        `the ESLint comment ${word}`,
+        page({ 'src/a.tsx': `const a = 1; // ${word}\n` }),
+        ['src/a.tsx:1'],
+      ],
+    ),
+    [
+      'ESLint config comments',
+      page({
+        'src/a.tsx': '/* eslint solid/reactivity: off */\n//eslint\tsolid/reactivity: 0\n/*ESLINT x */\n// eslint',
+      }),
+      ['src/a.tsx:1', 'src/a.tsx:2', 'src/a.tsx:3', 'src/a.tsx:4'],
+    ],
+    [
+      'words that only look like an ESLint comment',
+      page({
+        'src/a.ts': '// eslint.config.mjs is the shim\n// see https://eslint.org\n/* eslintrc */\nconst eslint = 1;\n',
+      }),
+      [],
+    ],
+    [
+      'a .jsx file in any letter case, with no comment',
+      page({ 'src/x/A.JSX': 'export default 1;\n' }),
+      ['src/x/A.JSX'],
+    ],
+    [
+      'a symbolic link inside the project: each link under src/ is a finding, its target is still read',
+      page({
+        'src/shared': link('shared'),
+        'shared/b.ts': ignore,
+        'src/one.ts': link('shared/c.ts'),
+        'shared/c.ts': '',
+      }),
+      ['src/shared/b.ts:1', 'src/one.ts', 'src/shared'],
+    ],
     ['in the page', { 'src/pages/index.astro': `---\n${ignore}---\n<p>Text</p>\n` }, ['src/pages/index.astro:2']],
     [
       'a block comment of Biome',
@@ -614,7 +651,7 @@ test('config-suppression: src/ holds no comment that switches a check off', () =
     [
       'a link to a folder that Biome skips: the files are read, and the link is a finding',
       page({ 'src/vendor': link('node_modules/pkg'), 'node_modules/pkg/a.ts': ignore }),
-      ['src/vendor/a.ts:1', 'src/vendor/'],
+      ['src/vendor/a.ts:1', 'src/vendor'],
     ],
     [
       'a link to a file in a folder that Biome skips',
@@ -624,7 +661,7 @@ test('config-suppression: src/ holds no comment that switches a check off', () =
     [
       'a link named like such a folder, to another folder of the project',
       page({ 'src/dist': link('shared'), 'shared/a.ts': '' }),
-      [],
+      ['src/dist'],
     ],
     [
       'a link to a file outside the project: the file is not read, and the link is a finding',
@@ -643,7 +680,11 @@ test('config-suppression: src/ holds no comment that switches a check off', () =
     ],
     ['src/ is a link out of the project', { src: link('../away'), '../away/a.ts': ignore }, ['src']],
     ['public/ is a link out of the project', page({ public: link('../away'), '../away/a.png': '' }), ['public']],
-    ['a link to nothing', page({ 'src/a.ts': link('nothing.ts'), 'public/b': link('../nothing') }), []],
+    [
+      'a link to nothing: under src/ it is a link, under public/ it is nothing',
+      page({ 'src/a.ts': link('nothing.ts'), 'public/b': link('../nothing') }),
+      ['src/a.ts'],
+    ],
     ['no src/ folder', {}, []],
   ];
   const { actual, expected } = run('config-suppression', checkSuppression, cases);
@@ -1203,7 +1244,8 @@ test('the source checks read a linked folder inside the root, and no file outsid
     'src/far.ts': link('../away/c.ts'),
   };
   const { actual, expected } = run('config-suppression', checkSuppression, [
-    ['links', files, ['src/shared/b.ts:1', 'src/away', 'src/far.ts']],
+    // Each link under src/ is a finding of its own (part 9b of M9); the walk still reads a target inside the root.
+    ['links', files, ['src/shared/b.ts:1', 'src/away', 'src/far.ts', 'src/shared']],
   ]);
   assert.deepEqual(actual, expected);
 
@@ -1226,8 +1268,8 @@ test('the source checks read a linked folder inside the root, and no file outsid
   };
   const reason = 'the link leads out of the project, so no check reads its target';
   assert.deepEqual(findingsOf(all, outside), [
-    ['config-suppression', 'src', reason],
     ['config-suppression', 'public', reason],
+    ['config-suppression', 'src', 'a symbolic link: a source under src/ is a file, not a link to one'],
   ]);
 });
 

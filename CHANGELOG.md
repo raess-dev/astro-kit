@@ -410,15 +410,29 @@
 - Milestone M9, part 9b: the commands `check` and `legal`, and the rule `legal-approved`. The kit has 123 rules.
   - `astro-kit check` runs preflight (the forms shim included), then with islands the comparison of
     `eslint.config.mjs` (`config-shim`), then `biome ci --colors=off --error-on-warnings .`, with islands and a `.tsx`
-    source `eslint --max-warnings 0 src`, and `astro check`, through the tool runner. Each step runs only when every
-    earlier one passed. It ends with the passed line, or with 1.
-  - `astro-kit legal --write` writes `legal.lock.json` from the declared legal pages in `dist`: one hash of the legal
-    text for each page that is built, with sorted keys. `legal --check` compares the file with the build and reports
-    `legal-approved`, which the build runs too: a changed word of the legal text of a legal page fails the build
-    until the owner approves the new lock. A missing file has no entry.
-  - The Biome preset leaves `wrangler.jsonc` to the kit, as `tokens.css`: the rendering of 10.4 is not the form of
-    the formatter, so `check` failed on every site.
+    source `eslint --config eslint.config.mjs --no-inline-config --max-warnings 0 src`, and `astro check`, through
+    the tool runner. Each step runs only when every earlier one passed. It ends with the passed line, or with 1.
+  - ESLint fails closed: it reads only the root shim and no inline config comment. `config-suppression` also fails
+    `eslint-disable` in each form and an `eslint` config comment, a `.jsx` file under `src/` (an island is a `.tsx`
+    file) and every symbolic link under `src/`; `config-shim` fails every `eslint.config.*` other than the root
+    `eslint.config.mjs`.
+  - `astro-kit legal --write` writes `legal.lock.json` from the declared legal pages in `dist`: one hash of the
+    locked text for each page that is built, with sorted keys. `legal --check` compares the file with the build and
+    reports `legal-approved`, which the build runs too: a changed word of the legal text of a legal page fails the
+    build until the owner approves the new lock. A missing file has no entry.
+  - `legal-approved` has two halves (stage `build + browser`, still one rule). The build half hashes the whole text
+    of `main`, hidden parts included, and the values of `title`, `alt`, `aria-label`, `value` and `placeholder`; it
+    fails hiding markup in or around `main` (`hidden`, `aria-hidden`, `dialog`, `template`, `visually-hidden`), and a
+    lock that is not the text of `legal --write` (a duplicate key, another order or format). A finding with no entry
+    names both hashes. The browser half runs in every `astro-kit test`, on the legal pages only: at 1280 and 390 px
+    the text that a visitor is shown in `main` must be its whole text, so CSS that hides a part fails, and so does a
+    pseudo-element that adds text. One finding for each page; the spec lists what it does not measure.
+  - The rendering of `wrangler.jsonc` (10.4) is now in the format of the Biome preset for any settings, and the
+    preset formats it like every other file: the objects that hold a setting are expanded, and the destination
+    addresses stand one on each line after a comment line.
+  - The TS preset sets `"jsx": "preserve"` and `"jsxImportSource": "solid-js"`, so an island needs no pragma.
   - The test site passes `check`: its sources have the form of the Biome preset, and it commits the
     `legal.lock.json` that `legal --write` wrote. The `site` case runs `check` and `legal --check`; the `static`,
-    `islands` and `origins` variants run `check`; the `check-config` variant and the `config` set of the planted
-    sets join; the `build` set gets its `legal-approved` plant.
+    `islands` and `origins` variants run `check` (the `check` of the `site` case stands in for the `forms` variant);
+    the `check-config` variant and the `config` set of the planted sets join; the `build` set gets its
+    `legal-approved` plant.

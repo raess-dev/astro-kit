@@ -189,7 +189,14 @@ export const build = (root: string, io: ToolIo): Promise<number> => runTool(root
 
 /** The tools of `check` after its config part, in their order (6.4): a package and its arguments. */
 export const BIOME_CHECK = ['@biomejs/biome', ['ci', '--colors=off', '--error-on-warnings', '.']] as const;
-export const ESLINT_CHECK = ['eslint', ['--max-warnings', '0', 'src']] as const;
+/**
+ * ESLint with the root shim only (`--config`), and with no inline config comment (`--no-inline-config`): no
+ * `eslint-disable` comment and no `eslint` config comment in a source switches a Solid rule off.
+ */
+export const ESLINT_CHECK = [
+  'eslint',
+  ['--config', 'eslint.config.mjs', '--no-inline-config', '--max-warnings', '0', 'src'],
+] as const;
 export const ASTRO_CHECK = ['astro', ['check']] as const;
 
 /** What the config part of `check` found. */
@@ -227,7 +234,8 @@ export function hasTsxSource(root: string): boolean {
 
 /**
  * The tools of the command `check` (6.4), after its config part: `biome ci --colors=off --error-on-warnings .`;
- * with islands and a `.tsx` file under `src/`, `eslint --max-warnings 0 src`; then `astro check`. Each tool starts
+ * with islands and a `.tsx` file under `src/`, `eslint --config eslint.config.mjs --no-inline-config --max-warnings 0
+ * src`; then `astro check`. Each tool starts
  * only when every earlier one ended with 0, so the first failure ends the command. Returns 0, or 1 for a failure.
  */
 export async function checkTools(root: string, islands: boolean, io: ToolIo): Promise<number> {

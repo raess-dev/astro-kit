@@ -104,7 +104,8 @@ test('the audits hold every build rule of parts 5b, 5c, 5d, 7b, 8a and 9b once, 
   );
   for (const id of [...PART_5B_5C, ...PART_5D, ...PART_7B, ...PART_8A, ...PART_9B]) {
     const stage = RULE_BY_ID.get(id)?.stage;
-    assert.ok(stage === 'build' || stage === 'config + build', id);
+    // `legal-approved` has a build half and a browser half (part 9b of M9, after review).
+    assert.ok(stage === 'build' || stage === 'config + build' || stage === 'build + browser', id);
   }
 });
 

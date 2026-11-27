@@ -296,6 +296,8 @@ export function textOf(
   options: {
     skip?: (element: HTMLElement) => boolean;
     replace?: (element: HTMLElement) => string | undefined;
+    /** True: the content of a `template` counts too, as a part of the element. */
+    templates?: boolean;
   } = {},
 ): string {
   const parts: string[] = [];
@@ -319,7 +321,7 @@ export function textOf(
       parts.push('\n');
       continue;
     }
-    if (tag === 'template') continue;
+    if (tag === 'template' && options.templates !== true) continue;
     for (let index = child.childNodes.length - 1; index >= 0; index -= 1) {
       const next = child.childNodes[index];
       if (next !== undefined) stack.push(next);
@@ -375,6 +377,81 @@ export const seenPageText = (page: BuiltPage): string => textsOf(page).seen;
  * visitor does not see (`isUnseen`). Template content is no part of it either. `''` without a `main`.
  */
 export const legalText = (page: BuiltPage): string => textsOf(page).legal;
+
+/**
+ * The attributes whose values the locked text holds, in its order (Measurement details, "The locked text"): a
+ * browser shows each of them, or reads it out, as a part of the page.
+ */
+export const LOCKED_ATTRIBUTES: readonly string[] = ['title', 'alt', 'aria-label', 'value', 'placeholder'];
+
+/**
+ * The locked text of a page (`legal-approved`, Measurement details): the whole text of the first `main`, hidden
+ * parts and template content included, in NFC, with each run of white space as one space, trimmed. Then, for each
+ * element of `main` in document order (`main` first, template content included) and each attribute of
+ * `LOCKED_ATTRIBUTES` that it carries, in that order, one line feed and `<name>=<value>`, the value read in the same
+ * way. The text holds no line feed, so each attribute stands on a line of its own. `''` without a `main`.
+ */
+export function lockedText(page: BuiltPage): string {
+  const main = domOf(page).main;
+  if (main === undefined) return '';
+  const read = (text: string): string => collapse(text.normalize('NFC'));
+  const lines = [read(textOf(main, { templates: true }))];
+  const stack: HTMLElement[] = [main];
+  for (let element = stack.pop(); element !== undefined; element = stack.pop()) {
+    for (const name of LOCKED_ATTRIBUTES) {
+      const value = attr(element, name);
+      if (value !== undefined) lines.push(`${name}=${read(value)}`);
+    }
+    for (let index = element.childNodes.length - 1; index >= 0; index -= 1) {
+      const child = element.childNodes[index];
+      if (child !== undefined && child.nodeType === NodeType.ELEMENT_NODE) stack.push(child as HTMLElement);
+    }
+  }
+  return lines.join('\n');
+}
+
+/**
+ * The markup that hides a part of an element from a visitor (`legal-approved`): the `hidden` attribute (any value,
+ * `until-found` too), an `aria-hidden` attribute (any value), a `dialog`, a `template`, and the kit class
+ * `visually-hidden`. Gives the mark as a short tag (`<p hidden>`), or `undefined` for an element without one.
+ */
+export function hidingMark(element: HTMLElement): string | undefined {
+  const tag = tagOf(element);
+  if (tag === 'dialog' || tag === 'template') return `<${tag}>`;
+  if (hasAttr(element, 'hidden')) return `<${tag} hidden>`;
+  if (hasAttr(element, 'aria-hidden')) return `<${tag} aria-hidden>`;
+  if (tokensOf(element, 'class').includes('visually-hidden')) return `<${tag} class="visually-hidden">`;
+  return undefined;
+}
+
+/**
+ * The hiding marks (`hidingMark`) of the first `main` of a page, of each element around it, and of each element
+ * inside it (template content included), in document order: the elements around `main` first, outermost first.
+ * Empty without a `main`.
+ */
+export function hidingMarks(page: BuiltPage): string[] {
+  const main = domOf(page).main;
+  if (main === undefined) return [];
+  const marks: string[] = [];
+  const around: HTMLElement[] = [];
+  for (let node = main.parentNode; node !== null; node = node.parentNode) {
+    if (node.nodeType === NodeType.ELEMENT_NODE && tagOf(node) !== '') around.push(node);
+  }
+  for (const element of around.reverse()) {
+    const mark = hidingMark(element);
+    if (mark !== undefined) marks.push(mark);
+  }
+  const stack: HTMLElement[] = [main];
+  for (let element = stack.pop(); element !== undefined; element = stack.pop()) {
+    const mark = hidingMark(element);
+    if (mark !== undefined) marks.push(mark);
+    for (let index = element.childNodes.length - 1; index >= 0; index -= 1) {
+      const child = element.childNodes[index];
+      if (child !== undefined && child.nodeType === NodeType.ELEMENT_NODE) stack.push(child as HTMLElement);
+    }
+  }
+  return marks;
+}
 
 /** Says whether two `lang` values name one language tag: BCP 47 compares tags without regard to ASCII case. */
 export const sameLang = (a: string | undefined, b: string | undefined): boolean =>

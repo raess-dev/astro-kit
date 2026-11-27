@@ -19,7 +19,7 @@ import {
   sweep,
   themeStates,
 } from '../../src/browser/harness.ts';
-import { BROWSER_RULES, inRegistryOrder } from '../../src/browser/rules.ts';
+import { BROWSER_RULES, BROWSER_STAGES, inRegistryOrder } from '../../src/browser/rules.ts';
 import {
   BAD_OUTLINE,
   browserPath,
@@ -207,7 +207,9 @@ test('a shot is named after the page and the viewport', () => {
 // The rules
 
 test('the browser rules are the browser rules of the registry, in its order', () => {
-  const registry = RULES.filter((rule) => rule.stage === 'browser').map((rule) => rule.id);
+  // The browser half of a `build + browser` rule (`legal-approved`) runs here too, at its place in the registry.
+  const registry = RULES.filter((rule) => BROWSER_STAGES.includes(rule.stage)).map((rule) => rule.id);
+  assert.deepEqual(BROWSER_STAGES, ['browser', 'build + browser']);
   assert.deepEqual(
     BROWSER_RULES.map((rule) => rule.id),
     registry,
@@ -215,6 +217,7 @@ test('the browser rules are the browser rules of the registry, in its order', ()
   assert.deepEqual(registry, [
     'origins-gesture',
     'modes-behavior',
+    'legal-approved',
     'a11y-axe',
     'a11y-focus',
     'a11y-targets',

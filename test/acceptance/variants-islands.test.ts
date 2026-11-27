@@ -1,7 +1,7 @@
 /**
  * The `islands` variant of 14.2 (milestone M8): islands on, and the Solid island `MoreLinks` on the German rooms page
  * (`toIslands` of `variants.ts`). From M9 a variant runs `check`, `build` and `test` (14.2, Variants): `check`
- * compares the ESLint shim and runs `eslint --max-warnings 0 src` on the island. The shim comes from the templates of
+ * compares the ESLint shim and runs `eslint --config eslint.config.mjs --no-inline-config --max-warnings 0 src` on the island. The shim comes from the templates of
  * the packed kit until `init --shims` exists. The islands pins come from the base copy, installed with `--no-save`.
  * Run: node --test test/acceptance/variants-islands.test.ts
  */

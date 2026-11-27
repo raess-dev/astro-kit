@@ -67,6 +67,9 @@ export const POST = createFormEndpoint();
 /** The feature shim of islands (9.2): the ESLint config for the Solid rules that Biome lacks. */
 export const ISLANDS_SHIM_FILE = 'eslint.config.mjs';
 
+/** The start of the name of an ESLint config file (`eslint.config.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`). */
+const ESLINT_PREFIX = 'eslint.config.';
+
 /**
  * The exact text of the islands shim, as `templates/features/islands/` holds it. `check` compares it with the file of
  * an islands site (`checkIslandsShim`).
@@ -175,8 +178,30 @@ export function otherBiomeConfigs(root: string): string[] {
 }
 
 /**
+ * Every ESLint config file of the project other than the root `eslint.config.mjs` (`ISLANDS_SHIM_FILE`), as a sorted
+ * list of paths from the root: each file whose name starts with `eslint.config.` in any letter case, in any folder
+ * outside `.git` and the folders that Biome skips. ESLint reads the config of the nearest folder of a file, so a
+ * nested one could switch a Solid rule off; `check` names the root file with `--config`. The search does not follow
+ * a symbolic link.
+ */
+export function otherEslintConfigs(root: string): string[] {
+  const found: string[] = [];
+  const visit = (folder: string, path: string): void => {
+    for (const entry of readdirSync(folder, { withFileTypes: true })) {
+      const child = path === '' ? entry.name : `${path}/${entry.name}`;
+      if (entry.isDirectory()) {
+        if (!UNSEARCHED_FOLDERS.includes(entry.name)) visit(join(folder, entry.name), child);
+      } else if (entry.name.toLowerCase().startsWith(ESLINT_PREFIX) && child !== ISLANDS_SHIM_FILE) found.push(child);
+    }
+  };
+  if (statSync(root, { throwIfNoEntry: false })?.isDirectory()) visit(root, '');
+  return found.sort();
+}
+
+/**
  * The M2 part of `config-shim`: `astro.config.mjs`, `biome.json` and `tsconfig.json` equal the kit shims, the root
- * holds no other `astro.config.*` file, and the project holds no other Biome config. One run reports every file.
+ * holds no other `astro.config.*` file, and the project holds no other Biome config and no other ESLint config
+ * (part 9b of M9). One run reports every file.
  */
 export function checkShims(root: string, report: Report): void {
   for (const [file, expected] of Object.entries(SHIMS)) checkFile(root, file, expected, report);
@@ -187,5 +212,8 @@ export function checkShims(root: string, report: Report): void {
   }
   for (const path of otherBiomeConfigs(root)) {
     report.add(RULE, path, `remove this file: \`${BIOME_FILE}\` in the root is the only Biome config`);
+  }
+  for (const path of otherEslintConfigs(root)) {
+    report.add(RULE, path, `remove this file: \`${ISLANDS_SHIM_FILE}\` in the root is the only ESLint config`);
   }
 }

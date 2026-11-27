@@ -87,6 +87,11 @@ export interface TestRun {
   sample: readonly TestPage[];
   /** The home of the default locale, when it is built (`contrast-pairs`). */
   home: TestPage | undefined;
+  /**
+   * Every built page of a declared legal path (`legal.legalNote`, `legal.privacy`, `legal.accessibility`), in path
+   * order, whatever the sample: the browser half of `legal-approved` checks each one in every run.
+   */
+  legal: readonly TestPage[];
   /** Every request that the server got, in order, with its headers (`perf-prerender` reads `sec-purpose`). */
   received: readonly Received[];
   browser: Browser;
@@ -151,7 +156,7 @@ export interface Check {
 }
 
 /** Which pages a rule checks. */
-export type PageScope = 'tested' | 'sample' | 'home';
+export type PageScope = 'tested' | 'sample' | 'home' | 'legal';
 
 /** A browser rule. `src/browser/rules.ts` lists them; the runner runs them in the order of section 8. */
 export interface BrowserRule {
@@ -159,7 +164,8 @@ export interface BrowserRule {
   id: string;
   /**
    * `tested`: every tested page (the sample, or every page with `--all`). `sample`: always the sample (the perf
-   * pass). `home`: the home of the default locale only.
+   * pass). `home`: the home of the default locale only. `legal`: every built page of a declared legal path, with or
+   * without `--all` (the browser half of `legal-approved`).
    */
   pages: PageScope;
   /**

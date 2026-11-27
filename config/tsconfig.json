@@ -5,6 +5,8 @@
     "verbatimModuleSyntax": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js"
   }
 }

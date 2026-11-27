@@ -266,7 +266,7 @@ test('the registry holds the rules of milestones M2 to M8 and part 9b of M9 in t
       ['legal-pages', 'legal', 'build'],
       ['legal-processing', 'legal', 'config'],
       ['legal-statement', 'legal', 'build'],
-      ['legal-approved', 'legal', 'build'],
+      ['legal-approved', 'legal', 'build + browser'],
       ['legal-origins', 'legal', 'build'],
       ['media-animated', 'media', 'build'],
       ['media-captions', 'media', 'build'],

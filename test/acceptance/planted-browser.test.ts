@@ -4,7 +4,8 @@
  * (`dist/client/` with forms), and one `test --all` run must report exactly the ids of the set, and no passed line.
  *
  * Each plant is the smallest violation of its rule, on a page that no other plant touches, so that one plant gives
- * one id and no other plant gives it. A plant adds a style sheet or a script of its own as a file of the client
+ * one id and no other plant gives it. The one exception is the `legal-approved` plant: every legal page holds a plant
+ * already, so it shares the German legal note with `a11y-axe`. A plant adds a style sheet or a script of its own as a file of the client
  * directory, and links it from its page: the CSP of the site allows a file of its own origin (`'self'`), while a
  * change to an inline style or script would break its hash. The a11y plants stand on the pages that were outside
  * the browser sample at M6, where the site has such a page; from M7 the contact pages and `/fr/emplois/` are in the
@@ -33,6 +34,7 @@ const BROWSER_IDS = [
   'a11y-spacing',
   'a11y-targets',
   'contrast-pairs',
+  'legal-approved',
   'modes-behavior',
   'perf-cls',
   'perf-image-oversize',
@@ -247,6 +249,14 @@ const PLANTS: readonly { id: string; plant: (dir: string) => void }[] = [
         '@layer tokens {\n  :root {\n    --color-error: light-dark(#a1201b, #7a3a33);\n  }\n}\n',
       );
     },
+  },
+  {
+    // The browser half of `legal-approved`: a style sheet adds text after the heading of the German legal note, so
+    // the text that a visitor is shown is not the locked text. Every declared legal page holds a plant of another
+    // rule already, so this one shares the page of `a11y-axe`: axe reads no generated text as a failure, and the
+    // image without `alt` adds no text. The build half does not see it, because the plant is in the built files.
+    id: 'legal-approved',
+    plant: (dir) => style(dir, '/impressum/', 'plant-legal', 'main h1::after { content: " (gilt nicht)"; }\n'),
   },
   {
     // An extra CSS file on the home page changes a color token under `:root[data-mode="dark"]`: the shadow color,

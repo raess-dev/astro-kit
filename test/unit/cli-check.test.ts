@@ -4,9 +4,10 @@
  * test runs Biome, ESLint or Astro.
  */
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { LOCK_FORMAT_HINT } from '../../src/audit/site.ts';
 import { findBin, LEGAL_NO_BUILD, LOCK_FILE } from '../../src/ci.ts';
 import { type Io, main, PASSED_LINE, USAGE } from '../../src/cli.ts';
 import { sha256 } from '../../src/csp.ts';
@@ -115,7 +116,12 @@ const BIOME_RUN = {
   telemetry: '1',
   here: true,
 };
-const ESLINT_RUN = { pkg: 'eslint', args: ['--max-warnings', '0', 'src'], telemetry: '1', here: true };
+const ESLINT_RUN = {
+  pkg: 'eslint',
+  args: ['--config', 'eslint.config.mjs', '--no-inline-config', '--max-warnings', '0', 'src'],
+  telemetry: '1',
+  here: true,
+};
 const ASTRO_RUN = { pkg: 'astro', args: ['check'], telemetry: '1', here: true };
 
 /** The smallest project with islands on. */
@@ -128,7 +134,7 @@ const ISLAND = { 'src/lib/island.tsx': 'export default function Island() {\n  re
 test('the row of check in 6.4 names its steps, and the usage names check', () => {
   assert.equal(
     SPEC.includes(
-      '| `check` | | Preflight (with the forms shim, `config-shim`); the comparison of the other feature shim (`eslint.config.mjs`); `biome ci --colors=off --error-on-warnings .`; with islands and any `src/**/*.tsx`, `eslint --max-warnings 0 src`; `astro check`',
+      '| `check` | | Preflight (with the forms shim, `config-shim`); the comparison of the other feature shim (`eslint.config.mjs`); `biome ci --colors=off --error-on-warnings .`; with islands and any `src/**/*.tsx`, `eslint --config eslint.config.mjs --no-inline-config --max-warnings 0 src`; `astro check`',
     ),
     true,
   );
@@ -192,7 +198,7 @@ test('astro-kit check with islands and a .tsx source runs ESLint between biome c
 });
 
 test('astro-kit check runs no ESLint without a .tsx source, and none without islands', async () => {
-  const deep = { 'src/lib/a/b/island.jsx': 'export default 1;\n' };
+  const deep = { 'src/lib/a/b/island.ts': 'export default 1;\n' };
   const islands = await inTempAsync({ ...ISLANDS, ...deep, ...tools() }, async (root) => {
     await cli(root, ['check']);
     return runsOf(root);
@@ -205,12 +211,54 @@ test('astro-kit check runs no ESLint without a .tsx source, and none without isl
   assert.deepEqual(off, [BIOME_RUN, ASTRO_RUN]);
 });
 
+test('astro-kit check fails closed on the ESLint holes: a .jsx island, a link, a disable comment, a nested config', async () => {
+  const cases: readonly (readonly [string, Files, string])[] = [
+    ['a .jsx island', { 'src/lib/island.jsx': 'export default 1;\n' }, 'config-suppression'],
+    [
+      'an eslint-disable comment',
+      { 'src/lib/island.tsx': '// eslint-disable-next-line\nexport default 1;\n' },
+      'config-suppression',
+    ],
+    [
+      'an ESLint config comment',
+      { 'src/lib/island.tsx': '/* eslint solid/reactivity: off */\nexport default 1;\n' },
+      'config-suppression',
+    ],
+    ['a nested ESLint config', { ...ISLAND, 'src/eslint.config.js': 'export default [];\n' }, 'config-shim'],
+  ];
+  for (const [name, files, id] of cases) {
+    const seen = await inTempAsync({ ...ISLANDS, ...files, ...tools() }, async (root) => ({
+      ...(await cli(root, ['check'])),
+      runs: runsOf(root),
+    }));
+    assert.deepEqual({ name, code: seen.code, ids: seen.ids, runs: seen.runs }, { name, code: 1, ids: [id], runs: [] });
+  }
+});
+
+test('astro-kit check fails a symbolic link under src/ and runs no tool', async () => {
+  const seen = await inTempAsync(
+    { ...ISLANDS, ...ISLAND, 'lib/other.tsx': 'export default 1;\n', ...tools() },
+    async (root) => {
+      symlinkSync(join(root, 'lib'), join(root, 'src/linked'));
+      return { ...(await cli(root, ['check'])), runs: runsOf(root) };
+    },
+  );
+  assert.deepEqual(
+    { code: seen.code, ids: seen.ids, runs: seen.runs },
+    { code: 1, ids: ['config-suppression'], runs: [] },
+  );
+  assert.match(seen.err, /✗ \[config-suppression\] src\/linked: .*\(a symbolic link: /);
+});
+
 test('astro-kit check finds a .tsx source at any depth under src/', async () => {
   const deep = { 'src/lib/a/b/deep.tsx': 'export default function Deep() {\n  return <p />;\n}\n' };
   const runs = await inTempAsync({ ...ISLANDS, ...deep, ...tools({ eslint: 1 }) }, async (root) => {
     const seen = await cli(root, ['check']);
     assert.equal(seen.code, 1);
-    assert.equal(seen.summary, '\neslint --max-warnings 0 src failed; see the job log.\n');
+    assert.equal(
+      seen.summary,
+      '\neslint --config eslint.config.mjs --no-inline-config --max-warnings 0 src failed; see the job log.\n',
+    );
     return runsOf(root);
   });
   assert.deepEqual(runs, [BIOME_RUN, ESLINT_RUN]);
@@ -292,9 +340,9 @@ const builtPage = (title: string, content: string): string =>
   `<!DOCTYPE html><html lang="de-CH"><head><title>${title}</title></head><body><header>Example</header><main><h1>${title}</h1> ${content}</main><footer><a href="/impressum/">Impressum</a></footer></body></html>`;
 
 const IMPRESSUM = builtPage('Impressum', '<p>Example AG betreibt\n   diese Website.</p>');
-const DATENSCHUTZ = builtPage('Datenschutz', '<p>Diese Website setzt kein Cookie.</p><p hidden>Entwurf</p>');
+const DATENSCHUTZ = builtPage('Datenschutz', '<p>Diese Website setzt kein Cookie.</p>');
 
-/** The legal texts of the two pages: the visible text of `main`, each run of white space as one space. */
+/** The locked texts of the two pages: the whole text of `main`, each run of white space as one space. */
 const IMPRESSUM_TEXT = 'Impressum Example AG betreibt diese Website.';
 const DATENSCHUTZ_TEXT = 'Datenschutz Diese Website setzt kein Cookie.';
 
@@ -315,11 +363,16 @@ const WROTE = `astro-kit legal: wrote ${LOCK_FILE}\n`;
 test('the row of legal in 6.4, its message for a project with no build, and the file of 5.6', () => {
   assert.equal(
     SPEC.includes(
-      '| `legal` | `--write` \\| `--check` (exactly one) | Needs `dist`. `--write` writes `legal.lock.json`: one hash for each declared legal path that is built (`legal-approved`, 8), with sorted keys, two-space indentation and a final newline. `--check` prints each path whose hash differs.',
+      '| `legal` | `--write` \\| `--check` (exactly one) | Needs `dist`. `--write` writes `legal.lock.json`: one hash of the locked text for each declared legal path that is built (`legal-approved`, 8), with sorted keys, two-space indentation and a final newline. `--check` runs the build half of `legal-approved`: it prints each path whose hash differs, each legal page with hiding markup, and a file that is not in the format of `--write`.',
     ),
     true,
   );
-  assert.equal(SPEC.includes('**`legal.lock.json`** (root): `{ "<legal page path>": "sha256-…" }`'), true);
+  assert.equal(
+    SPEC.includes(
+      '**`legal.lock.json`** (root): `{ "<legal page path>": "sha256-…" }`, one entry for each declared legal path that is built.',
+    ),
+    true,
+  );
   assert.equal(SPEC.includes(`without either it fails with \`${LEGAL_NO_BUILD}\``), true);
   assert.equal(SPEC.includes(`\`--write\` prints \`astro-kit legal: wrote ${LOCK_FILE}\``), true);
 });
@@ -358,17 +411,36 @@ test('astro-kit legal --check fails one changed word at the page, with both hash
   assert.match(seen.summary ?? '', /✗ \[legal-approved\] \/datenschutz\//);
 });
 
-test('astro-kit legal --check passes a change outside main, in a hidden part, or of white space only', async () => {
+test('astro-kit legal --check passes a change outside main, or of white space only', async () => {
   const pages = {
-    'dist/impressum/index.html': IMPRESSUM.replace('<header>Example</header>', '<header>Example AG</header>')
-      .replace('betreibt\n   diese', 'betreibt diese')
-      .replace('</main>', '<div aria-hidden="true">Alt</div><template>Vorlage</template></main>'),
-    'dist/datenschutz/index.html': DATENSCHUTZ.replace('Entwurf', 'Ein anderer Entwurf'),
+    'dist/impressum/index.html': IMPRESSUM.replace('<header>Example</header>', '<header>Example AG</header>').replace(
+      'betreibt\n   diese',
+      'betreibt diese',
+    ),
   };
   const seen = await inTempAsync({ ...built(), [LOCK_FILE]: LOCK, ...pages }, (root) =>
     cli(root, ['legal', '--check']),
   );
   assert.deepEqual({ code: seen.code, out: seen.out }, { code: 0, out: PASSED });
+});
+
+test('astro-kit legal --check fails hiding markup in main: a hidden part is a part of the lock, and the markup a finding', async () => {
+  const pages = {
+    'dist/impressum/index.html': IMPRESSUM.replace(
+      '</main>',
+      '<div aria-hidden="true">Alt</div><template>Vorlage</template></main>',
+    ),
+  };
+  const seen = await inTempAsync({ ...built(), [LOCK_FILE]: LOCK, ...pages }, (root) =>
+    cli(root, ['legal', '--check']),
+  );
+  const findings = [...seen.err.matchAll(/^✗ \[legal-approved\] (.*)$/gm)].map((match) => match[1]);
+  const now = sha256('Impressum Example AG betreibt diese Website.AltVorlage');
+  assert.deepEqual(findings, [
+    `/impressum/: ${LEGAL_RULE.message} (the legal text hashes to ${now}, and ${LOCK_FILE} holds ${sha256(IMPRESSUM_TEXT)})`,
+    `/impressum/: ${LEGAL_RULE.message} (markup hides a part of the legal text: <div aria-hidden> and 1 more)`,
+  ]);
+  assert.equal(seen.code, 1);
 });
 
 test('astro-kit legal --write writes only the declared pages that are built; --check leaves the others alone', async () => {
@@ -405,16 +477,16 @@ const LOCK_CASES: readonly LockCase[] = [
     name: 'no file: each built page has no entry',
     lock: undefined,
     findings: [
-      `/datenschutz/: ${LEGAL_RULE.message} (${LOCK_FILE} has no entry for this page)`,
-      `/impressum/: ${LEGAL_RULE.message} (${LOCK_FILE} has no entry for this page)`,
+      `/datenschutz/: ${LEGAL_RULE.message} (the legal text hashes to ${sha256(DATENSCHUTZ_TEXT)}, and ${LOCK_FILE} holds no hash for this page)`,
+      `/impressum/: ${LEGAL_RULE.message} (the legal text hashes to ${sha256(IMPRESSUM_TEXT)}, and ${LOCK_FILE} holds no hash for this page)`,
     ],
   },
   {
     name: 'an empty lock',
     lock: '{}\n',
     findings: [
-      `/datenschutz/: ${LEGAL_RULE.message} (${LOCK_FILE} has no entry for this page)`,
-      `/impressum/: ${LEGAL_RULE.message} (${LOCK_FILE} has no entry for this page)`,
+      `/datenschutz/: ${LEGAL_RULE.message} (the legal text hashes to ${sha256(DATENSCHUTZ_TEXT)}, and ${LOCK_FILE} holds no hash for this page)`,
+      `/impressum/: ${LEGAL_RULE.message} (the legal text hashes to ${sha256(IMPRESSUM_TEXT)}, and ${LOCK_FILE} holds no hash for this page)`,
     ],
   },
   {
@@ -441,8 +513,22 @@ const LOCK_CASES: readonly LockCase[] = [
   },
   {
     name: 'a key of a declared page that is not built: legal-pages reports the page',
-    lock: LOCK.replace('{\n', '{\n  "/fr/mentions-legales/": "sha256-x",\n'),
+    lock: LOCK.replace('  "/impressum/"', '  "/fr/mentions-legales/": "sha256-x",\n  "/impressum/"'),
     findings: [],
+  },
+  {
+    name: 'a duplicate key whose last value is the hash: the format is the finding',
+    lock: LOCK.replace('{\n', '{\n  "/datenschutz/": "sha256-AAAA",\n'),
+    findings: [
+      `${LOCK_FILE}: ${LEGAL_RULE.message} (the text is not the text that \`legal --write\` writes: sorted keys, each key once, two-space indentation and a final newline)`,
+    ],
+  },
+  {
+    name: 'a reformatted file',
+    lock: `${JSON.stringify(JSON.parse(LOCK))}\n`,
+    findings: [
+      `${LOCK_FILE}: ${LEGAL_RULE.message} (the text is not the text that \`legal --write\` writes: sorted keys, each key once, two-space indentation and a final newline)`,
+    ],
   },
 ];
 
@@ -468,6 +554,15 @@ for (const c of LOCK_CASES) {
     assert.equal(passedIn(seen.out), c.findings.length > 0 ? 0 : 1);
   });
 }
+
+test('astro-kit legal --check prints the fix of a lock in another format: legal --write after review', async () => {
+  const lock = LOCK.replace('{\n', '{\n  "/datenschutz/": "sha256-AAAA",\n');
+  const seen = await inTempAsync({ ...built(), [LOCK_FILE]: lock }, (root) => cli(root, ['legal', '--check']));
+  const lines = seen.err.split('\n');
+  const at = lines.findIndex((line) => line.startsWith(`✗ [legal-approved] ${LOCK_FILE}: `));
+  assert.equal(lines[at + 1], `    fix: ${LOCK_FORMAT_HINT}`);
+  assert.equal(LOCK_FORMAT_HINT.includes('then run `npx --no astro-kit legal --write`'), true);
+});
 
 test('astro-kit legal without a build throws the message and gives 1, and writes nothing', async () => {
   const seen = await inTempAsync(

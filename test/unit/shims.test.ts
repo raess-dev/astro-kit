@@ -18,6 +18,7 @@ import {
   ISLANDS_SHIM_FILE,
   normalize,
   otherBiomeConfigs,
+  otherEslintConfigs,
   SHIMS,
 } from '../../src/shims.ts';
 
@@ -393,6 +394,54 @@ test('config-shim: the root biome.json is the only Biome config of the project',
     row.includes(`no other file named ${names.slice(0, -1).join(', ')} or ${names.at(-1)} exists in any folder`),
   );
   assert.ok(getRule(RULE).standard.includes(`no other file named ${names.slice(0, -1).join(', ')} or ${names.at(-1)}`));
+});
+
+test('config-shim: the root eslint.config.mjs is the only ESLint config of the project', () => {
+  const OTHER_ESLINT = 'remove this file: `eslint.config.mjs` in the root is the only ESLint config';
+  const off = 'export default [{ rules: { "solid/reactivity": "off" } }];\n';
+  const other = (path: string): Case => [path, { ...shims, [path]: off }, [`${path}: ${OTHER_ESLINT}`]];
+  const none = (path: string): Case => [path, { ...shims, [path]: off }, []];
+  const cases: Case[] = [
+    // The root shim itself is allowed, with or without islands: `check` compares it with islands.
+    none('eslint.config.mjs'),
+    other('src/eslint.config.mjs'),
+    other('src/components/eslint.config.js'),
+    other('eslint.config.js'),
+    other('eslint.config.ts'),
+    other('eslint.config.cjs'),
+    other('eslint.config.mts'),
+    other('docs/eslint.config.cts'),
+    // A file system that ignores letter case gives ESLint this file as `eslint.config.mjs`.
+    other('ESLint.config.mjs'),
+    other('src/Eslint.Config.js'),
+    [
+      'two of them, in the order of their paths',
+      { ...shims, 'src/b/eslint.config.js': off, 'src/a/eslint.config.mjs': off },
+      [`src/a/eslint.config.mjs: ${OTHER_ESLINT}`, `src/b/eslint.config.js: ${OTHER_ESLINT}`],
+    ],
+    none('node_modules/pkg/eslint.config.js'),
+    none('dist/eslint.config.js'),
+    none('.git/eslint.config.js'),
+    none('src/eslint.config'),
+    none('src/my-eslint.config.js'),
+  ];
+  assert.deepEqual(actual(cases), expected(cases));
+  const row = SPEC.split('\n').find((line) => line.startsWith(`| \`${RULE}\` |`)) ?? '';
+  assert.ok(row.includes('The root `eslint.config.mjs` is the only ESLint config'));
+  assert.ok(getRule(RULE).standard.includes('The root `eslint.config.mjs` is the only ESLint config'));
+});
+
+test('otherEslintConfigs does not follow a symbolic link', () => {
+  const root = mkdtempSync(join(tmpdir(), 'astro-kit-'));
+  try {
+    mkdirSync(join(root, 'away'));
+    writeFileSync(join(root, 'away/eslint.config.js'), '');
+    mkdirSync(join(root, 'src'));
+    symlinkSync(join(root, 'away'), join(root, 'src/linked'));
+    assert.deepEqual(otherEslintConfigs(root), ['away/eslint.config.js']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('otherBiomeConfigs does not follow a symbolic link, and a root that is missing has none', () => {

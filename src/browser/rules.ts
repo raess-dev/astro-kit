@@ -7,12 +7,24 @@ import { COLOR_RULES } from './color.ts';
 import type { BrowserRule } from './harness.ts';
 import { KEYBOARD_RULES } from './keyboard.ts';
 import { LAYOUT_RULES } from './layout.ts';
+import { LEGAL_RULES } from './legal.ts';
 import { ORIGINS_RULES } from './origins.ts';
 import { PERF_RULES } from './perf.ts';
 
-/** The browser rules of the registry, in its order. Throws when a rule has no registry entry of stage `browser`. */
+/**
+ * The stages whose rules have a browser part: `browser`, and the browser half of a `build + browser` rule
+ * (`legal-approved`).
+ */
+export const BROWSER_STAGES: readonly string[] = ['browser', 'build + browser'];
+
+/**
+ * The browser rules of the registry, in its order. Throws when a rule has no registry entry of a stage of
+ * `BROWSER_STAGES`.
+ */
 export function inRegistryOrder(rules: readonly BrowserRule[]): BrowserRule[] {
-  const order = new Map(RULES.filter((rule) => rule.stage === 'browser').map((rule, index) => [rule.id, index]));
+  const order = new Map(
+    RULES.filter((rule) => BROWSER_STAGES.includes(rule.stage)).map((rule, index) => [rule.id, index]),
+  );
   for (const rule of rules) {
     if (!order.has(rule.id)) throw new Error(`astro-kit: ${rule.id} is no browser rule of the registry`);
   }
@@ -22,6 +34,7 @@ export function inRegistryOrder(rules: readonly BrowserRule[]): BrowserRule[] {
 export const BROWSER_RULES: readonly BrowserRule[] = inRegistryOrder([
   ...LAYOUT_RULES,
   ...KEYBOARD_RULES,
+  ...LEGAL_RULES,
   ...COLOR_RULES,
   ...PERF_RULES,
   ...ORIGINS_RULES,

@@ -18,6 +18,10 @@ const STAGES: readonly { stage: Stage; when: string }[] = [
     when: 'On the source like a config rule, and again on `dist/`. The output is the authority.',
   },
   { stage: 'build', when: 'The end of `astro build`, on the files in `dist/`.' },
+  {
+    stage: 'build + browser',
+    when: 'At the end of `astro build` like a build rule, and again in `npx --no astro-kit test`, in Chromium.',
+  },
   { stage: 'browser', when: '`npx --no astro-kit test`, in Chromium on the built site.' },
   { stage: 'ci', when: '`npx --no astro-kit ci` and the site workflow.' },
   { stage: 'smoke', when: '`npx --no astro-kit smoke <origin>`, against production.' },

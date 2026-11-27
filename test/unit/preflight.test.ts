@@ -398,7 +398,7 @@ const FAILING: readonly Case[] = [
   ],
   [
     'forms-binding: the probe inbox is not an allowed destination',
-    withForms(WRANGLER_FORMS.replace(', "probe@example.ch"', '')),
+    withForms(WRANGLER_FORMS.replace(',\n        "probe@example.ch"', '')),
     ['config-wrangler', 'forms-binding'],
   ],
   [
@@ -840,7 +840,7 @@ test('each new finding names its place', () => {
   assert.deepEqual(places(withoutFile(WRANGLER)), ['wrangler.jsonc']);
   assert.deepEqual(places(withFiles({ 'wrangler.toml': '' })), ['wrangler.toml']);
   assert.deepEqual(places(withFiles({ [WRANGLER]: WRANGLER_CHANGED_BY_HAND })), ['wrangler.jsonc:5']);
-  assert.deepEqual(places(withSettings({ site: 'https://www.example.ch' })), ['wrangler.jsonc:9']);
+  assert.deepEqual(places(withSettings({ site: 'https://www.example.ch' })), ['wrangler.jsonc:11']);
   assert.deepEqual(places(withoutFile(DESIGN)), ['docs/design.md']);
   assert.deepEqual(places(withFiles({ [DESIGN]: DESIGN_WITH_COLOR_MIX })), ['docs/design.md:11']);
   assert.deepEqual(places(withSettings({ modes: WITH_DARK })), ['astro-kit.json: modes.dark']);

@@ -92,14 +92,12 @@ export const ISLAND_CLASS = 'more-links--open';
 /**
  * The Solid island of the `islands` variant: a list of links to other pages of the hotel. Its server markup shows
  * every link, so the page works without JavaScript (`a11y-no-js`). After hydration it adds the modifier
- * `more-links--open`, a class that only the browser sees. Its pragma `@jsxImportSource solid-js` gives `astro check`
- * the JSX types of Solid, because the TS preset of the kit names no JSX source (12.2).
+ * `more-links--open`, a class that only the browser sees. It has no `@jsxImportSource` pragma: the TS preset of the
+ * kit names `solid-js` as the JSX source (12.2), so `astro check` reads the JSX with the types of Solid.
  */
 const MORE_LINKS = `/**
  * More links to the pages of the hotel, as a Solid island. The server markup shows every link. In the browser the
  * island marks its root as open, a class that no built page holds.
- *
- * @jsxImportSource solid-js
  */
 import { For, onMount } from 'solid-js';
 import '../styles/components/more-links.css';
