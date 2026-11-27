@@ -394,3 +394,6 @@
   seconds on 100 KB. The scanner skips each comment in one step, and it keeps, by its start, the end of each gap and the
   result of each name, member and string literal that it read, so it reads any text in linear time. It reads the same forms: a block comment ends at its first `*/`, and a line comment ends at `\n`,
   `\r`, U+2028 or U+2029.
+- After the same review, a `new` with more than 64 opening parentheses before its name is a finding of its own that
+  the worker check cannot read, so candidates between the parentheses of one expression cannot make the scan
+  quadratic, and many starts in one inline script no longer exceed the argument limit of a call.
