@@ -139,6 +139,25 @@ function signalGroup(group: number, signal: NodeJS.Signals): void {
  * Only SIGKILL of the test process leaves it, because no process can catch that.
  */
 export async function wranglerDev(dir: string, config = 'wrangler.jsonc'): Promise<Wrangler> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await startWrangler(dir, config);
+    } catch (error) {
+      if (attempt >= PORT_ATTEMPTS || !PORT_TAKEN.test(String(error))) throw error;
+    }
+  }
+}
+
+/**
+ * `freePort` closes its socket before wrangler binds the port, so another process of the suite (a test server, a
+ * Chromium, a second wrangler) can take the port in between. Only that failure starts wrangler again, on new
+ * ports; any other failure throws at once.
+ */
+const PORT_TAKEN = /Address already in use/;
+const PORT_ATTEMPTS = 3;
+
+/** One start of `wrangler dev` on two free ports (`wranglerDev`). */
+async function startWrangler(dir: string, config: string): Promise<Wrangler> {
   const [port, inspector] = [await freePort(), await freePort()];
   const child = spawn(
     process.execPath,

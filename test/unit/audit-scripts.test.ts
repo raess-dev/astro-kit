@@ -20,6 +20,9 @@ import {
   auditJsPrefetchAttr,
   auditJsScript,
   auditOriginsThirdParty,
+  PARENS_MAX,
+  UNREAD_NEW,
+  workerStarts,
 } from '../../src/audit/page/scripts.ts';
 import { auditLegalOrigins } from '../../src/audit/site.ts';
 import type { BuildContext } from '../../src/context.ts';
@@ -318,6 +321,183 @@ test('js-script reports one finding for each page, which lists its scripts, also
   const ctx = contextOf(files, { options });
   assert.deepEqual(findingsOf(auditJsScript, ctx, 'js-script'), ['/ <script>: a(); <script src="/x.js">']);
   assert.equal(getRule('js-script').waivable, false);
+});
+
+test('js-script reads a run of comments in linear time, and a comment ends at its first closing mark (Codex, #31)', () => {
+  // A lazy block comment could run past its first closing mark, so 30 comments took over 10 s.
+  const runs = [
+    `new ${'/*x*/ '.repeat(30)}Date()`,
+    `new ${'/*x*/'.repeat(40_000)}Date()`,
+    `new ${'//a'.repeat(40_000)}\nDate()`,
+    `new ${'/*a*//*b*/ //c\n'.repeat(5_000)}Date()`,
+    // A failed search must not read a gap again from each candidate inside it (Codex, #31).
+    `new ${'//new\n'.repeat(16_000)}Date()`,
+    '[//'.repeat(30_000),
+    `new ${'/*new*/'.repeat(30_000)}Date()`,
+    '[/*["serviceWorker"]*/'.repeat(20_000),
+    // Nor read again the name, the parentheses or the members that many candidates reach (Codex, #31).
+    `new ${'//new\n'.repeat(16_000)}D${'a'.repeat(16_000)}()`,
+    `new ${'//new\n'.repeat(16_000)}a${'.b'.repeat(16_000)}`,
+    `serviceWorker ${'//serviceWorker\n'.repeat(16_000)}.${'a'.repeat(16_000)}`,
+    // Nor walk again the rest of a member chain that candidates reach at different members (Codex, #31).
+    `/*new a.${'//new\na.'.repeat(16_000)}a()*/`,
+    // Nor read again a string literal that many `[` reach through one comment (Codex, #31).
+    `${'[/*'.repeat(16_000)}*/"${'a'.repeat(16_000)}"]`,
+    `${'[/*'.repeat(16_000)}*/'${'a'.repeat(16_000)}']`,
+    `${'[/*'.repeat(16_000)}*/\`${'a'.repeat(16_000)}\`]`,
+  ];
+  // Candidates between the parentheses of one expression do not walk the rest of them again: a `new` with more
+  // than PARENS_MAX opening parentheses is a start that the check cannot read (Codex, #31).
+  const nested = `new (${'//new\n('.repeat(16_000)}Date${')'.repeat(16_001)}()`;
+  const started = performance.now();
+  assert.ok(workerStarts(nested).every((name) => name === UNREAD_NEW));
+  assert.ok(
+    workerStarts(`new ${'//new\n'.repeat(16_000)}${'('.repeat(16_000)}D()`).every((name) => name === UNREAD_NEW),
+  );
+  for (const text of runs) assert.deepEqual(workerStarts(text), []);
+  assert.ok(performance.now() - started < 1_000, 'the runs of comments take less than 1 s together');
+  // The comments between the tokens still count as white space, stars included.
+  assert.deepEqual(workerStarts('new /* a * b **/ // c\n /***/ Worker("/w.js")'), ['new Worker']);
+  assert.deepEqual(workerStarts('new /* x */ Date(); /* Worker */'), []);
+  // A `)` that closes an opening parenthesis may stand before the member that names the worker (Codex, #31).
+  assert.deepEqual(workerStarts('new (globalThis).Worker("/w.js")'), ['new Worker']);
+  assert.deepEqual(workerStarts('new (self)["SharedWorker"](u)'), ['new SharedWorker']);
+  assert.deepEqual(workerStarts('new ( (window) /*c*/ ) . Worker(u)'), ['new Worker']);
+  assert.deepEqual(workerStarts('new (a.b).c.Worker(u)'), ['new Worker']);
+  // A `)` with no opening parenthesis of the `new` ends it, and `new (a)(b).Worker` constructs `a`.
+  assert.deepEqual(workerStarts('new a).Worker(u)'), []);
+  assert.deepEqual(workerStarts('new (a)(b).Worker'), []);
+  assert.deepEqual(workerStarts('new (a)).Worker(u)'), []);
+  assert.equal(PARENS_MAX, 64);
+  assert.deepEqual(workerStarts(`new ${'('.repeat(64)}Worker(u)`), ['new Worker']);
+  assert.deepEqual(workerStarts(`new ${'('.repeat(65)}Date()`), [UNREAD_NEW]);
+  // A spread before `new` is no member dot, and a `)` may close a receiver before `register` (Codex, #31).
+  assert.deepEqual(workerStarts('const x = {...new Worker("/w.js")}'), ['new Worker']);
+  assert.deepEqual(workerStarts('f(...new SharedWorker(u))'), ['new SharedWorker']);
+  assert.deepEqual(workerStarts('a.new Worker'), []);
+  assert.deepEqual(workerStarts('(navigator.serviceWorker).register("/sw.js")'), ['serviceWorker.register']);
+  assert.deepEqual(workerStarts('(navigator["serviceWorker"])?.register("/sw.js")'), ['serviceWorker.register']);
+  assert.deepEqual(workerStarts('((navigator.serviceWorker) /*c*/ ).register(u)'), ['serviceWorker.register']);
+  assert.deepEqual(workerStarts('(navigator.serviceWorker).ready'), []);
+  // A line comment ends at every line terminator of JavaScript, not only at a line feed.
+  for (const end of ['\n', '\r', '\r\n', '\u2028', '\u2029']) {
+    assert.deepEqual(workerStarts(`new //c${end}Worker("/w.js")`), ['new Worker'], JSON.stringify(end));
+  }
+});
+
+test('js-script without features.workers fails every start of a worker in a bundled file or an inline script (9.5)', () => {
+  const module = '<script type="module" src="/_astro/a.Bc12.js"></script>';
+  const off = (text: string, file = '_astro/a.Bc12.js'): string[] =>
+    findingsOf(
+      auditJsScript,
+      contextOf({ ...withMain(SCRIPTS, module), '_astro/a.Bc12.js': 'x()', [file]: text }, { options: SCRIPTS }),
+      'js-script',
+    );
+  const at = (detail: string, where = '/_astro/a.Bc12.js'): string[] => [
+    `${where} the script starts a worker (${detail}), but features.workers is off (9.5)`,
+  ];
+  const cases: readonly [name: string, text: string, findings: string[]][] = [
+    // Whatever the argument: a literal, a variable, a blob URL, no argument.
+    [
+      'the worker form of Rolldown',
+      'new Worker(new URL(`/_astro/w.js`,``+import.meta.url),{type:`module`})',
+      at('new Worker'),
+    ],
+    ['a worker of a variable', 'new Worker(url)', at('new Worker')],
+    ['a worker of a blob', 'new Worker(URL.createObjectURL(new Blob(["x"])))', at('new Worker')],
+    ['a shared worker', 'new SharedWorker("/_astro/s.js")', at('new SharedWorker')],
+    ['a service worker', 'navigator.serviceWorker.register("/sw.js")', at('serviceWorker.register')],
+    [
+      'a service worker of a variable',
+      'const n = navigator; n.serviceWorker.register(u)',
+      at('serviceWorker.register'),
+    ],
+    [
+      'a service worker, computed and optional',
+      'navigator["serviceWorker"]?.["register"](u)',
+      at('serviceWorker.register'),
+    ],
+    ['importScripts', 'importScripts("/_astro/i.js")', at('importScripts')],
+    ['importScripts of self, not called', 'const load = self.importScripts', at('importScripts')],
+    // The constructor reached through a member, in parentheses, with white space or a comment.
+    ['through globalThis', 'new globalThis.Worker(u)', at('new Worker')],
+    ['through window, optional', 'new window?.SharedWorker(u)', at('new SharedWorker')],
+    ['through self, computed', "new self['Worker'](u)", at('new Worker')],
+    ['in parentheses', 'new (window.Worker)(u)', at('new Worker')],
+    ['a comment and a line break', 'new /* w */\n Worker(u)', at('new Worker')],
+    ['a line comment', 'new // w\nSharedWorker(u)', at('new SharedWorker')],
+    [
+      'minified, two kinds',
+      'a=new Worker(b);c=new SharedWorker(d);e=new Worker(f)',
+      at('new Worker, new SharedWorker'),
+    ],
+    // No start: a member named Worker without new, a longer name, a feature test.
+    ['a property named Worker', 'const w = x.Worker; y.SharedWorker = 1', []],
+    ['an object key', 'const o = { Worker: 1, SharedWorker: 2 }', []],
+    ['a feature test', 'if (typeof Worker === "function" && "serviceWorker" in navigator) x()', []],
+    ['a longer name', 'new WorkerPool(); new Workers(); newWorker(); renew.Worker()', []],
+    ['serviceWorker without register', 'navigator.serviceWorker.ready.then(x); navigator.serviceWorker.controller', []],
+    ['register of another object', 'customElements.register(x); sw.register(u)', []],
+    ['a longer name than importScripts', 'importScriptsLater(); myimportScripts()', []],
+  ];
+  assert.deepEqual(
+    cases.map(([name, text]) => [name, off(text)]),
+    cases.map(([name, , findings]) => [name, findings]),
+  );
+  // Every file that the host serves as JavaScript counts, wherever it is and whether a page loads it or not.
+  assert.deepEqual(off('new Worker(u)', 'w.js'), at('new Worker', '/w.js'));
+  assert.deepEqual(off('new Worker(u)', '_astro/lib/x.MJS'), at('new Worker', '/_astro/lib/x.MJS'));
+  assert.deepEqual(off('new Worker(u)', '_astro/x.cjs'), at('new Worker', '/_astro/x.cjs'));
+  assert.deepEqual(off('new Worker(u)', '_astro/x.json'), []);
+  assert.deepEqual(off('new Worker(u)', 'notes.txt'), []);
+});
+
+test('js-script without features.workers fails a worker in an inline script; with it, the rule is unchanged', () => {
+  const onPage = (detail: string): string =>
+    `/ an inline script starts a worker (${detail}), but features.workers is off (9.5)`;
+  const inline = (options: Options, markup: string, files: Files = {}): string[] =>
+    findingsOf(auditJsScript, contextOf({ ...withMain(options, markup), ...files }, { options }), 'js-script');
+  const WORKERS = settings({ features: { scripts: true, workers: true } });
+  assert.deepEqual(inline(SCRIPTS, '<script type="module">new Worker("/_astro/w.js")</script>'), [
+    onPage('new Worker'),
+  ]);
+  // A classic inline script that js-script fails anyway also names the worker.
+  assert.deepEqual(inline(SCRIPTS, '<script>navigator.serviceWorker.register("/sw.js")</script>'), [
+    '/ <script>: navigator.serviceWorker.register("/sw.js")',
+    onPage('serviceWorker.register'),
+  ]);
+  // Two scripts of one page give one finding.
+  assert.deepEqual(
+    inline(SCRIPTS, '<script type="module">new Worker(a)</script><script type="module">importScripts(b)</script>'),
+    [onPage('new Worker, importScripts')],
+  );
+  // A data block, JSON-LD and template content run no code.
+  assert.deepEqual(
+    inline(
+      SCRIPTS,
+      '<script type="application/ld+json">{"x":"new Worker(a)"}</script><template><script type="module">new Worker(a)</script></template>',
+    ),
+    [],
+  );
+  // A new that the check cannot read has a finding of its own, and many starts are no error of the call (Codex, #31).
+  assert.deepEqual(inline(SCRIPTS, `<script type="module">new ${'('.repeat(65)}Date()</script>`), [
+    '/ an inline script has a new with more than 64 opening parentheses, which the worker check cannot read, and features.workers is off (9.5)',
+  ]);
+  assert.deepEqual(inline(SCRIPTS, `<script type="module">/*${'importScripts;'.repeat(150_000)}*/</script>`), [
+    onPage('importScripts'),
+  ]);
+  // With features.workers, no worker is a finding of js-script.
+  assert.deepEqual(
+    inline(
+      WORKERS,
+      '<script type="module">new Worker("/_astro/w.js")</script><script type="module" src="/_astro/a.js"></script>',
+      {
+        '_astro/a.js': 'new SharedWorker(u); navigator.serviceWorker.register(u); importScripts(u)',
+        'w.js': 'new Worker(u)',
+      },
+    ),
+    [],
+  );
 });
 
 // js-prefetch-attr

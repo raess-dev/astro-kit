@@ -15,7 +15,7 @@
  * - A third-party `src` on an `img` is `images-src`'s too (it is no `/_astro/` file): two facts, two ids.
  */
 import type { HTMLElement } from 'node-html-parser';
-import type { BuildContext, BuiltPage } from '../../context.ts';
+import { type BuildContext, type BuiltPage, readText } from '../../context.ts';
 import { asciiLower } from '../../css/parse.ts';
 import { snippet } from '../../css/rules.ts';
 import { islandScriptTexts, solidHydrationText } from '../../islands.ts';
@@ -27,6 +27,7 @@ import {
   distFileOf,
   domOf,
   hasAttr,
+  pushAll,
   rawContentOf,
   resolveHref,
   scriptKind,
@@ -183,15 +184,25 @@ function unreadTexts(ctx: BuildContext): string {
  * and Solid's exact hydration script (`solidHydrationText`); with an origin that has `script` and `load: "page"`, a
  * script of that host with `async`, `defer` or `type="module"`. Every other `script` element is a problem: a classic
  * or module script, an import map and a data block. One finding for each page, which lists its scripts.
+ *
+ * With `features.workers` off, each start of a worker (`workerStarts`) is a finding too, whatever its argument: one for
+ * each JavaScript file of the client directory (`JS_FILE`) at its path, and one for each page whose inline scripts hold
+ * one (9.5).
  */
 export function auditJsScript(ctx: BuildContext): void {
   const policy = scriptPolicy(ctx.options);
+  const workers = ctx.options.features.workers;
   for (const page of ctx.pages) {
     const problems: string[] = [];
+    const starts: string[] = [];
     for (const script of domOf(page).byTag('script')) {
       const kind = scriptKind(script);
-      if (kind === 'json-ld' || kind === 'speculationrules') continue;
       const src = attr(script, 'src');
+      if (!workers && src === undefined && (kind === 'classic' || kind === 'module')) {
+        // One by one: a spread of many matches would pass the limit of the arguments of a call (Codex, #31).
+        pushAll(starts, workerStarts(rawContentOf(script)));
+      }
+      if (kind === 'json-ld' || kind === 'speculationrules') continue;
       if (src === undefined && isModeScriptLike(script)) continue;
       const allowed =
         src === undefined ? allowedInline(ctx, policy, script) : allowedSource(ctx, policy, page, script, src);
@@ -201,6 +212,345 @@ export function auditJsScript(ctx: BuildContext): void {
       problems.push(`${startTag(page, script)}${text}${missing}`);
     }
     reportPage(ctx, JS_SCRIPT, page, problems);
+    reportWorkers(ctx, page.path, 'an inline script', starts);
+  }
+  if (workers) return;
+  for (const file of ctx.files) {
+    if (!JS_FILE.test(file)) continue;
+    reportWorkers(ctx, `/${file}`, 'the script', workerStarts(readText(ctx, file) ?? ''));
+  }
+}
+
+// js-script: workers
+
+/**
+ * A file that the host serves as JavaScript, by its extension in any ASCII case: `.js`, `.mjs` and `.cjs`. A module
+ * script and a worker script need a JavaScript MIME type, and the asset worker takes the type from the extension.
+ */
+const JS_FILE = /\.[mc]?js$/i;
+
+/**
+ * The forms of a start of a worker that `js-script` reads when `features.workers` is off (section 8 and 9.5),
+ * whatever its argument:
+ *
+ * - `new` before `Worker` or `SharedWorker`, also reached through members (`new globalThis.Worker`,
+ *   `new self["SharedWorker"]`, `new (window.Worker)`). A member named `Worker` without `new` is no start.
+ * - `serviceWorker` (or `["serviceWorker"]`) then a member `register`: `navigator.serviceWorker.register`, also not
+ *   called.
+ * - The name `importScripts`, anywhere: it exists only in a worker.
+ *
+ * White space and comments may stand between the tokens. The text is read as it is, so a match inside a string or a
+ * comment counts too. A `new` is the word that no letter, digit, `_`, `$` or `.` comes before; `serviceWorker` and
+ * `importScripts` are words that no letter, digit, `_` or `$` comes before.
+ *
+ * The scanner reads each text in linear time (Codex, #31): two tables give, for each position, the next line
+ * terminator and the next `*` + `/`, so a comment is skipped in one step, and the end of each gap is kept, so no gap is
+ * read twice. A regex reads a gap again from each candidate inside it, which was quadratic on a run of comments or
+ * on one long comment.
+ */
+class WorkerScanner {
+  private readonly text: string;
+  private readonly length: number;
+  /** For each position, the first line terminator at or after it (`\n`, `\r`, U+2028, U+2029), else the length. */
+  private readonly lineEnd: Int32Array;
+  /** For each position, the first `*` that a `/` follows, at or after it, else -1. */
+  private readonly blockEnd: Int32Array;
+  /** For each position that a gap read, where that gap ends; -1 where no gap was read yet. */
+  private readonly gapEnd: Int32Array;
+  /**
+   * The results of the steps after a gap, by the position where the step starts. Each step depends on its start
+   * only, so many candidates that reach one position read what follows once (Codex, #31).
+   */
+  private readonly members = new Map<number, Step | undefined>();
+  private readonly tails = new Map<number, Step | undefined>();
+  private readonly computeds = new Map<number, Step | undefined>();
+  private readonly chains = new Map<number, Step | { stop: number }>();
+  private readonly literals = new Map<number, { value: string; end: number } | undefined>();
+
+  constructor(text: string) {
+    this.text = text;
+    this.length = text.length;
+    this.lineEnd = new Int32Array(this.length + 1);
+    this.blockEnd = new Int32Array(this.length + 1);
+    this.gapEnd = new Int32Array(this.length + 1).fill(-1);
+    let line = this.length;
+    let block = -1;
+    this.lineEnd[this.length] = line;
+    this.blockEnd[this.length] = block;
+    for (let index = this.length - 1; index >= 0; index -= 1) {
+      const code = text.charCodeAt(index);
+      if (code === 0x0a || code === 0x0d || code === 0x2028 || code === 0x2029) line = index;
+      if (code === 0x2a && text.charCodeAt(index + 1) === 0x2f) block = index;
+      this.lineEnd[index] = line;
+      this.blockEnd[index] = block;
+    }
+  }
+
+  /** Where the white space and comments at `start` end: a line comment ends after its line terminator. */
+  gap(start: number): number {
+    const visited: number[] = [];
+    let index = start;
+    while (index < this.length) {
+      const known = this.gapEnd[index] ?? -1;
+      if (known >= 0) {
+        index = known;
+        break;
+      }
+      visited.push(index);
+      const char = this.text[index] ?? '';
+      if (WHITE_SPACE.test(char)) {
+        index += 1;
+      } else if (char === '/' && this.text[index + 1] === '*') {
+        const close = this.blockEnd[index + 2] ?? -1;
+        if (close < 0) break;
+        index = close + 2;
+      } else if (char === '/' && this.text[index + 1] === '/') {
+        index = Math.min(this.length, (this.lineEnd[index + 2] ?? this.length) + 1);
+      } else {
+        break;
+      }
+    }
+    for (const position of visited) this.gapEnd[position] = index;
+    return index;
+  }
+
+  /** The end of the name at `start`, or `start` when none stands there. */
+  private nameEnd(start: number): number {
+    let index = start;
+    while (index < this.length && NAME_CHAR.test(this.text[index] ?? '')) index += 1;
+    return index;
+  }
+
+  /** Whether `word` stands at `start` as a whole name: no name character follows it. */
+  private wordAt(start: number, word: string): boolean {
+    return this.text.startsWith(word, start) && !NAME_CHAR.test(this.text[start + word.length] ?? '');
+  }
+
+  /** The string literal at `start` (`"…"`, `'…'` or a template with no `${`, no escape): its text and end. */
+  private literal(start: number): { value: string; end: number } | undefined {
+    if (!this.literals.has(start)) this.literals.set(start, this.literalAt(start));
+    return this.literals.get(start);
+  }
+
+  /**
+   * The string literal at `start`, read once: it ends at the next quote of its own kind, so each character is read
+   * at most once for each of the three kinds of quote.
+   */
+  private literalAt(start: number): { value: string; end: number } | undefined {
+    const quote = this.text[start];
+    if (quote !== '"' && quote !== "'" && quote !== '`') return undefined;
+    for (let index = start + 1; index < this.length; index += 1) {
+      const char = this.text[index];
+      if (char === quote) return { value: this.text.slice(start + 1, index), end: index + 1 };
+      if (char === '\\' || (quote === '`' ? char === '$' : char === '\n')) return undefined;
+    }
+    return undefined;
+  }
+
+  /**
+   * One member step at `start`: `.name` or `?.name` (gaps around the dot), or `[literal]` or `?.[literal]` (gaps
+   * inside). Its name and its end, or undefined when no step stands there. A template literal must close.
+   */
+  member(start: number): Step | undefined {
+    const index = this.gap(start);
+    if (!this.members.has(index)) this.members.set(index, this.memberAt(index));
+    return this.members.get(index);
+  }
+
+  /** The member step at `start`, after its gap. */
+  private memberAt(start: number): Step | undefined {
+    let index = start;
+    if (this.text[index] === '?' && this.text[index + 1] === '.') {
+      const after = this.gap(index + 2);
+      if (this.text[after] === '[') return this.computed(after);
+      const end = this.nameEnd(after);
+      return end > after ? { name: this.text.slice(after, end), end } : undefined;
+    }
+    if (this.text[index] === '.') {
+      index = this.gap(index + 1);
+      const end = this.nameEnd(index);
+      return end > index ? { name: this.text.slice(index, end), end } : undefined;
+    }
+    return this.text[index] === '[' ? this.computed(index) : undefined;
+  }
+
+  /** A computed member `[literal]` at `start`, with gaps inside. */
+  computed(start: number): Step | undefined {
+    if (!this.computeds.has(start)) this.computeds.set(start, this.computedAt(start));
+    return this.computeds.get(start);
+  }
+
+  /** The computed member at `start`, read once. */
+  private computedAt(start: number): Step | undefined {
+    const value = this.literal(this.gap(start + 1));
+    if (value === undefined) return undefined;
+    const close = this.gap(value.end);
+    return this.text[close] === ']' ? { name: value.value, end: close + 1 } : undefined;
+  }
+
+  /** A start of a worker with `new` at `start`: its name and end. */
+  private newAt(start: number): Step | undefined {
+    const index = this.gap(start + 3);
+    if (!this.tails.has(index)) this.tails.set(index, this.tailAt(index));
+    return this.tails.get(index);
+  }
+
+  /** What follows `new` and its gap at `start`: parentheses, then a worker name or a name and its members. */
+  private tailAt(start: number): Step | undefined {
+    let index = start;
+    let open = 0;
+    while (this.text[index] === '(' && open < PARENS_MAX) {
+      index = this.gap(index + 1);
+      open += 1;
+    }
+    // More parentheses than that: the check does not read on, and the start counts as one it cannot read.
+    if (this.text[index] === '(') return { name: UNREAD_NEW, end: index };
+    for (const name of WORKER_NAMES) {
+      if (this.wordAt(index, name)) return { name: `new ${name}`, end: index + name.length };
+    }
+    let end = this.nameEnd(index);
+    if (end === index) return undefined;
+    // Members follow the name, and a `)` that closes one of the opening parentheses may stand between them:
+    // `new (globalThis).Worker(u)` and `new (self)["Worker"](u)` start a worker too (Codex, #31).
+    for (;;) {
+      const chain = this.chain(end);
+      if ('name' in chain) return { name: `new ${chain.name}`, end: chain.end };
+      end = chain.stop;
+      const close = this.gap(end);
+      if (open === 0 || this.text[close] !== ')') return undefined;
+      end = close + 1;
+      open -= 1;
+    }
+  }
+
+  /**
+   * The member chain at `start`: its first member that names a worker, or the position where the chain stops. The
+   * outcome is kept for every position that the walk visited, as for a gap, so candidates that reach one chain at
+   * different members walk it once (Codex, #31).
+   */
+  private chain(start: number): Step | { stop: number } {
+    const visited: number[] = [];
+    let index = start;
+    let outcome: Step | { stop: number } | undefined;
+    while (outcome === undefined) {
+      const known = this.chains.get(index);
+      if (known !== undefined) {
+        outcome = known;
+        break;
+      }
+      visited.push(index);
+      const step = this.member(index);
+      if (step === undefined) outcome = { stop: index };
+      else if ((WORKER_NAMES as readonly string[]).includes(step.name)) outcome = step;
+      else index = step.end;
+    }
+    for (const position of visited) this.chains.set(position, outcome);
+    return outcome;
+  }
+
+  /** A start of a worker through `serviceWorker` at `start`, as a name or a computed member, then `register`. */
+  private serviceWorkerAt(start: number): number | undefined {
+    let end: number | undefined;
+    if (this.text[start] === '[') {
+      const step = this.computed(start);
+      if (step?.name === 'serviceWorker') end = step.end;
+    } else if (this.wordAt(start, 'serviceWorker') && !NAME_CHAR.test(this.text[start - 1] ?? '')) {
+      end = start + 'serviceWorker'.length;
+    }
+    if (end === undefined) return undefined;
+    // A `)` may close a parenthesis around the receiver: `(navigator.serviceWorker).register(u)` (Codex, #31). The
+    // check does not look for its opening one, so `f(navigator.serviceWorker).register` counts too: it fails closed.
+    for (let close = 0; close <= PARENS_MAX; close += 1) {
+      const step = this.member(end);
+      if (step !== undefined) return step.name === 'register' ? step.end : undefined;
+      const after = this.gap(end);
+      if (this.text[after] !== ')') return undefined;
+      end = after + 1;
+    }
+    return undefined;
+  }
+
+  /** Each start of a worker, in the order of the text; the search goes on after the end of each start. */
+  starts(): string[] {
+    const found: string[] = [];
+    let index = 0;
+    while (index < this.length) {
+      const char = this.text[index];
+      const before = this.text[index - 1] ?? '';
+      // A `.` before `new` makes it a member name, but the last dot of a spread `...` does not (Codex, #31).
+      const member = before === '.' && this.text.slice(index - 3, index) !== '...';
+      if (char === 'n' && this.wordAt(index, 'new') && !NAME_CHAR.test(before) && !member) {
+        const start = this.newAt(index);
+        if (start !== undefined) {
+          found.push(start.name);
+          index = start.end;
+          continue;
+        }
+      }
+      if (char === 's' || char === '[') {
+        const end = this.serviceWorkerAt(index);
+        if (end !== undefined) {
+          found.push('serviceWorker.register');
+          index = end;
+          continue;
+        }
+      }
+      if (char === 'i' && this.wordAt(index, 'importScripts') && !NAME_CHAR.test(before)) {
+        found.push('importScripts');
+        index += 'importScripts'.length;
+        continue;
+      }
+      index += 1;
+    }
+    return found;
+  }
+}
+
+/** A name that the scanner read, and the end of its text. */
+interface Step {
+  name: string;
+  end: number;
+}
+
+/** One character of white space as JavaScript reads it (`\s`). */
+const WHITE_SPACE = /^\s$/;
+
+/** One character of a name: a letter, a digit, `_` or `$`, as `[\w$]`. */
+const NAME_CHAR = /^[\w$]$/;
+
+const WORKER_NAMES = ['Worker', 'SharedWorker'] as const;
+
+/**
+ * The most opening parentheses that a `new` may have before its name. Each candidate walks its own parentheses and
+ * their closing ones, so a cap keeps that walk short when many candidates stand between the parentheses of one
+ * expression (Codex, #31). A `new` with more counts as a start that the check cannot read (`UNREAD_NEW`).
+ */
+export const PARENS_MAX = 64;
+
+/** The name of a `new` that the scanner does not read on: it has more than `PARENS_MAX` opening parentheses. */
+export const UNREAD_NEW = 'unread new';
+
+/** The names of the starts of a worker in a JS text (`WorkerScanner`), in the order of the text. */
+export function workerStarts(text: string): string[] {
+  return new WorkerScanner(text).starts();
+}
+
+/**
+ * The findings for the starts of a worker of one text: one that names each start once, in the order of the text,
+ * and one for a `new` that the check cannot read (`UNREAD_NEW`).
+ */
+function reportWorkers(ctx: BuildContext, where: string, what: string, starts: readonly string[]): void {
+  const names = [...new Set(starts)];
+  const read = names.filter((name) => name !== UNREAD_NEW);
+  if (read.length > 0) {
+    ctx.report.add(JS_SCRIPT, where, `${what} starts a worker (${read.join(', ')}), but features.workers is off (9.5)`);
+  }
+  if (read.length < names.length) {
+    ctx.report.add(
+      JS_SCRIPT,
+      where,
+      `${what} has a new with more than ${PARENS_MAX} opening parentheses, which the worker check cannot read, and features.workers is off (9.5)`,
+    );
   }
 }
 

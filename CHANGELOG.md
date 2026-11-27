@@ -381,3 +381,23 @@
   - The acceptance suite has the `islands`, `scripts` and `origins` variants and the `origins` set. The `scripts`
     and `origins` variants and the set share one build in `planted-origins.test.ts`, which runs in
     `kit / acceptance (browser)`. The `islands` case also waits in Chromium until the island hydrated.
+- With `features.workers` off, `js-script` fails every start of a worker, whatever its argument: `new Worker`,
+  `new SharedWorker` (also through `globalThis`, `window`, `self` or another member), `serviceWorker.register` and
+  `importScripts`, in each JavaScript file of `dist` and in each inline script. The detail names `features.workers`
+  and 9.5. The CSP already set `worker-src 'none'`; the build now says so first. With `features.workers` on, nothing
+  changes.
+- `origins-gesture`: a unit test pins that a new `about:blank`, `srcdoc`, nested or sandboxed frame and a popup of
+  `window.open('')` carry the wrapped `RTCPeerConnection` before a script can read it, because Playwright runs the
+  init script in their first document. The row no longer lists frames under what the check cannot see.
+- After the Codex review of #31, the worker check of `js-script` is a scanner, not a regex. A regex read the gap after
+  a candidate again from each candidate inside it: a run of comments, or one long comment with `[` in it, took
+  seconds on 100 KB. The scanner skips each comment in one step, and it keeps, by its start, the end of each gap and the
+  result of each name, member, member chain and string literal that it read, so it reads any text in linear time. It reads the same forms: a block comment ends at its first `*/`, and a line comment ends at `\n`,
+  `\r`, U+2028 or U+2029.
+- After the same review, a `new` with more than 64 opening parentheses before its name is a finding of its own that
+  the worker check cannot read, so candidates between the parentheses of one expression cannot make the scan
+  quadratic, and many starts in one inline script no longer exceed the argument limit of a call.
+- CI: a third acceptance job, `kit / acceptance (origins)`, runs `planted-origins.test.ts` (`npm run
+  acceptance:origins`). With it in `kit / acceptance (browser)`, that job took 14.8 of its 15 min half budget, and the
+  `prefetch` set's `test --all` passed the 600 s limit of the harness for one command. `kit / merge` needs the new job
+  (owner decision of 2026-11-27).

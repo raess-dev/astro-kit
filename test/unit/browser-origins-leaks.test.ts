@@ -96,6 +96,38 @@ test('origins-gesture sees a peer connection, which the CSP cannot stop', async 
   ]);
 });
 
+test('origins-gesture sees a peer connection of a new frame or popup that a script reads at once', async () => {
+  const peer = (from: string, host: number): string =>
+    `new ${from}.RTCPeerConnection({ iceServers: [{ urls: "stun:192.0.2.${host}:3478" }] });`;
+  const frame = (setup = ''): string =>
+    `const f = document.createElement("iframe"); f.title = "x"; ${setup} document.body.append(f);`;
+  const files = {
+    // The new frame is about:blank; the script reads its constructor in the same task.
+    'index.html': scripted(`${frame()} ${peer('f.contentWindow', 1)}`),
+    'blank/index.html': scripted(`${frame('f.src = "about:blank";')} ${peer('f.contentWindow', 2)}`),
+    // A srcdoc frame keeps its window when its document loads, so a constructor read at once stays valid.
+    'srcdoc/index.html': scripted(`${frame('f.srcdoc = "<p>x</p>";')} ${peer('f.contentWindow', 3)}`),
+    'popup/index.html': scripted(`const w = open(""); ${peer('w', 4)}`),
+    'indexed/index.html': scripted(`${frame()} ${peer('frames[0]', 5)}`),
+    'parsed/index.html': pageWith(`<iframe title="x"></iframe><script>${peer('frames[0]', 6)}</script>`),
+    'nested/index.html': scripted(
+      `${frame()} const g = f.contentDocument.createElement("iframe"); f.contentDocument.body.append(g); ${peer('g.contentWindow', 7)}`,
+    ),
+    // A frame that may run no script of its own still has a constructor that its parent can call.
+    'sandbox/index.html': scripted(`${frame('f.sandbox = "allow-same-origin";')} ${peer('f.contentWindow', 8)}`),
+  };
+  assert.deepEqual(await detailsOf(files), [
+    '/ 1280×800: a peer connection to stun:192.0.2.1:3478 was made before a gesture',
+    '/blank/ 1280×800: a peer connection to stun:192.0.2.2:3478 was made before a gesture',
+    '/indexed/ 1280×800: a peer connection to stun:192.0.2.5:3478 was made before a gesture',
+    '/nested/ 1280×800: a peer connection to stun:192.0.2.7:3478 was made before a gesture',
+    '/parsed/ 1280×800: a peer connection to stun:192.0.2.6:3478 was made before a gesture',
+    '/popup/ 1280×800: a peer connection to stun:192.0.2.4:3478 was made before a gesture',
+    '/sandbox/ 1280×800: a peer connection to stun:192.0.2.8:3478 was made before a gesture',
+    '/srcdoc/ 1280×800: a peer connection to stun:192.0.2.3:3478 was made before a gesture',
+  ]);
+});
+
 test('origins-gesture moves the page clock: a timer at 1.9 s, 2.1 s and 30 s after load counts', async () => {
   const at = (ms: number): string =>
     scripted(`addEventListener("load", () => setTimeout(() => fetch("https://t${ms}.example.org/"), ${ms}))`);
