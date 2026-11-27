@@ -184,7 +184,7 @@ function unreadTexts(ctx: BuildContext): string {
  * script of that host with `async`, `defer` or `type="module"`. Every other `script` element is a problem: a classic
  * or module script, an import map and a data block. One finding for each page, which lists its scripts.
  *
- * With `features.workers` off, each start of a worker (`WORKER_START`) is a finding too, whatever its argument: one for
+ * With `features.workers` off, each start of a worker (`workerStarts`) is a finding too, whatever its argument: one for
  * each JavaScript file of the client directory (`JS_FILE`) at its path, and one for each page whose inline scripts hold
  * one (9.5).
  */
@@ -229,32 +229,8 @@ export function auditJsScript(ctx: BuildContext): void {
 const JS_FILE = /\.[mc]?js$/i;
 
 /**
- * White space and comments between two tokens of JavaScript: a comment between `new` and `Worker` is as white space.
- * Each form has one reading only, so a run of comments matches in linear time: a block comment ends at its first
- * closing star and slash (no lazy `[\s\S]*?`, which may run past it and so try every split of a run, Codex #31),
- * and a line comment ends with its own line terminator: `\n`, `\r`, U+2028 or U+2029, as JavaScript reads it (Codex,
- * #31).
- */
-const GAP = String.raw`(?:\s|/\*[^*]*\*+(?:[^/*][^*]*\*+)*/|//[^\n\r\u2028\u2029]*(?:[\n\r\u2028\u2029]|$))*`;
-
-/** A backtick, for the regex sources below. */
-const BACKTICK = '`';
-
-/** A string literal of exactly `name`, in quotes or as a template literal. */
-const literalOf = (name: string): string => `(?:"${name}"|'${name}'|${BACKTICK}${name}${BACKTICK})`;
-
-/** One member step: `.name`, `?.name`, or a computed member with a string literal (`["name"]`). */
-const MEMBER = String.raw`(?:${GAP}\??\.${GAP}[\w$]+|${GAP}(?:\?\.${GAP})?\[${GAP}(?:"[^"\\\n]*"|'[^'\\\n]*'|${BACKTICK}[^${BACKTICK}\\$]*${BACKTICK})${GAP}\])`;
-
-/** The last member step to a name: `.Worker`, `?.Worker` or `["Worker"]`. */
-const memberTo = (name: string): string =>
-  String.raw`(?:${GAP}\??\.${GAP}${name}(?![\w$])|${GAP}(?:\?\.${GAP})?\[${GAP}${literalOf(name)}${GAP}\])`;
-
-const WORKER_NAME = '(?:Shared)?Worker';
-
-/**
- * Every start of a worker that `js-script` reads when `features.workers` is off (section 8 and 9.5), whatever its
- * argument:
+ * The forms of a start of a worker that `js-script` reads when `features.workers` is off (section 8 and 9.5),
+ * whatever its argument:
  *
  * - `new` before `Worker` or `SharedWorker`, also reached through members (`new globalThis.Worker`,
  *   `new self["SharedWorker"]`, `new (window.Worker)`). A member named `Worker` without `new` is no start.
@@ -263,31 +239,198 @@ const WORKER_NAME = '(?:Shared)?Worker';
  * - The name `importScripts`, anywhere: it exists only in a worker.
  *
  * White space and comments may stand between the tokens. The text is read as it is, so a match inside a string or a
- * comment counts too.
+ * comment counts too. A `new` is the word that no letter, digit, `_`, `$` or `.` comes before; `serviceWorker` and
+ * `importScripts` are words that no letter, digit, `_` or `$` comes before.
+ *
+ * The scanner reads each text in linear time (Codex, #31): two tables give, for each position, the next line
+ * terminator and the next `*` + `/`, so a comment is skipped in one step, and the end of each gap is kept, so no gap is
+ * read twice. A regex reads a gap again from each candidate inside it, which was quadratic on a run of comments or
+ * on one long comment.
  */
-export const WORKER_START = new RegExp(
-  [
-    String.raw`(?<![\w$.])new(?![\w$])${GAP}(?:\(${GAP})*(?:${WORKER_NAME}(?![\w$])|[\w$]+(?:${MEMBER})*?${memberTo(WORKER_NAME)})`,
-    String.raw`(?:(?<![\w$])serviceWorker(?![\w$])|\[${GAP}${literalOf('serviceWorker')}${GAP}\])${memberTo('register')}`,
-    String.raw`(?<![\w$])importScripts(?![\w$])`,
-  ].join('|'),
-  'g',
-);
+class WorkerScanner {
+  private readonly text: string;
+  private readonly length: number;
+  /** For each position, the first line terminator at or after it (`\n`, `\r`, U+2028, U+2029), else the length. */
+  private readonly lineEnd: Int32Array;
+  /** For each position, the first `*` that a `/` follows, at or after it, else -1. */
+  private readonly blockEnd: Int32Array;
+  /** For each position that a gap read, where that gap ends; -1 where no gap was read yet. */
+  private readonly gapEnd: Int32Array;
 
-/**
- * The name of one start of a worker in a finding: `new Worker`, `new SharedWorker`, `serviceWorker.register` or
- * `importScripts`. A `new` start names the last `Worker` of its text.
- */
-function workerName(match: string): string {
-  if (match === 'importScripts') return 'importScripts';
-  if (!match.startsWith('new')) return 'serviceWorker.register';
-  const last = match.lastIndexOf('Worker');
-  return match.slice(Math.max(0, last - 6), last) === 'Shared' ? 'new SharedWorker' : 'new Worker';
+  constructor(text: string) {
+    this.text = text;
+    this.length = text.length;
+    this.lineEnd = new Int32Array(this.length + 1);
+    this.blockEnd = new Int32Array(this.length + 1);
+    this.gapEnd = new Int32Array(this.length + 1).fill(-1);
+    let line = this.length;
+    let block = -1;
+    this.lineEnd[this.length] = line;
+    this.blockEnd[this.length] = block;
+    for (let index = this.length - 1; index >= 0; index -= 1) {
+      const code = text.charCodeAt(index);
+      if (code === 0x0a || code === 0x0d || code === 0x2028 || code === 0x2029) line = index;
+      if (code === 0x2a && text.charCodeAt(index + 1) === 0x2f) block = index;
+      this.lineEnd[index] = line;
+      this.blockEnd[index] = block;
+    }
+  }
+
+  /** Where the white space and comments at `start` end: a line comment ends after its line terminator. */
+  gap(start: number): number {
+    const visited: number[] = [];
+    let index = start;
+    while (index < this.length) {
+      const known = this.gapEnd[index] ?? -1;
+      if (known >= 0) {
+        index = known;
+        break;
+      }
+      visited.push(index);
+      const char = this.text[index] ?? '';
+      if (WHITE_SPACE.test(char)) {
+        index += 1;
+      } else if (char === '/' && this.text[index + 1] === '*') {
+        const close = this.blockEnd[index + 2] ?? -1;
+        if (close < 0) break;
+        index = close + 2;
+      } else if (char === '/' && this.text[index + 1] === '/') {
+        index = Math.min(this.length, (this.lineEnd[index + 2] ?? this.length) + 1);
+      } else {
+        break;
+      }
+    }
+    for (const position of visited) this.gapEnd[position] = index;
+    return index;
+  }
+
+  /** The end of the name at `start`, or `start` when none stands there. */
+  private nameEnd(start: number): number {
+    let index = start;
+    while (index < this.length && NAME_CHAR.test(this.text[index] ?? '')) index += 1;
+    return index;
+  }
+
+  /** Whether `word` stands at `start` as a whole name: no name character follows it. */
+  private wordAt(start: number, word: string): boolean {
+    return this.text.startsWith(word, start) && !NAME_CHAR.test(this.text[start + word.length] ?? '');
+  }
+
+  /** The string literal at `start` (`"…"`, `'…'` or a template with no `${`, no escape): its text and end. */
+  private literal(start: number): { value: string; end: number } | undefined {
+    const quote = this.text[start];
+    if (quote !== '"' && quote !== "'" && quote !== '`') return undefined;
+    for (let index = start + 1; index < this.length; index += 1) {
+      const char = this.text[index];
+      if (char === quote) return { value: this.text.slice(start + 1, index), end: index + 1 };
+      if (char === '\\' || (quote === '`' ? char === '$' : char === '\n')) return undefined;
+    }
+    return undefined;
+  }
+
+  /**
+   * One member step at `start`: `.name` or `?.name` (gaps around the dot), or `[literal]` or `?.[literal]` (gaps
+   * inside). Its name and its end, or undefined when no step stands there. A template literal must close.
+   */
+  member(start: number): { name: string; end: number } | undefined {
+    let index = this.gap(start);
+    if (this.text[index] === '?' && this.text[index + 1] === '.') {
+      const after = this.gap(index + 2);
+      if (this.text[after] === '[') return this.computed(after);
+      const end = this.nameEnd(after);
+      return end > after ? { name: this.text.slice(after, end), end } : undefined;
+    }
+    if (this.text[index] === '.') {
+      index = this.gap(index + 1);
+      const end = this.nameEnd(index);
+      return end > index ? { name: this.text.slice(index, end), end } : undefined;
+    }
+    return this.text[index] === '[' ? this.computed(index) : undefined;
+  }
+
+  /** A computed member `[literal]` at `start`, with gaps inside. */
+  computed(start: number): { name: string; end: number } | undefined {
+    const value = this.literal(this.gap(start + 1));
+    if (value === undefined) return undefined;
+    const close = this.gap(value.end);
+    return this.text[close] === ']' ? { name: value.value, end: close + 1 } : undefined;
+  }
+
+  /** A start of a worker with `new` at `start`: its name and end. */
+  private newAt(start: number): { name: string; end: number } | undefined {
+    let index = this.gap(start + 3);
+    while (this.text[index] === '(') index = this.gap(index + 1);
+    for (const name of WORKER_NAMES) {
+      if (this.wordAt(index, name)) return { name: `new ${name}`, end: index + name.length };
+    }
+    let end = this.nameEnd(index);
+    if (end === index) return undefined;
+    for (let step = this.member(end); step !== undefined; step = this.member(end)) {
+      end = step.end;
+      if ((WORKER_NAMES as readonly string[]).includes(step.name)) return { name: `new ${step.name}`, end };
+    }
+    return undefined;
+  }
+
+  /** A start of a worker through `serviceWorker` at `start`, as a name or a computed member, then `register`. */
+  private serviceWorkerAt(start: number): number | undefined {
+    let end: number | undefined;
+    if (this.text[start] === '[') {
+      const step = this.computed(start);
+      if (step?.name === 'serviceWorker') end = step.end;
+    } else if (this.wordAt(start, 'serviceWorker') && !NAME_CHAR.test(this.text[start - 1] ?? '')) {
+      end = start + 'serviceWorker'.length;
+    }
+    if (end === undefined) return undefined;
+    const step = this.member(end);
+    return step?.name === 'register' ? step.end : undefined;
+  }
+
+  /** Each start of a worker, in the order of the text; the search goes on after the end of each start. */
+  starts(): string[] {
+    const found: string[] = [];
+    let index = 0;
+    while (index < this.length) {
+      const char = this.text[index];
+      const before = this.text[index - 1] ?? '';
+      if (char === 'n' && this.wordAt(index, 'new') && !NAME_CHAR.test(before) && before !== '.') {
+        const start = this.newAt(index);
+        if (start !== undefined) {
+          found.push(start.name);
+          index = start.end;
+          continue;
+        }
+      }
+      if (char === 's' || char === '[') {
+        const end = this.serviceWorkerAt(index);
+        if (end !== undefined) {
+          found.push('serviceWorker.register');
+          index = end;
+          continue;
+        }
+      }
+      if (char === 'i' && this.wordAt(index, 'importScripts') && !NAME_CHAR.test(before)) {
+        found.push('importScripts');
+        index += 'importScripts'.length;
+        continue;
+      }
+      index += 1;
+    }
+    return found;
+  }
 }
 
-/** The names of the starts of a worker in a JS text (`WORKER_START`), in the order of the text. */
+/** One character of white space as JavaScript reads it (`\s`). */
+const WHITE_SPACE = /^\s$/;
+
+/** One character of a name: a letter, a digit, `_` or `$`, as `[\w$]`. */
+const NAME_CHAR = /^[\w$]$/;
+
+const WORKER_NAMES = ['Worker', 'SharedWorker'] as const;
+
+/** The names of the starts of a worker in a JS text (`WorkerScanner`), in the order of the text. */
 export function workerStarts(text: string): string[] {
-  return [...text.matchAll(WORKER_START)].map((match) => workerName(match[0]));
+  return new WorkerScanner(text).starts();
 }
 
 /** The detail of a finding for the starts of a worker: each name once, in the order of the text. */
