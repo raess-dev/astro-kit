@@ -74,10 +74,18 @@ test('the merge after an approval is a workflow of its own, on review events onl
   assert.deepEqual(Object.keys(jobs), ['merge-approved']);
   // A skipped job counts as a passed check. So no workflow that runs on a review may hold a job with the name of a
   // required check, and no job of kit.yml may be skipped by an event condition except the merge job.
-  assert.deepEqual(Object.keys(KIT.workflow.jobs), ['test', 'acceptance', 'acceptance-browser', 'scan', 'merge']);
+  assert.deepEqual(Object.keys(KIT.workflow.jobs), [
+    'test',
+    'acceptance',
+    'acceptance-browser',
+    'acceptance-origins',
+    'scan',
+    'merge',
+  ]);
   assert.equal(job('test').if, undefined);
   assert.equal(job('acceptance').if, undefined);
   assert.equal(job('acceptance-browser').if, undefined);
+  assert.equal(job('acceptance-origins').if, undefined);
   assert.equal(job('scan').if, undefined);
 });
 
@@ -86,6 +94,7 @@ test('every job has a name, its own permissions and a timeout', () => {
     test: 'kit / test',
     acceptance: 'kit / acceptance',
     'acceptance-browser': 'kit / acceptance (browser)',
+    'acceptance-origins': 'kit / acceptance (origins)',
     scan: 'kit / scan',
     merge: 'kit / merge',
     'merge-approved': 'kit / merge after approval',
@@ -100,9 +109,11 @@ test('every job has a name, its own permissions and a timeout', () => {
   assert.deepEqual(job('test').permissions, { contents: 'read' });
   assert.deepEqual(job('acceptance').permissions, { contents: 'read' });
   assert.deepEqual(job('acceptance-browser').permissions, { contents: 'read' });
+  assert.deepEqual(job('acceptance-origins').permissions, { contents: 'read' });
   assert.deepEqual(job('scan').permissions, { contents: 'read' });
   assert.equal(job('acceptance')['timeout-minutes'], 30);
   assert.equal(job('acceptance-browser')['timeout-minutes'], 30);
+  assert.equal(job('acceptance-origins')['timeout-minutes'], 30);
   for (const id of ['merge', 'merge-approved']) {
     assert.deepEqual(job(id).permissions, { contents: 'write', 'pull-requests': 'write', actions: 'write' });
     assert.equal(job(id)['timeout-minutes'], 5);
@@ -158,7 +169,7 @@ const SCRIPTS = (
   }
 ).scripts;
 
-test('the npm scripts split the acceptance suite in two, and acceptance runs it whole', () => {
+test('the npm scripts split the acceptance suite in three, and acceptance runs it whole', () => {
   assert.equal(SCRIPTS.acceptance, "node --test 'test/acceptance/**/*.test.ts'");
   assert.equal(
     SCRIPTS['acceptance:core'],
@@ -166,13 +177,15 @@ test('the npm scripts split the acceptance suite in two, and acceptance runs it 
   );
   assert.equal(
     SCRIPTS['acceptance:browser'],
-    'node --test test/acceptance/planted-browser.test.ts test/acceptance/planted-prefetch.test.ts test/acceptance/planted-origins.test.ts',
+    'node --test test/acceptance/planted-browser.test.ts test/acceptance/planted-prefetch.test.ts',
   );
+  assert.equal(SCRIPTS['acceptance:origins'], 'node --test test/acceptance/planted-origins.test.ts');
 });
 
 for (const [id, name, script] of [
   ['acceptance', 'kit / acceptance', 'npm run acceptance:core'],
   ['acceptance-browser', 'kit / acceptance (browser)', 'npm run acceptance:browser'],
+  ['acceptance-origins', 'kit / acceptance (origins)', 'npm run acceptance:origins'],
 ] as const) {
   test(`the ${id} job runs its part of the suite of this checkout: one repository, no second checkout, no secret`, () => {
     const found = job(id);
@@ -210,7 +223,7 @@ for (const [id, name, script] of [
 }
 
 test('merge needs the checks and a pull request of this repository; merge-approved needs an approval into main', () => {
-  assert.deepEqual(job('merge').needs, ['test', 'scan', 'acceptance', 'acceptance-browser']);
+  assert.deepEqual(job('merge').needs, ['test', 'scan', 'acceptance', 'acceptance-browser', 'acceptance-origins']);
   const condition = job('merge').if ?? '';
   assert.match(condition, /github\.event_name == 'pull_request'/);
   assert.match(condition, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
