@@ -264,6 +264,7 @@ class WorkerScanner {
   private readonly members = new Map<number, Step | undefined>();
   private readonly tails = new Map<number, Step | undefined>();
   private readonly computeds = new Map<number, Step | undefined>();
+  private readonly chains = new Map<number, Step | { stop: number }>();
   private readonly literals = new Map<number, { value: string; end: number } | undefined>();
 
   constructor(text: string) {
@@ -412,17 +413,39 @@ class WorkerScanner {
     // Members follow the name, and a `)` that closes one of the opening parentheses may stand between them:
     // `new (globalThis).Worker(u)` and `new (self)["Worker"](u)` start a worker too (Codex, #31).
     for (;;) {
-      const step = this.member(end);
-      if (step !== undefined) {
-        end = step.end;
-        if ((WORKER_NAMES as readonly string[]).includes(step.name)) return { name: `new ${step.name}`, end };
-        continue;
-      }
+      const chain = this.chain(end);
+      if ('name' in chain) return { name: `new ${chain.name}`, end: chain.end };
+      end = chain.stop;
       const close = this.gap(end);
       if (open === 0 || this.text[close] !== ')') return undefined;
       end = close + 1;
       open -= 1;
     }
+  }
+
+  /**
+   * The member chain at `start`: its first member that names a worker, or the position where the chain stops. The
+   * outcome is kept for every position that the walk visited, as for a gap, so candidates that reach one chain at
+   * different members walk it once (Codex, #31).
+   */
+  private chain(start: number): Step | { stop: number } {
+    const visited: number[] = [];
+    let index = start;
+    let outcome: Step | { stop: number } | undefined;
+    while (outcome === undefined) {
+      const known = this.chains.get(index);
+      if (known !== undefined) {
+        outcome = known;
+        break;
+      }
+      visited.push(index);
+      const step = this.member(index);
+      if (step === undefined) outcome = { stop: index };
+      else if ((WORKER_NAMES as readonly string[]).includes(step.name)) outcome = step;
+      else index = step.end;
+    }
+    for (const position of visited) this.chains.set(position, outcome);
+    return outcome;
   }
 
   /** A start of a worker through `serviceWorker` at `start`, as a name or a computed member, then `register`. */
