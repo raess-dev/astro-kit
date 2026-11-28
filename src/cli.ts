@@ -5,8 +5,8 @@
  * This file loads no other module of the kit until a command needs it. So `help` and a usage error start fast, and
  * a command loads only what it uses.
  *
- * The commands `check`, `build`, `test`, `tokens` and `legal` are here. Every other command of 6.4 is an unknown
- * command until its part of milestone M9 adds it.
+ * The commands `init`, `check`, `build`, `test`, `tokens` and `legal` are here. Every other command of 6.4 is an
+ * unknown command until its part of milestone M9 adds it.
  */
 import type { ToolIo } from './ci.ts';
 import type { Finding } from './registry.ts';
@@ -15,6 +15,10 @@ import type { Finding } from './registry.ts';
 export const USAGE = `Usage: npx --no astro-kit <command>
 Run it in the project root.
 
+  init              Writes the site templates: settings, shims, agent files, facts and style skeletons.
+                    --site https://host --locales de,fr --owner @login [--features forms,islands,scripts]
+                    It keeps every file that exists, unless --force; astro-kit.json is always kept.
+                    --shims writes only the shims and the shims of the enabled features.
   check             Checks the project without a build: the kit's config rules, Biome, ESLint for the
                     islands, and astro check. It stops at the first step that fails.
   build             Runs astro build. The kit checks the project and the built site inside it.
@@ -139,6 +143,10 @@ const flagValue = (flags: ReadonlyMap<string, string | true>, name: string): str
   return typeof value === 'string' ? value : undefined;
 };
 
+/** The flags of `init` without a value, and the flags that take one (6.4). */
+const INIT_SWITCHES = ['--shims', '--protected', '--force'] as const;
+const INIT_VALUES = ['--site', '--locales', '--features', '--owner'] as const;
+
 /** Runs one command. `undefined` means a usage error: an unknown command, flag or argument. */
 async function dispatch(argv: readonly string[], root: string, io: Io): Promise<number | undefined> {
   const [command, ...rest] = argv;
@@ -146,6 +154,27 @@ async function dispatch(argv: readonly string[], root: string, io: Io): Promise<
     if (rest.length > 0) return undefined;
     io.out(`${USAGE}\n`);
     return 0;
+  }
+  if (command === 'init') {
+    const flags = valuedFlagsOf(rest, INIT_SWITCHES, INIT_VALUES);
+    if (flags === undefined) return undefined;
+    // `--shims` writes only shims: a flag of the settings other than `--features` has no use there.
+    if (flags.has('--shims') && ['--site', '--locales', '--owner'].some((flag) => flags.has(flag))) return undefined;
+    const { init } = await import('./init.ts');
+    // `init` runs no check, so it never prints the passed line (6.4).
+    return init(
+      root,
+      {
+        site: flagValue(flags, '--site'),
+        locales: flagValue(flags, '--locales'),
+        features: flagValue(flags, '--features'),
+        owner: flagValue(flags, '--owner'),
+        shims: flags.has('--shims'),
+        protected: flags.has('--protected'),
+        force: flags.has('--force'),
+      },
+      io,
+    );
   }
   if (command === 'check') {
     if (rest.length > 0) return undefined;

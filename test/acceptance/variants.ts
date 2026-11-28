@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import type * as Cloudflare from '../../src/hosts/cloudflare.ts';
 import type * as OptionsModule from '../../src/options.ts';
 import type * as RegistryModule from '../../src/registry.ts';
-import { base, edit, kitModule, read, write } from './harness.ts';
+import { edit, kitModule, read, write } from './harness.ts';
 
 /** The three contact pages: each holds the two forms and the two notes. */
 const CONTACT_PAGES = ['src/pages/kontakt.astro', 'src/pages/fr/contact.astro', 'src/pages/en/contact.astro'];
@@ -172,16 +172,14 @@ const MORE_LINKS_CSS = `@layer components {
  * The `islands` variant of 14.2: `features.islands` on, and the Solid island `src/components/MoreLinks.tsx` with its
  * CSS file on the German rooms page, hydrated with `client:visible`. Its links lead to pages that the main navigation
  * links too, so the page links no page that its translations do not (`content-stale`). The ESLint shim
- * `eslint.config.mjs` comes from the templates of the packed kit, as `init --shims` writes it once that command
- * exists (a later part of M9), so that `check` passes its comparison and runs ESLint (14.2, Variants).
+ * `eslint.config.mjs` is not written here: the case runs `init --shims` after this change, and that command writes
+ * it from the settings (14.2, Variants).
  */
 export function toIslands(dir: string): void {
   changeSettings(dir, (value) => {
     value.features.islands = true;
   });
-  const shim = join(base(), 'node_modules/@raess/astro-kit/templates/features/islands/eslint.config.mjs');
   write(dir, {
-    'eslint.config.mjs': readFileSync(shim, 'utf8'),
     'src/components/MoreLinks.tsx': MORE_LINKS,
     'src/styles/components/more-links.css': MORE_LINKS_CSS,
   });

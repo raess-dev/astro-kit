@@ -18,7 +18,7 @@ import astroKit from '../../src/index.ts';
 import { enabledModes } from '../../src/modes.ts';
 import type { Options } from '../../src/options.ts';
 import { FindingError, Report } from '../../src/registry.ts';
-import { FORMS_SHIM, FORMS_SHIM_FILE, SHIMS } from '../../src/shims.ts';
+import { FORMS_SHIM, FORMS_SHIM_FILE, KIT_BLOCK, SHIMS } from '../../src/shims.ts';
 import { cspContent, cspMeta } from './audit-fixtures.ts';
 import {
   EXAMPLE,
@@ -338,7 +338,7 @@ function tokensOf(design: string, options: Options): string {
 
 /**
  * The smallest project that passes preflight for the settings: `astro-kit.json`, the two facts files that must
- * exist, the three shims, `wrangler.jsonc`, the design document, its `tokens.css`, `elements.css` and an empty
+ * exist, the three shims, the agent files `AGENTS.md` and `CLAUDE.md` (part 9c of M9), `wrangler.jsonc`, the design document, its `tokens.css`, `elements.css` and an empty
  * `fonts.css`. A forms site gets the forms text of `wrangler.jsonc` (10.4) and the forms shim (9.1).
  */
 function projectFiles(settings: unknown, themes: readonly ThemeName[] = LIGHT): Files {
@@ -349,6 +349,8 @@ function projectFiles(settings: unknown, themes: readonly ThemeName[] = LIGHT): 
     'site.json': json(SITE),
     'schedule.json': json(SCHEDULE),
     ...SHIMS,
+    'AGENTS.md': `# Example\n\n${KIT_BLOCK}\n`,
+    'CLAUDE.md': '@AGENTS.md\n',
     'wrangler.jsonc': renderWrangler(options),
     ...(options.features.forms ? { [FORMS_SHIM_FILE]: FORMS_SHIM } : {}),
     'docs/design.md': design,
