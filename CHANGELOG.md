@@ -476,3 +476,6 @@
     valid settings and that `init --force` keeps `AGENTS.md`.
   - The "Next:" block says that `check` reports `config-wrangler` until a later kit version writes the protected
     files.
+  - The style skeletons `tokens.css` and `elements.css` hold one comment in their layer block, so the kit's
+    Biome preset passes them and the repository drops its `noEmptyBlock` override. A unit test runs the shipped
+    preset on every CSS, JSON and script file that init writes.

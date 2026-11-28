@@ -59,6 +59,7 @@ test('M9 fresh init: init writes the templates; check gives design-format, and w
   assert.deepEqual(skeleton.ids, ['design-format'], tail(skeleton));
   assert.deepEqual(passedLine(skeleton), NOT_PASSED, tail(skeleton));
 
+  // The shipped elements.css stays a skeleton: with a design, `design-pairs` needs the body, link and focus rules.
   write(dir, { 'docs/design.md': DESIGN_MD, 'src/styles/elements.css': ELEMENTS_CSS });
   const tokens = run(dir, 'tokens');
   assert.equal(tokens.status, 0, tail(tokens));

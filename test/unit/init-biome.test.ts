@@ -21,17 +21,12 @@ const BIOME_BIN = join(createRequire(import.meta.url).resolve('@biomejs/biome/pa
 const CHECKED = /\.(css|json|ts|mjs)$/;
 
 /**
- * The two style skeletons of 12.2 hold an empty layer block, which `noEmptyBlock` of the preset refuses. The owner
- * decision to write `@layer tokens;` and `@layer elements;` instead conflicts with `css-layer-file` (each project
- * CSS file is exactly one `@layer <its layer> { … }` block), so it waits for the owner. Until then, these are the
- * only findings of the preset on the files of init.
+ * The findings that the preset may give on the files of init: none. The two style skeletons of 12.2 hold one
+ * comment in their layer block, so `noEmptyBlock` accepts them, and the repository needs no override for them.
  */
-const KNOWN = [
-  'src/styles/elements.css lint/suspicious/noEmptyBlock',
-  'src/styles/tokens.css lint/suspicious/noEmptyBlock',
-];
+const KNOWN: readonly string[] = [];
 
-test('every CSS, JSON and script file that init writes passes the shipped Biome preset, but the two skeletons', async () => {
+test('every CSS, JSON and script file that init writes passes the shipped Biome preset', async () => {
   await inTempAsync({}, async (root) => {
     const io: Io = { out: () => undefined, err: () => undefined, env: {} };
     const argv = [

@@ -230,8 +230,19 @@ test('docs/design.md is the skeleton of 7.4', () => {
 
 test('the small files have the texts of 12.2 and 4.1', () => {
   const read = (path: string): string => readFileSync(join(TEMPLATES, 'site', path), 'utf8');
-  assert.equal(read('src/styles/tokens.css'), '@layer tokens {\n}\n');
-  assert.equal(read('src/styles/elements.css'), '@layer elements {\n}\n');
+  // The two style skeletons: one layer block that holds one comment, so it is no empty block (12.2).
+  const skeleton = (file: string): string => {
+    const marker = `\`src/styles/${file}\` (\``;
+    const start = SPEC.indexOf(marker) + marker.length;
+    return SPEC.slice(start, SPEC.indexOf('`', start)).replaceAll('\\n', '\n');
+  };
+  assert.equal(read('src/styles/tokens.css'), skeleton('tokens.css'));
+  assert.equal(read('src/styles/elements.css'), skeleton('elements.css'));
+  assert.equal(read('src/styles/tokens.css'), '@layer tokens {\n  /* astro-kit tokens writes this file. */\n}\n');
+  assert.equal(
+    read('src/styles/elements.css'),
+    '@layer elements {\n  /* Element rules go here, one per element of docs/design.md. */\n}\n',
+  );
   assert.equal(read('src/styles/fonts.css'), '');
   assert.equal(read('src/styles/components/.gitkeep'), '');
   assert.equal(read('src/styles/pages/.gitkeep'), '');
