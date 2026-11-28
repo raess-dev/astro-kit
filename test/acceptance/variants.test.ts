@@ -18,9 +18,9 @@ const tail = (result: KitRun): string => result.output.slice(-6000);
 /** The passed line of a command that ran checks and passed: the last line of stdout, once in the output (6.4). */
 const PASSED = { last: true, count: 1 } as const;
 
-test('M7 variant static: forms off passes check and builds a static site with Trusted Types and the static wrangler.jsonc', async () => {
+test('M7 variant static: forms off passes check and builds a static site with Trusted Types and the static wrangler.jsonc', () => {
   const dir = siteCase('variant-static');
-  await toStatic(dir);
+  toStatic(dir);
   // The static text of 10.4 for the host of the site: `WRANGLER_STATIC` names the Worker `example-ch` on `example.ch`.
   assert.equal(
     read(dir, 'wrangler.jsonc'),

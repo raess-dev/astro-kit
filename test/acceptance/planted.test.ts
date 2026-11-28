@@ -303,10 +303,10 @@ test('M5 planted set css: exactly the ids of its list', async () => {
 
 // The route set
 
-test('M7 planted set route: the static site with an on-demand route of its own gives routes-on-demand', async () => {
+test('M7 planted set route: the static site with an on-demand route of its own gives routes-on-demand', () => {
   const drop = droppedFrom(ROUTE_SET);
   const dir = siteCase(drop === undefined ? 'planted-route' : `planted-route-without-${drop}`);
-  await toStatic(dir);
+  toStatic(dir);
   // The pattern `/live.json` passes the endpoint clause of `routes-slug`; only `routes-on-demand` refuses the route.
   if (drop === undefined) {
     write(dir, {

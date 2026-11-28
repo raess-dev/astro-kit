@@ -4,10 +4,7 @@
  */
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type * as Cloudflare from '../../src/hosts/cloudflare.ts';
-import type * as OptionsModule from '../../src/options.ts';
-import type * as RegistryModule from '../../src/registry.ts';
-import { edit, kitModule, read, write } from './harness.ts';
+import { edit, read, run, write } from './harness.ts';
 
 /** The three contact pages: each holds the two forms and the two notes. */
 const CONTACT_PAGES = ['src/pages/kontakt.astro', 'src/pages/fr/contact.astro', 'src/pages/en/contact.astro'];
@@ -31,12 +28,13 @@ const FORM_ROWS = [
 /**
  * The `static` variant of 14.2 in a case folder: `features.forms` false; `contact`, `forms` and the processing keys
  * `forms` and `server` removed; `@astrojs/cloudflare` removed from `package.json`; the feature shim and the form
- * markup removed, with every component, CSS file and `## Components` row that only the forms use. `wrangler.jsonc`
- * becomes the static rendering of 10.4, written with `renderWrangler` (14.2, Rendered files: before M9). The element
+ * markup removed, with every component, CSS file and `## Components` row that only the forms use. Then
+ * `init --protected` renders the protected files for the new settings, so `wrangler.jsonc` becomes the static
+ * rendering of 10.4 (14.2, Rendered files). The element
  * rules of the controls stay in `elements.css`: `css-element-coverage` asks for a rule only for an element that a page
  * holds, and `css-unused` reads classes only.
  */
-export async function toStatic(dir: string): Promise<void> {
+export function toStatic(dir: string): void {
   const settings = JSON.parse(read(dir, 'astro-kit.json')) as Record<string, unknown> & {
     features: Record<string, boolean>;
     processing: string[];
@@ -62,13 +60,8 @@ export async function toStatic(dir: string): Promise<void> {
   }
   for (const row of FORM_ROWS) edit(dir, 'docs/design.md', row, '');
 
-  const { loadOptions } = await kitModule<typeof OptionsModule>('options');
-  const { Report } = await kitModule<typeof RegistryModule>('registry');
-  const { renderWrangler } = await kitModule<typeof Cloudflare>('hosts/cloudflare');
-  const report = new Report();
-  const options = loadOptions(dir, report);
-  if (options === undefined) throw new Error(`toStatic: astro-kit.json is not valid:\n${report.format()}`);
-  write(dir, { 'wrangler.jsonc': renderWrangler(options) });
+  const rendered = run(dir, ['init', '--protected']);
+  if (rendered.status !== 0) throw new Error(`toStatic: init --protected failed:\n${rendered.output}`);
 }
 
 /** Reads `astro-kit.json` of a case, lets `change` edit it, and writes it back. */

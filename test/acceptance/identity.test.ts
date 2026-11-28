@@ -2,8 +2,8 @@
  * The `identity` case of 14.2 (part 9d of M9): `kit-identity.sh` (10.3) on the complete lockfile of a kit project.
  *
  * 1. A copy of the test site becomes a git repository: one commit of every file, and `refs/remotes/origin/main` at
- *    it. Until the kit renders all seven protected files into `test/site/` (part 9e of M9), the case copies
- *    `.github/kit-identity.sh` from the template of the packed kit.
+ *    it. The copy holds `.github/kit-identity.sh` as `init --protected` rendered it into `test/site/` (10.6); the
+ *    case asserts that it equals the template of the packed kit.
  * 2. On the lockfile of the commit, which has no kit, the script fails with `package-lock.json has no
  *    node_modules/@raess/astro-kit entry`.
  * 3. `npm install --package-lock-only` of the packed kit writes the kit entry and the kit's own package tree into the
@@ -18,7 +18,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { test } from 'node:test';
 import { FAKE_NPM_VIEW, type NpmCall, npmCalls, npmViewArgs, scriptEnv } from '../unit/fixtures.ts';
@@ -98,10 +98,8 @@ interface Lockfile {
 
 test('M9 identity: kit-identity.sh passes the complete lockfile of the test site with the packed kit', () => {
   const kitTemplate = join(base(), 'node_modules', KIT, 'templates/site/_github/kit-identity.sh');
-  const dir = siteCase('identity', (copy) => {
-    mkdirSync(join(copy, '.github'), { recursive: true });
-    copyFileSync(kitTemplate, join(copy, '.github/kit-identity.sh'));
-  });
+  const dir = siteCase('identity');
+  assert.equal(read(dir, '.github/kit-identity.sh'), readFileSync(kitTemplate, 'utf8'));
   assert.equal(read(dir, '.npmrc'), 'ignore-scripts=true\nsave-exact=true\n');
   git(dir, ['init', '-q', '-b', 'main']);
   git(dir, ['add', '-A']);

@@ -523,3 +523,47 @@
   - `init --protected` still fails and writes nothing: it renders all seven protected files from part 9e.
   - The acceptance suite gets the `identity` case (`identity.test.ts`, in `kit / acceptance`): the script passes the
     complete lockfile of the test site with the packed kit, and fails without the kit entry and on a local tarball.
+- Milestone M9, part 9e: the site workflows and the protected files. The kit has 124 rules.
+  - The kit renders all seven protected files of 10.6: `.github/workflows/site.yml` (jobs `ci`, `preview`, `merge`,
+    `build`, `build-alert`, `deploy`, `smoke`, `rollback`, `feedback`, `protected`), `.github/workflows/site-merge.yml`
+    (`merge-event`), `.github/dependabot.yml` (the exact text of 10.5), `.github/kit-identity.sh`,
+    `.github/CODEOWNERS` (the code owner of the settings), `.npmrc` and `wrangler.jsonc`. Every action is pinned to a
+    commit; every install step runs `kit-identity.sh`, `npm ci` with the pinned registry flags and an empty private
+    cache, and `npm ls --all`; secrets sit only in the env of the step that needs them.
+  - Plain `init` writes the seven, and the "Next:" block no longer names `config-wrangler`. `init --protected`
+    rewrites only the seven from `astro-kit.json`, takes no other flag, and needs a valid `astro-kit.json`.
+  - `config-shim` now requires the six protected files that it compares, and compares each byte for byte. A site
+    without them, or with a hand-edited one, fails: the owner runs the protected task. `CODEOWNERS` is compared with
+    valid settings only.
+  - `templates/github-org-rulesets.json` holds the two rulesets of 10.2.
+  - The test site holds the rendered protected files in `test/site/.github/`. GitHub runs no workflow from there;
+    zizmor reads them (in `kit / scan` from a follow-up: zizmor on `.` audits only the root `.github/`).
+- Milestone M9, part 9e, after review: the site workflows are hardened. The kit still has 124 rules.
+  - wrangler reads no `.env` of the checkout: every wrangler command passes an empty `--env-file`, and every wrangler
+    step sets `CLOUDFLARE_API_BASE_URL` to `api.cloudflare.com`. `.env*`, `.dev.vars*` and `.wrangler/` are protected
+    paths at any depth (push ruleset, `CODEOWNERS`, the file rule of the merge script), and `config-wrangler` fails
+    one that git tracks.
+  - The rollback gate, the alert and the close steps count only issues that `github-actions[bot]` opened, not pull
+    requests, on every page. Only the owner lifts a hold: the gate reopens a rollback issue that someone else closed
+    and deploys nothing. A failed rollback opens `rollback failed: production`, which holds the deploy too.
+  - Every push run and deploy dispatch on `main` waits in one queue; deploy, smoke and rollback share
+    `deploy-production`. Only the run of the head of `main` deploys, and the rollback deploys the version that ran
+    before the deploy (`wrangler rollback <id>`).
+  - The built Worker config passes an allowlist of its keys: the bindings of `wrangler.jsonc` and no other, the
+    adapter's `main`, `no_bundle` and `rules`, and the whole `assets` object; a preview has no binding but `ASSETS`.
+  - The merge script also requires an agent pusher and agent commit authors. A Dependabot pull request merges after
+    the owner approves it.
+  - Every job that holds a secret checks its checkout first: the direct dependencies against the allowlist, no
+    `.env`, `.dev.vars` or `.wrangler`, and the bins of wrangler and the kit. `feedback` needs `ci`.
+  - The deploy refuses an unknown live version. It goes on without one only when wrangler says that the Worker has
+    no deployment yet (the first deploy); any other error of `wrangler deployments status`, an output that is not
+    JSON, or one without a version id, stops the deploy before it uploads anything.
+  - A deploy run that waited behind a newer merge ends green without deploying (`deployed=false`, with a notice):
+    the newer run deploys the head of `main`.
+  - The protected task runs the kit from the lockfile of the site: `kit-identity.sh`, the `npm ci` install step,
+    `npm ls --all` and the checkout check, then `npx --no astro-kit init --protected`. The kit, its dependencies and
+    its peer `astro` are all pinned with a hash; no package is installed by name, and the site workflows carry no
+    zizmor waiver.
+  - The deploy key reaches only the push step. The checkout holds no key and keeps no credentials; the push step
+    writes the key to a private file for `GIT_SSH_COMMAND`, pins the host key of github.com, pushes to
+    `git@github.com:<repo>.git` and removes the key.

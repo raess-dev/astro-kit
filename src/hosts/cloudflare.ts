@@ -5,6 +5,7 @@
  * Every text function is pure. `writeEdgeFiles` reads and writes only through the build context, and
  * `checkWrangler` reads the project root.
  */
+import { spawnSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { BuildContext, BuiltPage, Env } from '../context.ts';
@@ -667,6 +668,25 @@ export const WRANGLER_FILE = 'wrangler.jsonc';
 /** The wrangler config files that a project must not hold. */
 export const OTHER_WRANGLER_FILES: readonly string[] = ['wrangler.json', 'wrangler.toml'];
 
+/**
+ * A path of a file that wrangler reads besides its config, at any depth: a `.env*` or `.dev.vars*` file, or a file
+ * under a `.wrangler` folder. wrangler loads `.env`, `.env.local` and `.env.<env>` from its working folder, and
+ * `.wrangler/deploy/config.json` points it at another config (10.1, 4.2).
+ */
+export const WRANGLER_INPUT = /(^|\/)(\.env|\.dev\.vars)[^/]*$|(^|\/)\.wrangler\//;
+
+/**
+ * The files under the root that git tracks, as paths from the root, or none outside a git work tree (and when git
+ * is missing). `git ls-files` reads the index, so a file that `.gitignore` keeps out and git does not track is
+ * not listed: `.wrangler/` is written by every forms build, and only a committed one matters.
+ */
+function trackedFiles(root: string): string[] {
+  // The paths are relative to the working folder, which is the root, also when the root is a folder of the work tree.
+  const result = spawnSync('git', ['ls-files', '-z', '--cached'], { cwd: root, encoding: 'utf8' });
+  if (result.status !== 0 || typeof result.stdout !== 'string') return [];
+  return result.stdout.split('\0').filter((path) => path !== '');
+}
+
 /** The compatibility date of every site. A kit release changes it, and the protected task brings it to each site. */
 export const COMPATIBILITY_DATE = '2026-11-01';
 
@@ -783,10 +803,15 @@ const WRANGLER_RULE = 'config-wrangler';
  *
  * - The file part always runs: `wrangler.jsonc` exists, and the root holds no `wrangler.json` and no
  *   `wrangler.toml`.
+ * - The git part always runs: git tracks no file that wrangler reads besides its config (`WRANGLER_INPUT`). Outside a
+ *   git work tree it has nothing to read; the site workflow checks every checkout for these files too (10.1).
  * - The settings part runs with valid settings: the file equals `renderWrangler(options)` after CRLF→LF and
  *   trimEnd + newline, for a static site and for a forms site. The finding names the first line that differs.
  */
 export function checkWrangler(root: string, options: Options | undefined, report: Report): void {
+  for (const path of trackedFiles(root).filter((file) => WRANGLER_INPUT.test(file))) {
+    report.add(WRANGLER_RULE, path, 'git tracks this file, and wrangler reads it: remove it with git rm --cached');
+  }
   for (const name of OTHER_WRANGLER_FILES) {
     if (statSync(join(root, name), { throwIfNoEntry: false }) !== undefined) {
       report.add(WRANGLER_RULE, name, `remove this file: \`${WRANGLER_FILE}\` is the only wrangler config`);

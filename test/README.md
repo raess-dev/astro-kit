@@ -125,14 +125,13 @@ One spike alone: `node --test test/acceptance/spikes/s05.ts`.
   cause, add the value to its unit test, and correct the specification. The file takes a few seconds after the
   build.
 - `fresh-init.test.ts`: the fresh init of 14.2 (part 9c of M9), in an empty case folder that walks up to the
-  packages of the base copy. `init` writes the templates, with `.github/kit-identity.sh`, `.npmrc` and
-  `.claude/settings.json` from part 9d; the case writes `wrangler.jsonc` with `renderWrangler` until
-  `init --protected` exists (part 9e); `check` gives exactly `design-format`. With the smallest design and
+  packages of the base copy. `init` writes the templates, `.claude/settings.json` and the seven protected files,
+  each the rendering of the packed kit; `check` gives exactly `design-format`. With the smallest design and
   `elements.css` of `fresh-init.ts`, `tokens` writes `tokens.css`, `check` passes, and `build` gives exactly
   `legal-pages` and `routes-404`, because the site has no page.
 - `identity.test.ts`: the `identity` case of 14.2 (part 9d of M9). A copy of the site becomes a git repository with
-  `refs/remotes/origin/main`, and gets `.github/kit-identity.sh` from the packed kit until part 9e writes the
-  protected files into `test/site/`. The script fails on the lockfile of the commit (no kit entry); then
+  `refs/remotes/origin/main`; its `.github/kit-identity.sh` is the one that `init --protected` wrote into
+  `test/site/`, and the case asserts that it equals the template of the packed kit. The script fails on the lockfile of the commit (no kit entry); then
   `npm install --package-lock-only` of the packed kit writes the kit's package tree into the lockfile, and the script
   fails on the local tarball of the kit; with `resolved` in the registry form it passes with its last line. It needs
   the npm registry, as the base copy does, and takes about 4 s after the base copy.
@@ -185,7 +184,9 @@ to another host, change these places under `test/site/`:
 
 - `astro-kit.json`: `site` and `securityContact`;
 - `site.json`: the two email addresses;
-- `wrangler.jsonc`: the Worker name and the route. The kit renders this file from `astro-kit.json`;
+- `wrangler.jsonc`: the Worker name and the route. The kit renders this file from `astro-kit.json`: run
+  `node ../../dist/cli.js init --protected` in `test/site/` after `npm run build`, which also renders the files of
+  `.github/` (inert here: GitHub runs no workflow from `test/site/.github/`);
 - `AGENTS.md`: the first line under the heading;
 - `docs/spec.md`: the open question about the domain.
 
@@ -237,3 +238,9 @@ npx --no astro-kit build
   post then sends no mail: `send_email` writes the text under `dist/server/.wrangler/tmp/email/`.
 - Git ignores `node_modules/`, `dist/`, `.astro/` and `.wrangler/` of the site. The base copy of the suite does not
   take them.
+- `test/unit/built-worker-config.json` holds the `dist/server/wrangler.json` of such a build, once as above and once
+  with `CLOUDFLARE_ENV=preview npx --no astro-kit build`, with `configPath` and `userConfigPath` shortened to
+  `/site/wrangler.jsonc`. The Worker config check of the site workflow (specification, 10.1) allows exactly the
+  top-level keys of these files, and `site-hardening.test.ts` fails when one is not in its lists. Build both again
+  after a change of the `@astrojs/cloudflare` or `wrangler` pin, and add a new key to the check after a look at
+  what it does.

@@ -1,0 +1,74 @@
+{
+  "rulesets": [
+    {
+      "name": "kit-site: main",
+      "target": "branch",
+      "enforcement": "active",
+      "bypass_actors": [],
+      "conditions": {
+        "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] },
+        "repository_property": {
+          "include": [{ "name": "kit-site", "source": "custom", "property_values": ["true"] }],
+          "exclude": []
+        }
+      },
+      "rules": [
+        { "type": "deletion" },
+        { "type": "non_fast_forward" },
+        {
+          "type": "pull_request",
+          "parameters": {
+            "required_approving_review_count": 0,
+            "require_code_owner_review": true,
+            "dismiss_stale_reviews_on_push": true,
+            "require_last_push_approval": false,
+            "required_review_thread_resolution": false,
+            "allowed_merge_methods": ["squash"]
+          }
+        },
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": false,
+            "do_not_enforce_on_create": false,
+            "required_status_checks": [{ "context": "site / ci", "integration_id": 15368 }]
+          }
+        }
+      ]
+    },
+    {
+      "name": "kit-site: protected paths",
+      "target": "push",
+      "enforcement": "active",
+      "bypass_actors": [
+        { "actor_id": 1, "actor_type": "OrganizationAdmin", "bypass_mode": "always" },
+        { "actor_type": "DeployKey", "bypass_mode": "always" }
+      ],
+      "conditions": {
+        "repository_property": {
+          "include": [{ "name": "kit-site", "source": "custom", "property_values": ["true"] }],
+          "exclude": []
+        }
+      },
+      "rules": [
+        {
+          "type": "file_path_restriction",
+          "parameters": {
+            "restricted_file_paths": [
+              ".github/**",
+              "wrangler.*",
+              "**/wrangler.*",
+              ".npmrc",
+              ".env*",
+              "**/.env*",
+              ".dev.vars*",
+              "**/.dev.vars*",
+              ".wrangler/**",
+              "**/.wrangler/**"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
