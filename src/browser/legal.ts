@@ -124,12 +124,21 @@ export function firstDifference(page: Page, quoteMax: number): Promise<string | 
     const width = document.documentElement.clientWidth;
     /** Why a text node is not shown, or `null` when it is. */
     const hiddenBy = (text: Text, parent: Element): string | null => {
-      const visible = parent.checkVisibility({
-        visibilityProperty: true,
-        opacityProperty: true,
-        checkVisibilityCSS: true,
-        checkOpacity: true,
-      } as CheckVisibilityOptions);
+      // A `display: contents` element has no box, so `checkVisibility` is false for it and its box properties
+      // (opacity, clip-path, overflow, content-visibility) do nothing. The nearest element with a box decides,
+      // and `visibility`, which its text inherits, is read on the parent itself.
+      let boxed: Element = parent;
+      while (style(boxed).display === 'contents' && boxed.parentElement !== null) {
+        boxed = boxed.parentElement;
+      }
+      const visible =
+        style(parent).visibility === 'visible' &&
+        boxed.checkVisibility({
+          visibilityProperty: true,
+          opacityProperty: true,
+          checkVisibilityCSS: true,
+          checkOpacity: true,
+        } as CheckVisibilityOptions);
       if (!visible) return 'it is not rendered, or its visibility or opacity hides it';
       const own = style(parent);
       if (transparent(own.color) || transparent(own.webkitTextFillColor)) return 'its color is transparent';
@@ -137,7 +146,7 @@ export function firstDifference(page: Page, quoteMax: number): Promise<string | 
       range.selectNodeContents(text);
       let boxes = [...range.getClientRects()].filter((box) => box.width >= 1 && box.height >= 1);
       if (boxes.length === 0) return 'it has no box of at least 1×1 px';
-      const chain = around(parent);
+      const chain = around(parent).filter((element) => style(element).display !== 'contents');
       for (const element of chain) {
         const computed = style(element);
         if (computed.contentVisibility === 'hidden') return `${nameOf(element)} has content-visibility: hidden`;

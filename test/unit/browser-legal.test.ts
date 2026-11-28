@@ -105,6 +105,29 @@ for (const [name, css, reason] of [
   });
 }
 
+test('legal-approved (browser): text in display: contents elements is shown; their own box properties do nothing', async () => {
+  const [main, css] = withExtra(
+    '.c{display:contents}.cut{display:contents;overflow:hidden;clip-path:inset(50%);content-visibility:hidden}',
+    '<p><span class="c">Wir geben <span class="c">Ihre Daten</span> nicht weiter.</span></p>' +
+      '<p><span class="cut">Ein Satz in einem Element ohne Box.</span></p>',
+  );
+  assert.deepEqual(await run(site(main ?? '', css)), []);
+});
+
+test('legal-approved (browser): a display: contents element hides its text by visibility or by a hidden ancestor', async () => {
+  const [hidden, css] = withExtra('.c{display:contents;visibility:hidden}', '<p><span class="c">Versteckt.</span></p>');
+  assert.deepEqual(await run(site(hidden ?? '', css)), [
+    '/impressum/ 1280×800: "Versteckt." in span.c is not shown: it is not rendered, or its visibility or opacity hides it',
+  ]);
+  const [inside, css2] = withExtra(
+    '.c{display:contents}.wrap{display:none}',
+    '<div class="wrap"><span class="c">Versteckt.</span></div>',
+  );
+  assert.deepEqual(await run(site(inside ?? '', css2)), [
+    '/impressum/ 1280×800: "Versteckt." in span.c is not shown: it is not rendered, or its visibility or opacity hides it',
+  ]);
+});
+
 test('legal-approved (browser): a part hidden only at 390 px fails there; a closed details fails', async () => {
   const [narrow, css] = withExtra('@media (max-width: 600px){.extra{display:none}}');
   assert.deepEqual(await run(site(narrow ?? '', css)), [

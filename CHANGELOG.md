@@ -430,6 +430,8 @@
     pseudo-element that adds text. It also hashes the live text of `main` in Chromium, read as the build reads it,
     and compares it with the entry of the lock (without one, with the build): a script that changes a word after
     the page loads fails, with both hashes. One finding for each page; the spec lists what it does not measure.
+  - The browser half judges text in a `display: contents` element by the nearest element with a box
+    (`checkVisibility` is false for a boxless element), so a shown legal page with such an element passes.
   - The rendering of `wrangler.jsonc` (10.4) is now in the format of the Biome preset for any settings, and the
     preset formats it like every other file: the objects that hold a setting are expanded, and the destination
     addresses stand one on each line after a comment line.
