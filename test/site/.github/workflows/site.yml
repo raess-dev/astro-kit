@@ -358,7 +358,11 @@ jobs:
         run: |
           set -euo pipefail
           main=$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)
-          [ "$main" = "$SHA" ] || { echo '::error::main has moved on since this run started: only the run of its head deploys'; exit 1; }
+          if [ "$main" != "$SHA" ]; then
+            echo '::notice::main has moved on since this run started: the run of its head deploys it'
+            echo 'deployed=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           hold() {
             held=
             for title in 'rollback: production' 'rollback failed: production'; do
@@ -481,13 +485,29 @@ jobs:
           set -euo pipefail
           : > "$RUNNER_TEMP/empty.env"
           WORKER=$(sed -E '/^[[:space:]]*\/\/.*$/d' wrangler.jsonc | jq -er '.name')
-          if out=$(npx --no wrangler deployments status --name "$WORKER" --json --env-file "$RUNNER_TEMP/empty.env"); then
-            id=$(jq -er '.versions | select(length == 1 and .[0].percentage == 100) | .[0].version_id | select(test("^[0-9a-f-]{36}$"))' <<<"$out") ||
-              { echo '::error::production does not run one version at 100%: the owner settles it in the Cloudflare dashboard'; exit 1; }
-            echo "id=$id" >> "$GITHUB_OUTPUT"
-          else
-            echo 'No live version: a smoke failure after this deploy has nothing to roll back to.'
+          st=0
+          out=$(npx --no wrangler deployments status --name "$WORKER" --json --env-file "$RUNNER_TEMP/empty.env" 2> "$RUNNER_TEMP/status.err") || st=$?
+          cat "$RUNNER_TEMP/status.err" >&2
+          if [ "$st" != 0 ]; then
+            said=$(sed -E 's/\x1b\[[0-9;]*m//g; s/^[^ ]* \[ERROR\] /ERROR: /' "$RUNNER_TEMP/status.err" | grep -E '^ERROR: |\[code: [0-9]+\]$') || said=
+            request="ERROR: A request to the Cloudflare API (/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER/deployments) failed."
+            if [ "$said" = "ERROR: The Worker $WORKER has no deployments." ] ||
+              { [ "$(wc -l <<<"$said")" = 2 ] && [ "$(head -n 1 <<<"$said")" = "$request" ] &&
+                grep -qE '^  .* \[code: (10007|10090)\]$' <<<"$(tail -n 1 <<<"$said")"; }; then
+              echo 'No deployment yet: this is the first deploy, so a smoke failure after it has nothing to roll back to.'
+              exit 0
+            fi
+            echo '::error::wrangler could not read the live version: the deploy stops before it uploads anything'
+            exit 1
           fi
+          jq -e '.versions | arrays' >/dev/null 2>&1 <<<"$out" ||
+            { echo '::error::wrangler printed no live version: the deploy stops before it uploads anything'; exit 1; }
+          jq -e '.versions | length == 1 and .[0].percentage == 100' >/dev/null 2>&1 <<<"$out" ||
+            { echo '::error::production does not run one version at 100%: the owner settles it in the Cloudflare dashboard'; exit 1; }
+          id=$(jq -r '(.versions[0].version_id? | strings) // ""' <<<"$out")
+          [[ "$id" =~ ^[0-9a-f-]{36}$ ]] ||
+            { echo '::error::wrangler printed no live version: the deploy stops before it uploads anything'; exit 1; }
+          echo "id=$id" >> "$GITHUB_OUTPUT"
       - name: Upload the version
         id: upload
         if: steps.gate.outputs.deployed != 'false'
@@ -779,7 +799,7 @@ jobs:
       - name: Check the lockfile
         run: bash .github/kit-identity.sh
       - name: Install only the kit, outside the checkout
-        run: |
+        run: | # zizmor: ignore[adhoc-packages] only the kit, at the lockfile version whose hash kit-identity.sh checked
           set -euo pipefail
           version=$(jq -r '.packages["node_modules/@raess/astro-kit"].version' package-lock.json)
           c=$(mktemp -d)

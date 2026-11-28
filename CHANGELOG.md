@@ -537,7 +537,7 @@
     valid settings only.
   - `templates/github-org-rulesets.json` holds the two rulesets of 10.2.
   - The test site holds the rendered protected files in `test/site/.github/`. GitHub runs no workflow from there;
-    zizmor in `kit / scan` audits them.
+    zizmor reads them (in `kit / scan` from a follow-up: zizmor on `.` audits only the root `.github/`).
 - Milestone M9, part 9e, after review: the site workflows are hardened. The kit still has 124 rules.
   - wrangler reads no `.env` of the checkout: every wrangler command passes an empty `--env-file`, and every wrangler
     step sets `CLOUDFLARE_API_BASE_URL` to `api.cloudflare.com`. `.env*`, `.dev.vars*` and `.wrangler/` are protected
@@ -555,3 +555,10 @@
     the owner approves it.
   - Every job that holds a secret checks its checkout first: the direct dependencies against the allowlist, no
     `.env`, `.dev.vars` or `.wrangler`, and the bins of wrangler and the kit. `feedback` needs `ci`.
+  - The deploy refuses an unknown live version. It goes on without one only when wrangler says that the Worker has
+    no deployment yet (the first deploy); any other error of `wrangler deployments status`, an output that is not
+    JSON, or one without a version id, stops the deploy before it uploads anything.
+  - A deploy run that waited behind a newer merge ends green without deploying (`deployed=false`, with a notice):
+    the newer run deploys the head of `main`.
+  - The kit install of the protected task carries the one zizmor waiver of the site workflows,
+    `# zizmor: ignore[adhoc-packages]`, on its `run` line.

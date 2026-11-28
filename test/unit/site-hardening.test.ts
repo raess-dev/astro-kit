@@ -178,11 +178,12 @@ test('the gate deploys when the owner closes the issue within 30 seconds, and ho
   assert.equal(failed.output, HELD);
 });
 
-test('only the run of the head of main deploys: a run behind a newer merge, or a re-run, fails before anything', () => {
-  const result = github(GATE, { main: 'def', issues: [] });
-  assert.equal(result.status, 1);
-  assert.equal(result.out, '::error::main has moved on since this run started: only the run of its head deploys\n');
-  assert.deepEqual(result.calls, []);
+test('only the run of the head of main deploys: a run behind a newer merge, or a re-run, ends green and deploys nothing', () => {
+  const result = github(GATE, { main: 'def', issues: [issueOf(4, ROLLBACK, { state: 'closed', closed_by: BOT })] });
+  assert.equal(result.status, 0, result.out);
+  assert.equal(result.out, '::notice::main has moved on since this run started: the run of its head deploys it\n');
+  assert.equal(result.output, 'deployed=false\n');
+  assert.deepEqual(result.calls, [], 'it looks at no hold and reopens nothing');
 });
 
 test('the alert step comments only on an open issue of the workflow, on any page', () => {
@@ -358,10 +359,258 @@ test('deploy records the live version before it uploads, and gives it as the job
   );
   assert.equal(split.result.status, 1);
   assert.match(split.result.stdout, /production does not run one version at 100%/);
-  const first = status('', 1);
-  assert.equal(first.result.status, 0, 'the first deploy has no live version');
-  assert.equal(first.output, '');
-  assert.match(first.result.stdout, /No live version/);
+});
+
+// The live version: only the first deploy goes on without one
+
+const ESC = '\u001b';
+const ACCOUNT = '0123456789abcdef0123456789abcdef';
+const PROXY_WARNING = `${ESC}[33m▲ ${ESC}[43;33m[${ESC}[43;30mWARNING${ESC}[43;33m]${ESC}[0m ${ESC}[1mProxy environment variables detected. We'll use your proxy for fetch requests.${ESC}[0m\n\n\n`;
+const BUG = `If you think this is a bug, please open an issue at: ${ESC}[4mhttps://github.com/cloudflare/workers-sdk/issues/new/choose${ESC}[0m`;
+const LOGS = '🪵  Logs were written to "/home/runner/.config/.wrangler/logs/wrangler.log"\n';
+/** An error as wrangler 4.165 prints it on stderr, colors included (seen against a local fake Cloudflare API). */
+const wranglerError = (text: string, ...more: string[]): string =>
+  `${ESC}[31m✘ ${ESC}[41;31m[${ESC}[41;97mERROR${ESC}[41;31m]${ESC}[0m ${ESC}[1m${text}${ESC}[0m\n\n${more.map((line) => `  ${line}\n`).join('')}\n\n`;
+const statusRequest = (worker: string, account = ACCOUNT): string =>
+  `A request to the Cloudflare API (/accounts/${account}/workers/scripts/${worker}/deployments) failed.`;
+const NOT_FOUND = `${PROXY_WARNING}${wranglerError(statusRequest('example-ch'), 'This Worker does not exist on your account. [code: 10007]', '', BUG)}${LOGS}`;
+const NO_DEPLOYMENTS = `${PROXY_WARNING}${wranglerError('The Worker example-ch has no deployments.')}${LOGS}`;
+const FIRST = 'No deployment yet: this is the first deploy, so a smoke failure after it has nothing to roll back to.\n';
+const UNREAD = '::error::wrangler could not read the live version: the deploy stops before it uploads anything\n';
+const NO_ID = '::error::wrangler printed no live version: the deploy stops before it uploads anything\n';
+
+/** Runs the live version step with a fake npx that prints this stdout and stderr and exits with this code. */
+const liveStep = (stdout: string, stderr: string, code: number) =>
+  scratch(
+    {
+      npx: 'echo "npx $*" >> "$LOG"; cat "$HOME/fake.err" >&2; cat "$HOME/fake.out"; exit "$(cat "$HOME/fake.code")"\n',
+    },
+    (work, env) => {
+      writeFileSync(join(env.HOME ?? '', 'fake.out'), stdout);
+      writeFileSync(join(env.HOME ?? '', 'fake.err'), stderr);
+      writeFileSync(join(env.HOME ?? '', 'fake.code'), String(code));
+      writeFileSync(join(work, WRANGLER_FILE), renderWrangler(STATIC));
+      const result = bash(runOf('deploy', 'The live version'), work, { ...env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT });
+      const output = existsSync(env.GITHUB_OUTPUT ?? '') ? readFileSync(env.GITHUB_OUTPUT ?? '', 'utf8') : '';
+      return {
+        status: result.status,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        output,
+        calls: lines(env.LOG ?? ''),
+      };
+    },
+  );
+
+test('the first deploy goes on without a live version: wrangler says that the Worker has no deployment yet', () => {
+  const cases = {
+    'no such Worker (10007)': NOT_FOUND,
+    'no such Worker (10090)': NOT_FOUND.replace('[code: 10007]', '[code: 10090]'),
+    'a Worker without a deployment': NO_DEPLOYMENTS,
+    'without colors': NO_DEPLOYMENTS.replaceAll(new RegExp(`${ESC}\\[[0-9;]*m`, 'g'), ''),
+  };
+  for (const [name, stderr] of Object.entries(cases)) {
+    const result = liveStep('\n', stderr, 1);
+    assert.equal(result.status, 0, `${name}: ${result.stdout}${result.stderr}`);
+    assert.equal(result.stdout, FIRST, name);
+    assert.equal(result.output, '', `${name}: the output live is empty`);
+    assert.ok(result.stderr.includes(stderr), `${name}: the step passes the stderr of wrangler on to the log`);
+  }
+});
+
+test('any other error of wrangler deployments status stops the deploy before it uploads anything', () => {
+  const auth = `${wranglerError(statusRequest('example-ch'), 'Authentication error [code: 10000]')}${wranglerError('A request to the Cloudflare API (/user/tokens/verify) failed.', 'Authentication error [code: 10000]')}`;
+  const cases = {
+    'a wrong token': auth,
+    'a malformed answer': `${PROXY_WARNING}${wranglerError('Received a malformed response from the API', 'oops', `GET /accounts/${ACCOUNT}/workers/scripts/example-ch/deployments -> 500 Internal Server Error`, '', BUG)}${LOGS}`,
+    'no stderr': '',
+    'another Worker that does not exist': NOT_FOUND.replaceAll('example-ch', 'other'),
+    'another account': NOT_FOUND.replace(ACCOUNT, 'fedcba9876543210fedcba9876543210'),
+    'another Worker without a deployment': NO_DEPLOYMENTS.replace('example-ch', 'example-ch-old'),
+    'a second error after the missing Worker': `${NOT_FOUND}${wranglerError('Something else failed.')}`,
+    'another code on the missing Worker request': NOT_FOUND.replace('[code: 10007]', '[code: 10013]'),
+    'the code twice': NOT_FOUND.replace('[code: 10007]\n', '[code: 10007]\n  Retry [code: 10007]\n'),
+  };
+  for (const [name, stderr] of Object.entries(cases)) {
+    const result = liveStep('', stderr, 1);
+    assert.equal(result.status, 1, name);
+    assert.equal(result.stdout, UNREAD, name);
+    assert.equal(result.output, '', name);
+  }
+  // The steps after it run only when it succeeds: no if of the upload or the deploy holds failure() or always().
+  for (const name of ['Upload the version', 'Deploy the version']) {
+    assert.equal(step('deploy', name).if, "steps.gate.outputs.deployed != 'false'", name);
+  }
+});
+
+test('an output of wrangler that is no JSON, or holds no version id, stops the deploy; one id at 100% is recorded', () => {
+  const version = (entry: Record<string, unknown>) => JSON.stringify({ versions: [{ percentage: 100, ...entry }] });
+  for (const out of [
+    '',
+    'not json',
+    '{}',
+    '{"versions":"x"}',
+    '[]',
+    version({}),
+    version({ version_id: 'abc' }),
+    version({ version_id: 7 }),
+    version({ version_id: `${LIVE_ID}\nid=x` }),
+  ]) {
+    const result = liveStep(out, '', 0);
+    assert.equal(result.status, 1, out);
+    assert.equal(result.stdout, NO_ID, out);
+    assert.equal(result.output, '', out);
+  }
+  const good = liveStep(
+    `${JSON.stringify({ id: 'd', versions: [{ version_id: LIVE_ID, percentage: 100 }] }, null, 2)}\n`,
+    PROXY_WARNING,
+    0,
+  );
+  assert.equal(good.status, 0, good.stderr);
+  assert.equal(good.stdout, '');
+  assert.equal(good.output, `id=${LIVE_ID}\n`);
+  assert.equal(good.calls.length, 1);
+});
+
+test('with the real wrangler and a fake Cloudflare API, only a Worker without a deployment counts as the first deploy', async () => {
+  const answers: Record<string, { status: number; body: string }> = {
+    missing: {
+      status: 404,
+      body: JSON.stringify({
+        success: false,
+        errors: [{ code: 10007, message: 'This Worker does not exist on your account.' }],
+        messages: [],
+        result: null,
+      }),
+    },
+    empty: {
+      status: 200,
+      body: JSON.stringify({ success: true, errors: [], messages: [], result: { deployments: [] } }),
+    },
+    auth: {
+      status: 403,
+      body: JSON.stringify({
+        success: false,
+        errors: [{ code: 10000, message: 'Authentication error' }],
+        messages: [],
+        result: null,
+      }),
+    },
+    broken: { status: 500, body: 'oops' },
+    live: {
+      status: 200,
+      body: JSON.stringify({
+        success: true,
+        errors: [],
+        messages: [],
+        result: {
+          deployments: [
+            {
+              id: 'd',
+              created_on: '2026-01-01T00:00:00Z',
+              source: 'api',
+              strategy: 'percentage',
+              author_email: 'a@b.c',
+              annotations: {},
+              versions: [{ version_id: LIVE_ID, percentage: 100 }],
+            },
+          ],
+        },
+      }),
+    },
+  };
+  let mode = 'missing';
+  const server = createServer((_request, response) => {
+    const answer = answers[mode] ?? { status: 500, body: '' };
+    response.statusCode = answer.status;
+    response.setHeader('content-type', 'application/json');
+    response.end(answer.body);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  const dir = mkdtempSync(join(tmpdir(), 'astro-kit-live-'));
+  try {
+    const work = join(dir, 'site');
+    mkdirSync(work);
+    mkdirSync(join(dir, 'tmp'));
+    symlinkSync(join(KIT, 'node_modules'), join(work, 'node_modules'));
+    writeFileSync(join(work, WRANGLER_FILE), renderWrangler(STATIC));
+    const env: Record<string, string> = {
+      PATH: process.env.PATH ?? '',
+      HOME: dir,
+      RUNNER_TEMP: join(dir, 'tmp'),
+      GITHUB_OUTPUT: join(dir, 'output'),
+      CI: 'true',
+      WRANGLER_SEND_METRICS: 'false',
+      CLOUDFLARE_API_TOKEN: 'token',
+      CLOUDFLARE_ACCOUNT_ID: ACCOUNT,
+      CLOUDFLARE_API_BASE_URL: `http://127.0.0.1:${port}/client/v4`,
+      HTTPS_PROXY: 'http://127.0.0.1:9',
+      https_proxy: 'http://127.0.0.1:9',
+      NO_PROXY: '127.0.0.1,localhost',
+      no_proxy: '127.0.0.1,localhost',
+    };
+    const expected: Record<string, { code: number; out: RegExp; output: string }> = {
+      missing: { code: 0, out: /^No deployment yet: this is the first deploy/m, output: '' },
+      empty: { code: 0, out: /^No deployment yet: this is the first deploy/m, output: '' },
+      auth: { code: 1, out: /^::error::wrangler could not read the live version/m, output: '' },
+      broken: { code: 1, out: /^::error::wrangler could not read the live version/m, output: '' },
+      live: { code: 0, out: /^(?!No deployment)/, output: `id=${LIVE_ID}\n` },
+    };
+    for (const [name, want] of Object.entries(expected)) {
+      mode = name;
+      rmSync(env.GITHUB_OUTPUT ?? '', { force: true });
+      const result = await runAsync(runOf('deploy', 'The live version'), work, env);
+      assert.equal(result.code, want.code, `${name}: ${result.out}`);
+      assert.match(result.out, want.out, name);
+      const output = existsSync(env.GITHUB_OUTPUT ?? '') ? readFileSync(env.GITHUB_OUTPUT ?? '', 'utf8') : '';
+      assert.equal(output, want.output, name);
+    }
+  } finally {
+    await new Promise((resolve) => server.close(() => resolve(undefined)));
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a first deploy whose smoke fails cannot roll back: the rollback fails and opens rollback failed: production', () => {
+  const rolled = scratch({ npx: 'echo "npx $*" >> "$LOG"\n' }, (work, env) => {
+    writeFileSync(join(work, WRANGLER_FILE), renderWrangler(STATIC));
+    const result = bash(runOf('rollback', 'Roll production back'), work, { ...env, LIVE: '' });
+    return { result, calls: lines(env.LOG ?? '') };
+  });
+  assert.equal(rolled.result.status, 1);
+  assert.equal(
+    rolled.result.stdout,
+    '::error::the deploy recorded no live version: there is nothing to roll back to\n',
+  );
+  assert.deepEqual(rolled.calls, []);
+  // After a failed step, the Alert step (no if: success()) is skipped and the failure alert runs.
+  assert.equal(step('rollback', 'Alert').if, undefined);
+  const failed = step('rollback', 'Alert the failed rollback');
+  assert.equal(failed.if, 'failure()');
+  const alert = github(failed.run ?? '', { issues: [] }, { ...plainEnv(failed), BODY: 'Smoke failed.' });
+  assert.equal(alert.status, 0, alert.out);
+  assert.deepEqual(alert.calls, [
+    'issue create --repo o/r --title rollback failed: production --assignee owner --body Smoke failed. https://github.com/o/r/actions/runs/1',
+  ]);
+});
+
+const WAIVER =
+  'run: | # zizmor: ignore[adhoc-packages] only the kit, at the lockfile version whose hash kit-identity.sh checked';
+
+test('the kit install of the protected task carries the one zizmor waiver, on its run line, after kit-identity.sh', () => {
+  const text = renderSiteWorkflow();
+  const waivers = text.split('\n').filter((line) => line.includes('zizmor'));
+  assert.deepEqual(waivers, [`        ${WAIVER}`]);
+  assert.equal(renderSiteMergeWorkflow().includes('zizmor'), false);
+  const at = text.indexOf(WAIVER);
+  assert.match(text.slice(0, at), /- name: Install only the kit, outside the checkout\n {8}$/);
+  assert.match(text.slice(at), /^[^\n]*\n {10}set -euo pipefail\n {10}version=\$\(jq/);
+  assert.ok(SPEC.includes(`\`${WAIVER}\``), 'the spec gives the waiver line');
+  const names = job('protected').steps.map((entry) => entry.name ?? entry.uses ?? '');
+  assert.ok(names.indexOf('Check the lockfile') >= 0);
+  assert.ok(names.indexOf('Check the lockfile') < names.indexOf('Install only the kit, outside the checkout'));
+  assert.equal(runOf('protected', 'Check the lockfile'), 'bash .github/kit-identity.sh');
 });
 
 test('the rollback deploys exactly the version that ran before the deploy, and nothing without it', () => {
@@ -501,9 +750,8 @@ test('with the real wrangler, a committed .env does not get the Cloudflare token
     };
     for (const { id, step: entry } of WRANGLER_STEPS) {
       const result = await runAsync(entry.run ?? '', work, { ...env, ...plainEnv(entry) });
-      // No step reaches Cloudflare here; the live version step goes on without a live version.
-      const failed = entry.name === 'The live version' ? /No live version/.test(result.out) : result.code !== 0;
-      assert.ok(failed, `${id}/${entry.name}: ${result.out}`);
+      // No step reaches Cloudflare here, so each one fails; the live version step too, as an error is no first deploy.
+      assert.notEqual(result.code, 0, `${id}/${entry.name}: ${result.out}`);
       assert.doesNotMatch(result.out, /Unknown argument/i, `${id}/${entry.name}`);
       assert.deepEqual([...attacker.hits], [], `${id}/${entry.name}`);
     }
