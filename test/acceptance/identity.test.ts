@@ -17,6 +17,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { scriptEnv } from '../unit/fixtures.ts';
 import { base, packedKitFile, read, siteCase } from './harness.ts';
 
 const KIT = '@raess/astro-kit';
@@ -42,9 +43,14 @@ const git = (dir: string, args: readonly string[]): void => {
   execFileSync('git', args, { cwd: dir, env: ENV, stdio: ['ignore', 'ignore', 'inherit'] });
 };
 
-/** Runs the script of the case with bash. */
+/**
+ * Runs the script of the case with bash, without the npm settings of the environment that the script refuses (10.3):
+ * `npm run` sets `npm_config_ignore_scripts`, and a machine behind a proxy sets `npm_config_https_proxy`. npm itself
+ * keeps them, so `npm install` below still reaches the registry.
+ */
 function identity(dir: string): { status: number | null; stdout: string; stderr: string } {
-  const result = spawnSync('bash', ['.github/kit-identity.sh'], { cwd: dir, env: ENV, encoding: 'utf8' });
+  const env = { ...scriptEnv(ENV), BASE_REF: 'main' };
+  const result = spawnSync('bash', ['.github/kit-identity.sh'], { cwd: dir, env, encoding: 'utf8' });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 

@@ -158,3 +158,30 @@ export async function inTempAsync<Result>(files: Files, use: (root: string) => P
     rmSync(root, { recursive: true, force: true });
   }
 }
+
+/** The npm settings that `kit-identity.sh` refuses in the environment (10.3), by the name that npm gives them. */
+export const REFUSED_NPM_SETTINGS: readonly string[] = [
+  'registry',
+  'proxy',
+  'https-proxy',
+  'strict-ssl',
+  'ignore-scripts',
+  'replace-registry-host',
+];
+
+/**
+ * The environment without the variables that `kit-identity.sh` refuses: `npm_config_<name>` in any letter case and
+ * with `_` or `-` between the words, as npm reads it. `npm test` and `npm run` set some of them (such as
+ * `npm_config_ignore_scripts`), and a machine behind a proxy sets `npm_config_https_proxy`. `GITHUB_ACTIONS` goes too,
+ * so the script runs as outside CI unless a test sets it.
+ */
+export function scriptEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const kept: NodeJS.ProcessEnv = {};
+  for (const [name, value] of Object.entries(env)) {
+    const setting = name.slice('npm_config_'.length).replace(/_/g, '-').toLowerCase();
+    if (/^npm_config_/i.test(name) && REFUSED_NPM_SETTINGS.includes(setting)) continue;
+    if (name === 'GITHUB_ACTIONS') continue;
+    kept[name] = value;
+  }
+  return kept;
+}

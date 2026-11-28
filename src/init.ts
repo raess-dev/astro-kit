@@ -77,13 +77,13 @@ export const PROTECTED_NOT_YET =
 
 /**
  * The files that `--force` never rewrites (6.4): the files of the project and of its owner. The kit block of 12.1
- * names the owner-approved ones (`astro-kit.json`, `site.json`, `docs/design.md`, `legal.lock.json`, `.claude/`,
- * `.mcp.json`); the others hold the project's own text or data (12.2). `--force` rewrites only the kit's files: the
- * shims, the feature shims, `.gitignore`, `.node-version`, `src/styles/tokens.css` (the kit renders it), the two
- * `.gitkeep` and the protected files that init writes (`config-shim` compares them with the kit's rendering).
+ * names the owner-approved ones (`astro-kit.json`, `site.json`, `docs/design.md`, `legal.lock.json`, `.mcp.json`); the
+ * others hold the project's own text or data (12.2). `--force` rewrites only the kit's files: the shims, the feature
+ * shims, `.gitignore`, `.node-version`, `src/styles/tokens.css` (the kit renders it), the two `.gitkeep`,
+ * `.claude/settings.json` and the protected files that init writes (`config-shim` compares each with the kit's
+ * rendering). A project's own Claude Code settings go in `.claude/settings.local.json`, which init never writes.
  */
 export const FORCE_KEPT: readonly string[] = [
-  '.claude/settings.json',
   '.mcp.json',
   'AGENTS.md',
   'CLAUDE.md',

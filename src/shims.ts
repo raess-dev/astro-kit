@@ -3,7 +3,7 @@
  * `config-shim` for them. `astro-kit init --shims` writes these texts.
  */
 
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { lstatSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { UNCHECKED_FOLDERS } from './project.ts';
@@ -120,7 +120,7 @@ function describe(difference: Difference, noun = 'the kit shim'): string {
 }
 
 /** Compares one project file with the text of the kit. */
-function checkFile(root: string, file: string, expected: string, report: Report, noun?: string): void {
+function checkFile(root: string, file: string, expected: string, report: Report): void {
   const path = join(root, file);
   const stats = statSync(path, { throwIfNoEntry: false });
   if (!stats) {
@@ -133,7 +133,7 @@ function checkFile(root: string, file: string, expected: string, report: Report,
   }
   const difference = firstDifference(readFileSync(path, 'utf8'), expected);
   if (!difference) return;
-  report.add(RULE, `${file}:${difference.line}`, describe(difference, noun));
+  report.add(RULE, `${file}:${difference.line}`, describe(difference));
 }
 
 // The rendered protected files (4.2, 10.6)
@@ -165,17 +165,66 @@ export const RENDERED_PROTECTED: Readonly<Record<string, () => string>> = {
   [NPMRC_FILE]: renderNpmrc,
 };
 
+/** The Claude Code settings of a site (12.3): the SessionStart hook and `permissions.deny`. */
+export const CLAUDE_SETTINGS_FILE = '.claude/settings.json';
+
+/** The text of `.claude/settings.json`: the exact block of 12.3, as `templates/site/_claude/settings.json` holds it. */
+export const renderClaudeSettings = (): string => readFileSync(join(SITE_TEMPLATES, '_claude/settings.json'), 'utf8');
+
+/** The noun of a finding on a rendered file. */
+const RENDERING = "the kit's rendering";
+
+/**
+ * The text of a rendered file, or a finding when it is missing, a symbolic link (dangling or not) or no regular file.
+ * It follows no link, so a link to a file with the kit's text fails too.
+ */
+function readRendered(root: string, file: string, report: Report): Buffer | undefined {
+  const stats = lstatSync(join(root, file), { throwIfNoEntry: false });
+  if (!stats) {
+    report.add(RULE, file, 'the file is missing');
+    return undefined;
+  }
+  if (stats.isSymbolicLink()) {
+    report.add(RULE, file, 'is a link, not a file');
+    return undefined;
+  }
+  if (!stats.isFile()) {
+    report.add(RULE, file, 'this is not a file');
+    return undefined;
+  }
+  return readFileSync(join(root, file));
+}
+
 /**
  * The protected files part of `config-shim` (part 9d of M9): `.github/kit-identity.sh` and `.npmrc` equal the kit's
- * rendering, compared like the shims. A file that does not match gets the hint of the protected task (10.6). It reads
- * no setting, so it runs in every run of preflight. Until part 9e of M9 makes the protected files required, a missing
- * one is no finding: the test site and a site of an earlier kit version have none yet.
+ * rendering byte for byte, with no CRLF→LF and no trimEnd, because bash and `kit-identity.sh` read the bytes. A file
+ * that does not match gets the hint of the protected task (10.6). It reads no setting, so it runs in every run of
+ * preflight. Until part 9e of M9 makes the protected files required, a missing one is no finding: the test site and
+ * a site of an earlier kit version have none yet. A symbolic link, dangling or not, is a finding.
  */
 export function checkProtectedFiles(root: string, report: Report): void {
   for (const [file, render] of Object.entries(RENDERED_PROTECTED)) {
-    if (statSync(join(root, file), { throwIfNoEntry: false }) === undefined) continue;
-    checkFile(root, file, render(), report, "the kit's rendering");
+    if (lstatSync(join(root, file), { throwIfNoEntry: false }) === undefined) continue;
+    const bytes = readRendered(root, file, report);
+    const expected = render();
+    if (bytes === undefined || bytes.equals(Buffer.from(expected))) continue;
+    const difference = firstDifference(bytes.toString('utf8'), expected);
+    if (difference) report.add(RULE, `${file}:${difference.line}`, describe(difference, RENDERING));
+    else report.add(RULE, file, `${RENDERING} has LF line ends and ends with one newline, byte for byte`);
   }
+}
+
+/**
+ * The Claude Code settings part of `config-shim` (12.3, part 9d of M9): `.claude/settings.json` equals the kit's
+ * rendering after a leading U+FEFF is dropped, compared like a shim. A missing file or a link fails: `init` always
+ * writes it, and a project's own settings go in `.claude/settings.local.json`. It reads no setting, so it runs in
+ * every run of preflight.
+ */
+export function checkClaudeSettings(root: string, report: Report): void {
+  const bytes = readRendered(root, CLAUDE_SETTINGS_FILE, report);
+  if (bytes === undefined) return;
+  const difference = firstDifference(bytes.toString('utf8').replace(/^﻿/, ''), renderClaudeSettings());
+  if (difference) report.add(RULE, `${CLAUDE_SETTINGS_FILE}:${difference.line}`, describe(difference, RENDERING));
 }
 
 /**

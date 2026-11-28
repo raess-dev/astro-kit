@@ -488,9 +488,22 @@
   - `init` also writes `.github/kit-identity.sh`, `.npmrc` (`ignore-scripts=true`, `save-exact=true`) and
     `.claude/settings.json`. Its SessionStart hook runs `kit-identity.sh` before `npm ci --ignore-scripts`, installs
     only when the lockfile changed (`node_modules/.kit-stamp`), keeps the output of the script and of npm off the
-    session, and prints `INDEX.md`. `--force` rewrites the two protected files and keeps `.claude/settings.json`.
-  - `config-shim` compares `kit-identity.sh` and `.npmrc` with the kit's rendering in every run of preflight, each
-    when it exists, until part 9e of M9 makes the protected files required.
+    session, and prints `INDEX.md`. `--force` rewrites the two protected files and `.claude/settings.json`. A
+    project's own Claude Code settings go in `.claude/settings.local.json`, which `.gitignore` now lists.
+  - `config-shim` compares `kit-identity.sh` and `.npmrc` with the kit's rendering byte for byte in every run of
+    preflight, each when it exists, until part 9e of M9 makes the protected files required. It compares
+    `.claude/settings.json` with the text of 12.3 like a shim, and a missing file fails; the test site gets the file.
+    A symbolic link at one of these paths fails with `is a link, not a file`.
+  - Hardening after the reviews of part 9d. `kit-identity.sh` fails an `.npmrc` that is not the text of 12.2 byte for
+    byte, and an `npm_config_` variable of the environment that sets the registry, a proxy, `strict-ssl`,
+    `ignore-scripts` or `replace-registry-host`. It skips only a nested entry with `inBundle: true` and no
+    `resolved` and no `integrity`. It fails a lockfile that is not JSON with an object `.packages` with a fixed line,
+    a kit version that is not plain `X.Y.Z`, and, in GitHub Actions, a base ref that is not in the clone. Its
+    patterns anchor at the end of the text, and it prints a bad key without its control characters.
+  - The SessionStart hook keeps the sha256 of the lockfile, of the kit's `INDEX.md` and of its `package.json` in the
+    stamp, so an edited `INDEX.md` runs `npm ci` again. It prints a fixed line instead of `INDEX.md` when the kit
+    folder or a file of it is a link, and asks for `npm install --package-lock-only --ignore-scripts` when there is
+    no lockfile.
   - `init --protected` still fails and writes nothing: it renders all seven protected files from part 9e.
   - The acceptance suite gets the `identity` case (`identity.test.ts`, in `kit / acceptance`): the script passes the
     complete lockfile of the test site with the packed kit, and fails without the kit entry and on a local tarball.

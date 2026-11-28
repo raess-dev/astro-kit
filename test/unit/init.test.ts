@@ -63,6 +63,9 @@ import {
   KIT_BLOCK_END,
   KIT_BLOCK_START,
   RENDERED_PROTECTED,
+  renderClaudeSettings,
+  renderKitIdentity,
+  renderNpmrc,
   SHIMS,
 } from '../../src/shims.ts';
 import { type Files, inTempAsync, json } from './fixtures.ts';
@@ -818,6 +821,7 @@ test('init writes into existing real folders, and keeps a regular file there', a
 
 /** The files that `--force` rewrites: the kit's own files. */
 const KIT_OWNED = [
+  '.claude/settings.json',
   '.github/kit-identity.sh',
   '.gitignore',
   '.node-version',
@@ -839,13 +843,14 @@ test('FORCE_KEPT is the list of the 6.4 sentence, and every file of init is kept
   const sentence = SPEC.slice(start + marker.length, SPEC.indexOf(', and prints `kept <path>`', start));
   const listed = [...sentence.matchAll(/`([^`]+)`/g)].map((match) => match[1] ?? '');
   assert.deepEqual([...listed].sort(), [...FORCE_KEPT].sort());
-  // The owner-approved files of the kit block (12.1). Of the folder `.claude/`, init writes `settings.json` (12.3).
+  // The owner-approved files of the kit block (12.1). Of the folder `.claude/`, init writes `settings.json` (12.3):
+  // the kit renders it and `config-shim` compares it, so `--force` rewrites it (part 9d of M9, after the reviews).
   for (const path of ['astro-kit.json', 'site.json', 'docs/design.md', 'legal.lock.json', '.mcp.json']) {
     assert.equal(KIT_BLOCK.includes(`\`${path}\``), true, path);
     assert.equal(FORCE_KEPT.includes(path), true, path);
   }
   assert.equal(KIT_BLOCK.includes('`.claude/`'), true);
-  assert.equal(FORCE_KEPT.includes('.claude/settings.json'), true);
+  assert.equal(FORCE_KEPT.includes('.claude/settings.json'), false);
   // The files that the owner named (decision of 2026-11-28).
   for (const path of ['package.json', 'AGENTS.md', 'docs/spec.md', 'KIT-FEEDBACK.md']) {
     assert.equal(FORCE_KEPT.includes(path), true, path);
@@ -877,6 +882,26 @@ for (const path of FORCE_KEPT) {
     });
   });
 }
+
+test('init --force rewrites .claude/settings.json, the protected files that init writes and .gitignore', async () => {
+  await inTempAsync({}, async (root) => {
+    assert.equal((await run(root, ['init', ...FLAGS])).code, 0);
+    for (const path of ['.claude/settings.json', '.github/kit-identity.sh', '.npmrc']) {
+      writeFileSync(join(root, path), `own text of ${path}\n`);
+    }
+    const forced = await run(root, ['init', '--force']);
+    assert.equal(forced.code, 0, forced.err);
+    assert.equal(readFileSync(join(root, '.claude/settings.json'), 'utf8'), renderClaudeSettings());
+    assert.equal(readFileSync(join(root, '.github/kit-identity.sh'), 'utf8'), renderKitIdentity());
+    assert.equal(readFileSync(join(root, '.npmrc'), 'utf8'), renderNpmrc());
+    assert.equal(forced.out.includes('wrote .claude/settings.json\n'), true);
+    // A project's own Claude Code settings go in .claude/settings.local.json, which .gitignore lists.
+    assert.equal(
+      readFileSync(join(root, '.gitignore'), 'utf8').split('\n').includes('.claude/settings.local.json'),
+      true,
+    );
+  });
+});
 
 test('init --force writes a kept file that is missing', async () => {
   await inTempAsync({}, async (root) => {

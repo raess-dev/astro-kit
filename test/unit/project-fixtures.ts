@@ -8,7 +8,7 @@ import { renderTokens } from '../../src/design/tokens.ts';
 import { renderWrangler } from '../../src/hosts/cloudflare.ts';
 import { type Options, parseOptions } from '../../src/options.ts';
 import { Report } from '../../src/registry.ts';
-import { CLAUDE_FILE, KIT_BLOCK, SHIMS } from '../../src/shims.ts';
+import { CLAUDE_FILE, CLAUDE_SETTINGS_FILE, KIT_BLOCK, renderClaudeSettings, SHIMS } from '../../src/shims.ts';
 
 // The project of a case
 
@@ -133,7 +133,7 @@ export const AGENTS_MD = `# Example\n\n${KIT_BLOCK}\n`;
 
 /**
  * The smallest project that passes preflight with no finding: the settings, the two facts files that must exist,
- * the three source shims, the agent files `AGENTS.md` and `CLAUDE.md`, `wrangler.jsonc`, the design document, the `tokens.css` that the kit renders from it,
+ * the three source shims, the agent files `AGENTS.md` and `CLAUDE.md`, `.claude/settings.json` (part 9d), `wrangler.jsonc`, the design document, the `tokens.css` that the kit renders from it,
  * `elements.css` and an empty `fonts.css`. A later milestone adds the files that its rules need.
  */
 export const SMALLEST: Files = {
@@ -143,6 +143,7 @@ export const SMALLEST: Files = {
   ...SHIMS,
   'AGENTS.md': AGENTS_MD,
   [CLAUDE_FILE]: '@AGENTS.md\n',
+  [CLAUDE_SETTINGS_FILE]: renderClaudeSettings(),
   [WRANGLER]: WRANGLER_JSONC,
   [DESIGN]: DESIGN_MD,
   [TOKENS]: TOKENS_CSS,
