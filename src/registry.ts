@@ -200,6 +200,14 @@ export const RULES: readonly Rule[] = [
     '`wrangler.jsonc` is missing or differs from the text that the kit renders for the settings, or the project holds a second wrangler config.',
     'The protected files do not match the settings. Say so in the pull request: the owner starts the protected task for this branch.',
   ),
+  r(
+    'config-kit-identity',
+    'config',
+    'ci',
+    '`.github/kit-identity.sh` checks that `.npmrc` has the exact line `ignore-scripts=true`, that there is no `npm-shrinkwrap.json`, that every lockfile entry is an npm registry tarball under its own name and version with an integrity hash, and that the kit entry is the kit itself, with a `sha512` hash and a version not lower than on the base (`sort -V`). Every install step runs it before `npm ci`, and so does the SessionStart hook of `.claude/settings.json`.',
+    'The lockfile or the npm settings let a package in that does not come from the npm registry under its own name, or the kit version went down.',
+    'Install every package from the npm registry under its own name: `npm install --ignore-scripts <name>@<version>`, never a git URL, a tarball of another host, a folder or an `npm:` alias. Keep `ignore-scripts=true` in `.npmrc`, delete `npm-shrinkwrap.json`, and never lower the version of `@raess/astro-kit`. Do not run `npm ci` on a lockfile that fails: tell the owner.',
+  ),
   // routes
   r(
     'routes-on-demand',

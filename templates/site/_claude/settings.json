@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" || exit 0; if [ ! -f package-lock.json ]; then echo 'No package-lock.json yet: run npm install --ignore-scripts once.'; exit 0; fi; if ! bash .github/kit-identity.sh >&2; then echo 'kit-identity failed: nothing was installed. Do not run npm ci. Tell the owner.'; exit 0; fi; sum=$(node -p \"require('node:crypto').createHash('sha256').update(require('node:fs').readFileSync('package-lock.json')).digest('hex')\") || exit 1; if [ \"$sum\" != \"$(cat node_modules/.kit-stamp 2>/dev/null)\" ]; then npm ci --ignore-scripts --no-audit --no-fund >&2 || exit 1; printf '%s\\n' \"$sum\" > node_modules/.kit-stamp; fi; cat node_modules/@raess/astro-kit/docs/INDEX.md",
+            "timeout": 300
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": ["Edit(/node_modules/**)", "Write(/node_modules/**)"]
+  }
+}

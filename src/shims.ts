@@ -5,6 +5,7 @@
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { UNCHECKED_FOLDERS } from './project.ts';
 import type { Report } from './registry.ts';
 
@@ -111,15 +112,15 @@ export function firstDifference(text: string, expected: string): Difference | un
   return undefined;
 }
 
-/** Says what the kit's text holds at the line that differs. */
-function describe(difference: Difference): string {
-  if (difference.expected === undefined) return 'the kit shim ends before this line';
-  if (difference.expected === '') return 'the kit shim has an empty line here';
-  return `the kit shim has \`${difference.expected}\` here`;
+/** Says what the kit's text holds at the line that differs. `noun` names that text: the kit shim, by default. */
+function describe(difference: Difference, noun = 'the kit shim'): string {
+  if (difference.expected === undefined) return `${noun} ends before this line`;
+  if (difference.expected === '') return `${noun} has an empty line here`;
+  return `${noun} has \`${difference.expected}\` here`;
 }
 
 /** Compares one project file with the text of the kit. */
-function checkFile(root: string, file: string, expected: string, report: Report): void {
+function checkFile(root: string, file: string, expected: string, report: Report, noun?: string): void {
   const path = join(root, file);
   const stats = statSync(path, { throwIfNoEntry: false });
   if (!stats) {
@@ -132,7 +133,49 @@ function checkFile(root: string, file: string, expected: string, report: Report)
   }
   const difference = firstDifference(readFileSync(path, 'utf8'), expected);
   if (!difference) return;
-  report.add(RULE, `${file}:${difference.line}`, describe(difference));
+  report.add(RULE, `${file}:${difference.line}`, describe(difference, noun));
+}
+
+// The rendered protected files (4.2, 10.6)
+
+/** The folder of the site templates in the package: one folder above `src/` and above `dist/`. */
+const SITE_TEMPLATES = fileURLToPath(new URL('../templates/site/', import.meta.url));
+
+/** The script of 10.3 that every install step runs first. */
+export const KIT_IDENTITY_FILE = '.github/kit-identity.sh';
+
+/** The npm settings of a site (12.2): install scripts off, exact versions. `kit-identity.sh` reads it. */
+export const NPMRC_FILE = '.npmrc';
+
+/**
+ * The text of `.github/kit-identity.sh`: the exact script of 10.3, as `templates/site/_github/kit-identity.sh` holds
+ * it. It depends on no setting. A unit test compares the template with the block of the specification.
+ */
+export const renderKitIdentity = (): string => readFileSync(join(SITE_TEMPLATES, '_github/kit-identity.sh'), 'utf8');
+
+/** The text of `.npmrc` (12.2), as `templates/site/_npmrc` holds it: `ignore-scripts=true` and `save-exact=true`. */
+export const renderNpmrc = (): string => readFileSync(join(SITE_TEMPLATES, '_npmrc'), 'utf8');
+
+/**
+ * The protected files that this kit version renders, by project path. They depend on no setting. Part 9e of M9 adds
+ * the workflows, `dependabot.yml` and `CODEOWNERS`, which depend on the settings (10.1, 10.2, 10.5).
+ */
+export const RENDERED_PROTECTED: Readonly<Record<string, () => string>> = {
+  [KIT_IDENTITY_FILE]: renderKitIdentity,
+  [NPMRC_FILE]: renderNpmrc,
+};
+
+/**
+ * The protected files part of `config-shim` (part 9d of M9): `.github/kit-identity.sh` and `.npmrc` equal the kit's
+ * rendering, compared like the shims. A file that does not match gets the hint of the protected task (10.6). It reads
+ * no setting, so it runs in every run of preflight. Until part 9e of M9 makes the protected files required, a missing
+ * one is no finding: the test site and a site of an earlier kit version have none yet.
+ */
+export function checkProtectedFiles(root: string, report: Report): void {
+  for (const [file, render] of Object.entries(RENDERED_PROTECTED)) {
+    if (statSync(join(root, file), { throwIfNoEntry: false }) === undefined) continue;
+    checkFile(root, file, render(), report, "the kit's rendering");
+  }
 }
 
 /**

@@ -12,8 +12,10 @@
  * - A planning pass checks every path before the first write (`plan`): a link, or a file or folder in the wrong
  *   place, throws, and the run writes nothing.
  *
- * The protected files of 10.6 are not written here yet: `--protected` throws, and the template tree holds none of
- * them (`PROTECTED_FILES`). Parts 9d and 9e of milestone M9 render them.
+ * The protected files of 10.6: plain `init` writes the two that this kit version renders, `.github/kit-identity.sh`
+ * and `.npmrc` (`RENDERED_PROTECTED` of `src/shims.ts`, part 9d of milestone M9), with `.claude/settings.json`, whose
+ * hook runs the script (12.3). `--protected` throws until part 9e of M9 renders all seven, so it never writes a part
+ * of them.
  */
 import {
   closeSync,
@@ -30,7 +32,7 @@ import { fileURLToPath } from 'node:url';
 import { siteHost, workerName } from './hosts/cloudflare.ts';
 import { loadOptions, OPTIONS_FILE, type Options, parseOptions } from './options.ts';
 import { Report } from './registry.ts';
-import { FORMS_SHIM_FILE, ISLANDS_SHIM_FILE, SHIMS } from './shims.ts';
+import { FORMS_SHIM_FILE, ISLANDS_SHIM_FILE, RENDERED_PROTECTED, SHIMS } from './shims.ts';
 import { KIT_VERSION } from './virtual.ts';
 
 /** Where `init` writes, as the command line gives it. */
@@ -56,7 +58,8 @@ export type InitFeature = (typeof INIT_FEATURES)[number];
 
 /**
  * The seven protected files of 10.6. The kit renders them from the settings, and only the protected task writes
- * them. This part of M9 writes none of them: `init --protected` throws, and plain `init` skips them.
+ * them. Plain `init` writes the ones of `RENDERED_PROTECTED` (part 9d of M9); `init --protected` throws until part 9e
+ * of M9 renders all seven.
  */
 export const PROTECTED_FILES: readonly string[] = [
   '.github/workflows/site.yml',
@@ -68,17 +71,19 @@ export const PROTECTED_FILES: readonly string[] = [
   'wrangler.jsonc',
 ];
 
-/** The message of `init --protected` until parts 9d and 9e of M9 render the protected files. */
+/** The message of `init --protected` until part 9e of M9 renders all seven protected files. */
 export const PROTECTED_NOT_YET =
-  'astro-kit init: --protected is not available in this kit version: it renders none of the protected files of 10.6 yet, so it wrote nothing.';
+  'astro-kit init: --protected is not available in this kit version: it does not render all seven protected files of 10.6 yet, so it wrote nothing.';
 
 /**
  * The files that `--force` never rewrites (6.4): the files of the project and of its owner. The kit block of 12.1
- * names the owner-approved ones (`astro-kit.json`, `site.json`, `docs/design.md`, `legal.lock.json`, `.mcp.json`);
- * the others hold the project's own text or data (12.2). `--force` rewrites only the kit's files: the shims, the
- * feature shims, `.gitignore`, `.node-version`, `src/styles/tokens.css` (the kit renders it) and the two `.gitkeep`.
+ * names the owner-approved ones (`astro-kit.json`, `site.json`, `docs/design.md`, `legal.lock.json`, `.claude/`,
+ * `.mcp.json`); the others hold the project's own text or data (12.2). `--force` rewrites only the kit's files: the
+ * shims, the feature shims, `.gitignore`, `.node-version`, `src/styles/tokens.css` (the kit renders it), the two
+ * `.gitkeep` and the protected files that init writes (`config-shim` compares them with the kit's rendering).
  */
 export const FORCE_KEPT: readonly string[] = [
+  '.claude/settings.json',
   '.mcp.json',
   'AGENTS.md',
   'CLAUDE.md',
@@ -392,7 +397,8 @@ export function nextSteps(shims: boolean): string {
     '  2. Read node_modules/@raess/astro-kit/docs/INDEX.md. Write docs/spec.md and docs/design.md with the owner.',
     '  3. npx --no astro-kit tokens',
     '  4. npx --no astro-kit check',
-    'This kit version writes no protected file (.github/, .npmrc, wrangler.jsonc) and no .claude/settings.json yet.',
+    'This kit version writes .npmrc and .github/kit-identity.sh, not yet the other protected files:',
+    'the workflows, dependabot.yml and CODEOWNERS in .github/, and wrangler.jsonc.',
     'So check reports config-wrangler until a later kit version writes them.',
     '',
   ].join('\n');
@@ -463,7 +469,7 @@ function writeOne(root: string, file: InitFile, step: 'create' | 'overwrite'): v
 /**
  * The command `init` (6.4). Returns 0; a problem throws, which the command line maps to 1.
  *
- * - `--protected` throws `PROTECTED_NOT_YET` and writes nothing.
+ * - `--protected` throws `PROTECTED_NOT_YET` and writes nothing, until part 9e of M9.
  * - Every flag is read first: an unknown feature or an empty locale throws before a file is written.
  * - With an existing valid `astro-kit.json`, its values are used, and a flag that sets a value only prints
  *   `SETTINGS_EXIST`. An existing file that is not valid throws with its `config-options` findings.
@@ -501,8 +507,11 @@ export function init(root: string, flags: InitFlags, io: InitIo): number {
     );
   }
   files.push(...featureShims(features));
+  // A protected file that this kit version does not render yet never comes from a template.
   for (const file of files) {
-    if (PROTECTED_FILES.includes(file.path)) throw new Error(`astro-kit init: ${file.path} is a protected file`);
+    if (PROTECTED_FILES.includes(file.path) && !Object.hasOwn(RENDERED_PROTECTED, file.path)) {
+      throw new Error(`astro-kit init: ${file.path} is a protected file`);
+    }
   }
 
   const byPath = (a: { path: string }, b: { path: string }): number => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);

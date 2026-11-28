@@ -479,3 +479,18 @@
   - The style skeletons `tokens.css` and `elements.css` hold one comment in their layer block, so the kit's
     Biome preset passes them and the repository drops its `noEmptyBlock` override. A unit test runs the shipped
     preset on every CSS, JSON and script file that init writes.
+- Milestone M9, part 9d: the kit identity script, the SessionStart hook and the rule `config-kit-identity`. The kit
+  has 124 rules.
+  - `.github/kit-identity.sh` is the exact script of 10.3, in `templates/site/_github/`. It checks `.npmrc`, refuses
+    `npm-shrinkwrap.json`, every lockfile entry that is no npm registry tarball under its own name and version with
+    an integrity hash, and a kit entry without a `sha512` hash or with a version lower than on the base. Its
+    `::error::` lines name `config-kit-identity`, a ci rule of the config group.
+  - `init` also writes `.github/kit-identity.sh`, `.npmrc` (`ignore-scripts=true`, `save-exact=true`) and
+    `.claude/settings.json`. Its SessionStart hook runs `kit-identity.sh` before `npm ci --ignore-scripts`, installs
+    only when the lockfile changed (`node_modules/.kit-stamp`), keeps the output of the script and of npm off the
+    session, and prints `INDEX.md`. `--force` rewrites the two protected files and keeps `.claude/settings.json`.
+  - `config-shim` compares `kit-identity.sh` and `.npmrc` with the kit's rendering in every run of preflight, each
+    when it exists, until part 9e of M9 makes the protected files required.
+  - `init --protected` still fails and writes nothing: it renders all seven protected files from part 9e.
+  - The acceptance suite gets the `identity` case (`identity.test.ts`, in `kit / acceptance`): the script passes the
+    complete lockfile of the test site with the packed kit, and fails without the kit entry and on a local tarball.

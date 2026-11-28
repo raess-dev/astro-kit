@@ -26,13 +26,13 @@ Every failing check prints the same three lines:
 | build | The end of `astro build`, on the files in `dist/`. | routes, js, speculation, budgets, images, fonts, origins, head, headings, hreflang, indexing, links, facts, content, css, modes, csp, edge, html, forms, legal, media, svg |
 | build + browser | At the end of `astro build` like a build rule, and again in `npx --no astro-kit test`, in Chromium. | legal |
 | browser | `npx --no astro-kit test`, in Chromium on the built site. | origins, modes, a11y, contrast, perf |
-| ci | `npx --no astro-kit ci` and the site workflow. |  |
+| ci | `npx --no astro-kit ci` and the site workflow. | config |
 | smoke | `npx --no astro-kit smoke <origin>`, against production. |  |
 | zone | `npx --no astro-kit provision zone`. |  |
 
 ## Rules
 
-123 rules in 28 groups.
+124 rules in 28 groups.
 
 ### config
 
@@ -51,6 +51,7 @@ Every failing check prints the same three lines:
 - <a id="config-dep-allowlist"></a>**config-dep-allowlist** — Dependencies are only: `astro`, `@raess/astro-kit`, `wrangler`; with forms `@astrojs/cloudflare`; with islands `@astrojs/solid-js`, `solid-js`, `eslint`, `eslint-plugin-solid`, `typescript-eslint`; plus `dependencies`. The rule reads dependencies, devDependencies, optionalDependencies and peerDependencies. A `package.json` that is not a JSON object fails, and so does a section that is not an object. Fix: Remove the package, or ask the owner to add it to `dependencies` in `astro-kit.json`. Fix `package.json` when it is not a JSON object with objects as dependency sections.
 - <a id="config-public-shadow"></a>**config-public-shadow** — `public/` holds none of `robots.txt`, `_headers`, `_redirects`, `.well-known/security.txt`, `_kit`, `sitemap*.xml`. It holds no folder or file `_astro` either, in any letter case. Astro writes its bundled files to `/_astro/`, and `js-script` allows a module script there, so no file of `public/` may stand at such a URL. It holds no `.js`, `.mjs` or `.cjs` file at any depth, in any letter case: every script comes from the bundler into `/_astro/`, so `js-script` and `js-budget` see all of it, and an `import()` or a worker cannot load a file of `public/` that no budget counts. Fix: Delete the file from `public/`. The kit writes it into `dist/` at the end of the build; Astro writes `/_astro/` itself. Put a script into `src/` as a bundled `<script>`.
 - <a id="config-wrangler"></a>**config-wrangler** — Only `wrangler.jsonc` exists (no `.json` or `.toml`). It equals the kit's rendering for the settings, after CRLF→LF and trimEnd + newline. The rendering has full-line `//` comments only and no trailing commas, because the deploy job reads it with `jq`. A file that does not match gets the hint of the protected task. Fix: The protected files do not match the settings. Say so in the pull request: the owner starts the protected task for this branch.
+- <a id="config-kit-identity"></a>**config-kit-identity** — `.github/kit-identity.sh` checks that `.npmrc` has the exact line `ignore-scripts=true`, that there is no `npm-shrinkwrap.json`, that every lockfile entry is an npm registry tarball under its own name and version with an integrity hash, and that the kit entry is the kit itself, with a `sha512` hash and a version not lower than on the base (`sort -V`). Every install step runs it before `npm ci`, and so does the SessionStart hook of `.claude/settings.json`. Fix: Install every package from the npm registry under its own name: `npm install --ignore-scripts <name>@<version>`, never a git URL, a tarball of another host, a folder or an `npm:` alias. Keep `ignore-scripts=true` in `.npmrc`, delete `npm-shrinkwrap.json`, and never lower the version of `@raess/astro-kit`. Do not run `npm ci` on a lockfile that fails: tell the owner.
 
 ### routes
 

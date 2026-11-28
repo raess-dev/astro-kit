@@ -2,9 +2,10 @@
  * The fresh init of 14.2 (part 9c of M9): `init` in an empty folder, then the kit's own commands on what it wrote.
  *
  * 1. `init --site https://example.ch --locales de,fr --owner @example-owner` writes the templates and prints no passed
- *    line. Until parts 9d and 9e of M9 render the protected files, the case writes `wrangler.jsonc` with
- *    `renderWrangler` of the packed kit, as `init --protected` will. Then `check` fails with exactly `design-format`:
- *    the skeleton of `docs/design.md` has empty tables.
+ *    line. It writes `.github/kit-identity.sh`, `.npmrc` and `.claude/settings.json` (part 9d of M9). Until the kit
+ *    renders all seven protected files (part 9e of M9), the case writes `wrangler.jsonc` with `renderWrangler` of the
+ *    packed kit, as `init --protected` will. Then `check` fails with exactly `design-format`: the skeleton of
+ *    `docs/design.md` has empty tables.
  * 2. With the smallest valid `docs/design.md` and `elements.css` of `fresh-init.ts`, `tokens` writes `tokens.css`, and
  *    `check` passes: Biome and `astro check` accept every file that init wrote. Then `build` fails with exactly
  *    `legal-pages` and `routes-404`, because the site has no page yet.
@@ -40,8 +41,18 @@ test('M9 fresh init: init writes the templates; check gives design-format, and w
   }
   assert.ok(init.stdout.includes('\nNext:\n'), tail(init));
   assert.equal(read(dir, 'CLAUDE.md'), '@AGENTS.md\n');
-  // No protected file yet (10.6): parts 9d and 9e of M9 render them.
-  for (const file of ['.github', '.npmrc', 'wrangler.jsonc', '.claude'])
+  // Part 9d of M9: the two protected files that depend on no setting, and the SessionStart hook (12.3), as the
+  // packed kit holds them. The other protected files come with part 9e (10.6).
+  const templates = join(base(), 'node_modules/@raess/astro-kit/templates/site');
+  for (const [file, template] of [
+    ['.github/kit-identity.sh', '_github/kit-identity.sh'],
+    ['.npmrc', '_npmrc'],
+    ['.claude/settings.json', '_claude/settings.json'],
+  ] as const) {
+    assert.ok(init.stdout.includes(`wrote ${file}\n`), `init wrote ${file}`);
+    assert.equal(read(dir, file), read(templates, template), file);
+  }
+  for (const file of ['.github/workflows', '.github/dependabot.yml', '.github/CODEOWNERS', 'wrangler.jsonc'])
     assert.equal(existsSync(join(dir, file)), false, file);
 
   // The stand-in for `init --protected`: the static `wrangler.jsonc` of 10.4 for the written settings.

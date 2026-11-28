@@ -62,6 +62,7 @@ import {
   KIT_BLOCK,
   KIT_BLOCK_END,
   KIT_BLOCK_START,
+  RENDERED_PROTECTED,
   SHIMS,
 } from '../../src/shims.ts';
 import { type Files, inTempAsync, json } from './fixtures.ts';
@@ -134,9 +135,12 @@ const pathOf = (template: string): string =>
 
 /** The files that plain `init` writes for a static site with no astro-kit.json, in path order. */
 const PLAIN_FILES = [
+  '.claude/settings.json',
+  '.github/kit-identity.sh',
   '.gitignore',
   '.mcp.json',
   '.node-version',
+  '.npmrc',
   'AGENTS.md',
   'CLAUDE.md',
   'KIT-FEEDBACK.md',
@@ -161,16 +165,19 @@ const PLAIN_FILES = [
 
 // The templates
 
-test('the template tree holds the files of 3.3 that this part writes, and no protected file', () => {
+test('the template tree holds the files of 3.3 that this part writes, and only the protected files it renders', () => {
   assert.deepEqual(
     SITE_TEMPLATES.map(([path]) => path),
     [
       'AGENTS.md.tmpl',
       'CLAUDE.md',
       'KIT-FEEDBACK.md',
+      '_claude/settings.json',
+      '_github/kit-identity.sh',
       '_gitignore',
       '_mcp.json',
       '_node-version',
+      '_npmrc',
       'docs/design.md',
       'docs/spec.md',
       'glossary.json',
@@ -185,9 +192,11 @@ test('the template tree holds the files of 3.3 that this part writes, and no pro
       'src/styles/tokens.css',
     ],
   );
+  // Part 9d of M9 renders two of the seven protected files; part 9e adds the others (10.6).
+  assert.deepEqual(Object.keys(RENDERED_PROTECTED), ['.github/kit-identity.sh', '.npmrc']);
   for (const [path] of SITE_TEMPLATES) {
-    assert.equal(PROTECTED_FILES.includes(pathOf(path)), false, path);
-    assert.equal(pathOf(path).startsWith('.claude/'), false, path);
+    assert.equal(PROTECTED_FILES.includes(pathOf(path)), Object.hasOwn(RENDERED_PROTECTED, pathOf(path)), path);
+    assert.equal(pathOf(path).startsWith('.claude/'), pathOf(path) === '.claude/settings.json', path);
     assert.equal(projectPath(path), pathOf(path));
   }
 });
@@ -412,7 +421,10 @@ test('init writes the templates, and each written file equals its template', asy
   for (const [path, text] of Object.entries(SHIMS)) assert.equal(result.texts[path], text, path);
   assert.equal(result.texts['AGENTS.md']?.startsWith('# Example\n\nThe marketing site for https://example.ch,'), true);
   assert.equal(result.texts['CLAUDE.md'], '@AGENTS.md\n');
-  for (const path of PROTECTED_FILES) assert.equal(path in result.texts, false, path);
+  for (const path of PROTECTED_FILES) {
+    const render = Object.hasOwn(RENDERED_PROTECTED, path) ? RENDERED_PROTECTED[path] : undefined;
+    assert.equal(result.texts[path], render?.(), path);
+  }
   assert.deepEqual(siteTemplates(variables).length, SITE_TEMPLATES.length);
 });
 
@@ -490,7 +502,7 @@ test('an existing astro-kit.json wins over the flags, with the message of 6.4 on
   assert.equal(result.texts['AGENTS.md']?.startsWith('# Hotel\n\nThe marketing site for https://hotel.example,'), true);
   assert.equal(result.texts[ISLANDS_SHIM_FILE], ISLANDS_SHIM);
   assert.equal(FORMS_SHIM_FILE in result.texts, false);
-  assert.equal(result.out.startsWith('wrote .gitignore\n'), true);
+  assert.equal(result.out.startsWith('wrote .claude/settings.json\n'), true);
   assert.equal(result.out.includes('kept astro-kit.json\n'), true);
   // Without a flag that sets a value, the message does not come.
   const quiet = await initIn({ 'astro-kit.json': json(settings) }, []);
@@ -806,8 +818,10 @@ test('init writes into existing real folders, and keeps a regular file there', a
 
 /** The files that `--force` rewrites: the kit's own files. */
 const KIT_OWNED = [
+  '.github/kit-identity.sh',
   '.gitignore',
   '.node-version',
+  '.npmrc',
   'astro.config.mjs',
   'biome.json',
   'src/styles/components/.gitkeep',
@@ -825,11 +839,13 @@ test('FORCE_KEPT is the list of the 6.4 sentence, and every file of init is kept
   const sentence = SPEC.slice(start + marker.length, SPEC.indexOf(', and prints `kept <path>`', start));
   const listed = [...sentence.matchAll(/`([^`]+)`/g)].map((match) => match[1] ?? '');
   assert.deepEqual([...listed].sort(), [...FORCE_KEPT].sort());
-  // The owner-approved files of the kit block (12.1), but the folder `.claude/`, which init does not write yet.
+  // The owner-approved files of the kit block (12.1). Of the folder `.claude/`, init writes `settings.json` (12.3).
   for (const path of ['astro-kit.json', 'site.json', 'docs/design.md', 'legal.lock.json', '.mcp.json']) {
     assert.equal(KIT_BLOCK.includes(`\`${path}\``), true, path);
     assert.equal(FORCE_KEPT.includes(path), true, path);
   }
+  assert.equal(KIT_BLOCK.includes('`.claude/`'), true);
+  assert.equal(FORCE_KEPT.includes('.claude/settings.json'), true);
   // The files that the owner named (decision of 2026-11-28).
   for (const path of ['package.json', 'AGENTS.md', 'docs/spec.md', 'KIT-FEEDBACK.md']) {
     assert.equal(FORCE_KEPT.includes(path), true, path);
@@ -932,8 +948,8 @@ test('the Next: block says that check reports config-wrangler until a later kit 
   assert.equal(SPEC.includes(`its "Next:" block then ends with the line \`${line}\``), true);
 });
 
-test('the temporary sentences name parts 9d and 9e', () => {
-  for (const stale of ['a later part of M9', 'part 9e of M9 renders']) {
+test('the temporary sentences name part 9e, now that part 9d is done', () => {
+  for (const stale of ['a later part of M9', 'part 9e of M9 renders', 'parts 9d and 9e', 'Parts 9d and 9e']) {
     assert.equal(SPEC.includes(stale), false, stale);
   }
 });

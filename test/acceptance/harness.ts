@@ -70,6 +70,8 @@ const ASTRO_MANIFEST = 'node_modules/astro/package.json';
 const KIT_CLI = 'node_modules/@raess/astro-kit/dist/cli.js';
 
 let cached: string | undefined;
+/** The temp folder of the run, which holds the packed kit unless `KIT_TARBALL` names it. */
+let cachedTmp: string | undefined;
 
 /** Runs npm. Its stdout never reaches the stdout of a test file, which belongs to the test runner. */
 const npm = (cwd: string, args: string[], stdout: 'ignore' | 'stderr' = 'ignore'): void => {
@@ -338,6 +340,7 @@ function runBase(): string {
         renameSync(`${pointer}.part`, pointer);
         if (kept(made)) sayKept(made);
         else leaveAtEnd(made.tmp, pointer);
+        cachedTmp = made.tmp;
         return made.base;
       } catch (error) {
         // The next process that waits becomes the maker and shows its own error.
@@ -360,6 +363,7 @@ function runBase(): string {
       }
       if (joined) {
         if (!kept(made)) leaveAtEnd(made.tmp, pointer);
+        cachedTmp = made.tmp;
         return made.base;
       }
       if (state.runner === runner) rmSync(join(made.tmp, 'users', String(process.pid)), { force: true });
@@ -392,7 +396,20 @@ export function base(): string {
   if (kept(made)) sayKept(made);
   else atEnd(() => rmSync(made.tmp, { recursive: true, force: true }));
   cached = made.base;
+  cachedTmp = made.tmp;
   return made.base;
+}
+
+/**
+ * The packed kit of the run, as a file: the one of `KIT_TARBALL`, else the one that the harness packed into the temp
+ * folder of the run. The `identity` case installs it into a lockfile.
+ */
+export function packedKitFile(): string {
+  if (process.env.KIT_TARBALL) return resolve(process.env.KIT_TARBALL);
+  base();
+  const name = cachedTmp === undefined ? undefined : readdirSync(cachedTmp).find((entry) => entry.endsWith('.tgz'));
+  if (cachedTmp === undefined || name === undefined) throw new Error('kit-acceptance: the run holds no packed kit');
+  return join(cachedTmp, name);
 }
 
 /** `require` from the base copy, for packages that the suite must not depend on itself (14.2). */
