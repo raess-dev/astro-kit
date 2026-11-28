@@ -125,10 +125,17 @@ One spike alone: `node --test test/acceptance/spikes/s05.ts`.
   cause, add the value to its unit test, and correct the specification. The file takes a few seconds after the
   build.
 - `fresh-init.test.ts`: the fresh init of 14.2 (part 9c of M9), in an empty case folder that walks up to the
-  packages of the base copy. `init` writes the templates; the case writes `wrangler.jsonc` with `renderWrangler`
-  until `init --protected` exists; `check` gives exactly `design-format`. With the smallest design and
+  packages of the base copy. `init` writes the templates, with `.github/kit-identity.sh`, `.npmrc` and
+  `.claude/settings.json` from part 9d; the case writes `wrangler.jsonc` with `renderWrangler` until
+  `init --protected` exists (part 9e); `check` gives exactly `design-format`. With the smallest design and
   `elements.css` of `fresh-init.ts`, `tokens` writes `tokens.css`, `check` passes, and `build` gives exactly
   `legal-pages` and `routes-404`, because the site has no page.
+- `identity.test.ts`: the `identity` case of 14.2 (part 9d of M9). A copy of the site becomes a git repository with
+  `refs/remotes/origin/main`, and gets `.github/kit-identity.sh` from the packed kit until part 9e writes the
+  protected files into `test/site/`. The script fails on the lockfile of the commit (no kit entry); then
+  `npm install --package-lock-only` of the packed kit writes the kit's package tree into the lockfile, and the script
+  fails on the local tarball of the kit; with `resolved` in the registry form it passes with its last line. It needs
+  the npm registry, as the base copy does, and takes about 4 s after the base copy.
 - `planted-build.test.ts`: the `build` set of the planted sets of M5. One copy of the site gets every plant of the
   set, one plant for each id, and `build` runs once. The test asserts the exact sorted ids, status 1 and no passed
   line. A plant on the shared layout or the header acts on one page only. The ids of later rules join with them:

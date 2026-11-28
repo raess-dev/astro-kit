@@ -479,3 +479,47 @@
   - The style skeletons `tokens.css` and `elements.css` hold one comment in their layer block, so the kit's
     Biome preset passes them and the repository drops its `noEmptyBlock` override. A unit test runs the shipped
     preset on every CSS, JSON and script file that init writes.
+- Milestone M9, part 9d: the kit identity script, the SessionStart hook and the rule `config-kit-identity`. The kit
+  has 124 rules.
+  - `.github/kit-identity.sh` is the exact script of 10.3, in `templates/site/_github/`. It checks `.npmrc`, refuses
+    `npm-shrinkwrap.json`, every lockfile entry that is no npm registry tarball under its own name and version with
+    an integrity hash, and a kit entry without a `sha512` hash or with a version lower than on the base. Its
+    `::error::` lines name `config-kit-identity`, a ci rule of the config group.
+  - `init` also writes `.github/kit-identity.sh`, `.npmrc` (`ignore-scripts=true`, `save-exact=true`) and
+    `.claude/settings.json`. Its SessionStart hook runs `kit-identity.sh` before `npm ci --ignore-scripts`, installs
+    only when the lockfile changed (`node_modules/.kit-stamp`), keeps the output of the script and of npm off the
+    session, and prints `INDEX.md`. `--force` rewrites the two protected files and `.claude/settings.json`. A
+    project's own Claude Code settings go in `.claude/settings.local.json`, which `.gitignore` now lists.
+  - `config-shim` compares `kit-identity.sh` and `.npmrc` with the kit's rendering byte for byte in every run of
+    preflight, each when it exists, until part 9e of M9 makes the protected files required. It compares
+    `.claude/settings.json` with the text of 12.3 like a shim, and a missing file fails; the test site gets the file.
+    A symbolic link at one of these paths fails with `is a link, not a file`.
+  - Hardening after the reviews of part 9d. `kit-identity.sh` fails an `.npmrc` that is not the text of 12.2 byte for
+    byte, and an `npm_config_` variable of the environment that sets the registry, `strict-ssl`, `ignore-scripts` or
+    `replace-registry-host`. A proxy is allowed: `proxy`, `https-proxy`, `HTTPS_PROXY` and `HTTP_PROXY` only tunnel
+    TLS, and `strict-ssl` stays on. The machine's npm config is trusted: `userconfig`, `globalconfig`, `ca`, `cafile`,
+    `prefix` and the user and global npmrc are not checked, because a pull request changes only the repository. It
+    fails a `BASE_REF` that is not a plain branch name and a kit version on the base that is not plain. It skips only
+    a nested entry with `inBundle: true` and no `resolved` and no `integrity`. It fails a lockfile that is not JSON
+    with an object `.packages` with a fixed line, a kit version that is not plain `X.Y.Z`, and, in GitHub Actions, a
+    base ref that is not in the clone. Its patterns anchor at the end of the text, and it prints a bad key without its
+    control characters.
+  - The SessionStart hook keeps the sha256 of the lockfile, of the kit's `INDEX.md` and of its `package.json` in the
+    stamp, so an edited `INDEX.md` runs `npm ci` again. It prints a fixed line instead of `INDEX.md` when the kit
+    folder or a file of it is a link, and asks for `npm install --package-lock-only --ignore-scripts` when there is
+    no lockfile.
+  - The SessionStart hook runs `npm ci` with `--registry=https://registry.npmjs.org/`,
+    `--replace-registry-host=never` and `--strict-ssl=true` after `--ignore-scripts --no-audit --no-fund`, so no npmrc
+    of the machine moves the download host, runs a script or turns TLS checks off; the install steps of `site.yml`
+    (part 9e), the protected task and the rehearsal of M13 use the same flags. Its link check also covers
+    `node_modules` and `node_modules/@raess`.
+  - Every install of a site uses a fresh, empty, private npm cache (`--cache "$c"`, `c` from `mktemp -d`, removed
+    after the install whatever its result): the SessionStart hook, the install steps of `site.yml` (part 9e), the
+    protected task and the rehearsal of M13. npm's cache is keyed by the integrity hash, so a lockfile entry with the
+    URL of one package and the hash of another cached tarball installed that tarball under the wrong name; with an
+    empty cache npm downloads every tarball from its URL and fails with `EINTEGRITY`. `kit-identity.sh` also asks
+    the registry for the hash of the kit version (`npm view` with the pinned flags and an empty cache of its own) and
+    fails with a fixed line when it differs from the kit entry or when the registry gives none.
+  - `init --protected` still fails and writes nothing: it renders all seven protected files from part 9e.
+  - The acceptance suite gets the `identity` case (`identity.test.ts`, in `kit / acceptance`): the script passes the
+    complete lockfile of the test site with the packed kit, and fails without the kit entry and on a local tarball.

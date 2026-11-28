@@ -71,7 +71,7 @@ import { renderTokens, TOKENS_FILE } from '../../src/design/tokens.ts';
 import { headersText, renderWrangler } from '../../src/hosts/cloudflare.ts';
 import { preflight } from '../../src/preflight.ts';
 import { Report } from '../../src/registry.ts';
-import { KIT_BLOCK, SHIMS } from '../../src/shims.ts';
+import { CLAUDE_SETTINGS_FILE, KIT_BLOCK, renderClaudeSettings, SHIMS } from '../../src/shims.ts';
 import { AUTO, BUILT_AUTO, DESIGN_TEXT, designOf, ELEMENTS_CSS, pageHtml } from './css-rules-fixtures.ts';
 import { type Files, factsOf, inTemp, inTempAsync, json, SCHEDULE, SITE, SMALLEST } from './fixtures.ts';
 
@@ -1065,6 +1065,7 @@ const PROJECT: Files = {
   ...SHIMS,
   'AGENTS.md': `# Example\n\n${KIT_BLOCK}\n`,
   'CLAUDE.md': '@AGENTS.md\n',
+  [CLAUDE_SETTINGS_FILE]: renderClaudeSettings(),
   'wrangler.jsonc': renderWrangler(AUTO),
   [DESIGN_FILE]: DESIGN_TEXT,
   [TOKENS_FILE]: renderTokens(designOf(DESIGN_TEXT), AUTO),

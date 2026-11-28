@@ -26,7 +26,7 @@ import {
 import { loadRedirects } from './redirects.ts';
 import type { Report } from './registry.ts';
 import { checkScriptSources } from './scripts.ts';
-import { checkAgentFiles, checkFormsShim, checkShims } from './shims.ts';
+import { checkAgentFiles, checkClaudeSettings, checkFormsShim, checkProtectedFiles, checkShims } from './shims.ts';
 
 /**
  * Runs the config-stage checks and adds each finding to the report. Returns the settings, or `undefined` when
@@ -57,10 +57,13 @@ export function preflight(root: string, report: Report): Options | undefined {
   loadSchedule(root, report);
 
   // 2. Shims: `config-shim`. The agent files in every run: the kit block of `AGENTS.md` and the line of `CLAUDE.md`
-  // (part 9c of M9). With valid settings and forms, the forms shim too. Parts 9d and 9e of M9 add the rendered
-  // protected files here, with valid settings only.
+  // (part 9c of M9). The rendered protected files that depend on no setting in every run too: `kit-identity.sh` and
+  // `.npmrc` (part 9d), each when it exists, and `.claude/settings.json`, always. With valid settings and forms, the
+  // forms shim too. Part 9e of M9 adds the protected files that depend on the settings, with valid settings only.
   checkShims(root, report);
   checkAgentFiles(root, report);
+  checkProtectedFiles(root, report);
+  checkClaudeSettings(root, report);
   if (options?.features.forms === true) checkFormsShim(root, report);
 
   // 3. Package: `config-overrides`, `config-dep-spec`, `config-dep-allowlist`.

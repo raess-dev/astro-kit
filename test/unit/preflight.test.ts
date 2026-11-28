@@ -615,6 +615,7 @@ test('the smallest project passes preflight, and preflight returns its settings'
   assert.equal(seen.options?.defaultLocale, 'de');
   assert.deepEqual(seen.options?.processing, ['cdn', 'previews'], 'the defaults are filled in');
   assert.deepEqual(Object.keys(SMALLEST).sort(), [
+    '.claude/settings.json',
     'AGENTS.md',
     'CLAUDE.md',
     'astro-kit.json',
@@ -651,6 +652,7 @@ test('each file of the smallest project is needed: without it, preflight has a f
     { file: 'tsconfig.json', ids: ['config-shim'] },
     { file: 'AGENTS.md', ids: ['config-shim'] },
     { file: 'CLAUDE.md', ids: ['config-shim'] },
+    { file: '.claude/settings.json', ids: ['config-shim'] },
     { file: 'wrangler.jsonc', ids: ['config-wrangler'] },
     { file: 'docs/design.md', ids: ['design-format'] },
     { file: 'src/styles/tokens.css', ids: ['design-tokens'] },
@@ -874,6 +876,7 @@ test('an empty folder gives the findings of the files that must exist, and no er
     'tsconfig.json',
     'AGENTS.md',
     'CLAUDE.md',
+    '.claude/settings.json',
     'wrangler.jsonc',
     'docs/design.md',
     'src/styles/elements.css',
