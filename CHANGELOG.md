@@ -513,6 +513,13 @@
     of the machine moves the download host, runs a script or turns TLS checks off; the install steps of `site.yml`
     (part 9e), the protected task and the rehearsal of M13 use the same flags. Its link check also covers
     `node_modules` and `node_modules/@raess`.
+  - Every install of a site uses a fresh, empty, private npm cache (`--cache "$c"`, `c` from `mktemp -d`, removed
+    after the install whatever its result): the SessionStart hook, the install steps of `site.yml` (part 9e), the
+    protected task and the rehearsal of M13. npm's cache is keyed by the integrity hash, so a lockfile entry with the
+    URL of one package and the hash of another cached tarball installed that tarball under the wrong name; with an
+    empty cache npm downloads every tarball from its URL and fails with `EINTEGRITY`. `kit-identity.sh` also asks
+    the registry for the hash of the kit version (`npm view` with the pinned flags and an empty cache of its own) and
+    fails with a fixed line when it differs from the kit entry or when the registry gives none.
   - `init --protected` still fails and writes nothing: it renders all seven protected files from part 9e.
   - The acceptance suite gets the `identity` case (`identity.test.ts`, in `kit / acceptance`): the script passes the
     complete lockfile of the test site with the packed kit, and fails without the kit entry and on a local tarball.

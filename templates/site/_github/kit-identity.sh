@@ -46,4 +46,12 @@ elif git cat-file -e "$base:package-lock.json" 2>/dev/null; then
   [[ "$old" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'the kit version on the base is not a plain version X.Y.Z'
   [ "$(printf '%s\n%s\n' "$old" "$version" | sort -V | head -n 1)" = "$old" ] || fail "the kit went down from $old on $base to $version"
 fi
+cache=$(mktemp -d)
+registry=$(npm view "@raess/astro-kit@$version" dist.integrity \
+  --registry=https://registry.npmjs.org/ --replace-registry-host=never --strict-ssl=true --cache "$cache") || registry=
+rm -rf "$cache"
+[[ "$registry" == sha512-* ]] ||
+  fail "the npm registry gave no sha512 hash for @raess/astro-kit $version: it is unreachable or has no such version"
+[ "$registry" = "$(jq -r '.integrity' <<<"$kit")" ] ||
+  fail "the kit entry's hash is not the hash of @raess/astro-kit $version on the npm registry"
 echo "@raess/astro-kit $version and every other package from the npm registry"

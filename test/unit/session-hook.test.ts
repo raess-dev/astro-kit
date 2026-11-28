@@ -7,7 +7,16 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -93,6 +102,12 @@ const KIT_PACKAGE = 'node_modules/@raess/astro-kit/package.json';
 /** The text of the kit's package.json that the fake npm writes. */
 const INSTALLED_PACKAGE = '{"name":"@raess/astro-kit"}\n';
 const NPM_LOG = '.fake-npm.log';
+/** The log of the `npm view` calls of `kit-identity.sh`, apart from the log of `npm ci`. */
+const VIEW_LOG = '.fake-npm-view.log';
+/** The state of the `--cache` folder of each `npm ci` when it runs (`empty`, `filled` or `missing`) and its path. */
+const CACHE_LOG = '.fake-npm-cache.log';
+/** The TMPDIR of the hook, so that a test sees what the hook leaves there. */
+const TMP = '.tmp';
 /** A text of the lockfile that must never reach the session: the name of an entry from another host. */
 const MARKER = 'lockfile-text-marker';
 
@@ -120,12 +135,31 @@ const lockfile = (good: boolean): string =>
   });
 
 /**
- * The fake `npm`: it records its arguments, prints a line that must not reach the session, and with `FAKE_NPM_EXIT`
- * other than 0 fails before it touches `node_modules`. Else it does what `npm ci` does to the folder: it removes
- * `node_modules` and writes the kit's `package.json` and, without `FAKE_NPM_NO_INDEX`, its `INDEX.md`.
+ * The fake `npm`. For the `npm view` of `kit-identity.sh` it records its arguments apart and prints the hash of the
+ * kit entry, as the registry would. For `npm ci` it records its arguments, with `<cache>` in place of the folder
+ * after `--cache`, and the state of that folder; it puts a file in the folder, as a real npm fills its cache. It
+ * prints a line that must not reach the session, and with `FAKE_NPM_EXIT` other than 0 fails before it touches
+ * `node_modules`. Else it does what `npm ci` does to the folder: it removes `node_modules` and writes the kit's
+ * `package.json` and, without `FAKE_NPM_NO_INDEX`, its `INDEX.md`.
  */
 const FAKE_NPM = `#!/usr/bin/env bash
-printf '%s\\n' "$*" >> ${NPM_LOG}
+if [ "$1" = view ]; then
+  printf '%s\\n' "$*" >> ${VIEW_LOG}
+  jq -r '.packages["node_modules/@raess/astro-kit"].integrity' package-lock.json
+  exit 0
+fi
+cache=; prev=; args=()
+for arg in "$@"; do
+  if [ "$prev" = --cache ]; then cache=$arg; args+=('<cache>'); else args+=("$arg"); fi
+  prev=$arg
+done
+state=missing
+if [ -n "$cache" ] && [ -d "$cache" ]; then
+  if [ -z "$(ls -A "$cache")" ]; then state=empty; else state=filled; fi
+  : > "$cache/filled-by-fake-npm"
+fi
+printf '%s %s\\n' "$state" "$cache" >> ${CACHE_LOG}
+printf '%s\\n' "\${args[*]}" >> ${NPM_LOG}
 echo 'npm output for the terminal only'
 [ "\${FAKE_NPM_EXIT:-0}" = 0 ] || exit "$FAKE_NPM_EXIT"
 rm -rf node_modules
@@ -135,14 +169,20 @@ printf '{"name":"@raess/astro-kit"}\\n' > ${KIT_PACKAGE}
 `;
 
 /**
- * The flags of every install of a site (10.1, 10.3): on the command line, so that no npmrc of the machine moves the
- * download host, runs a script or turns the TLS check off.
+ * The pinned flags of every install of a site (10.1, 10.3): on the command line, so that no npmrc of the machine moves
+ * the download host, runs a script or turns the TLS check off.
  */
-const FLAGS =
+const PINNED =
   '--ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --replace-registry-host=never --strict-ssl=true';
 
-/** The arguments of the one npm call of the hook (step 5 of 12.3). */
-const NPM_CI = `ci ${FLAGS}`;
+/**
+ * The flags of every install of a site, as the specification writes them: the pinned flags and a fresh, empty,
+ * private cache `c`, so that npm downloads every tarball from its URL (10.3).
+ */
+const FLAGS = `${PINNED} --cache "$c"`;
+
+/** The arguments of the one npm call of the hook (step 5 of 12.3), as the fake npm logs them. */
+const NPM_CI = `ci ${PINNED} --cache <cache>`;
 
 const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
 
@@ -154,11 +194,20 @@ interface HookRun {
   status: number | null;
   stdout: string;
   stderr: string;
-  /** The arguments of each npm call. */
+  /** The arguments of each npm ci call, with `<cache>` for the folder after `--cache`. */
   npm: string[];
+  /** The arguments of each npm view call of `kit-identity.sh`. */
+  view: string[];
+  /** The state of the `--cache` folder of each npm ci call when it ran, and the folder. */
+  caches: { state: string; path: string }[];
+  /** What is left in the TMPDIR of the hook after it ran. */
+  tmp: string[];
   stamp: string | undefined;
   index: string | undefined;
 }
+
+/** The lines of a log that is not empty. */
+const lines = (log: string | undefined): string[] => (log ?? '').split('\n').filter((line) => line !== '');
 
 /** The shells that run the command: bash, as 12.3 says, and `sh`, which may be another shell. */
 const SHELLS = ['bash', 'sh'] as const;
@@ -181,6 +230,7 @@ function runHook(
       mkdirSync(bin);
       writeFileSync(join(bin, 'npm'), FAKE_NPM);
       chmodSync(join(bin, 'npm'), 0o755);
+      mkdirSync(join(root, TMP));
       setup?.(root);
       const result = spawnSync(shell, ['-c', COMMAND], {
         cwd: join(root, 'elsewhere'),
@@ -192,6 +242,7 @@ function runHook(
           GIT_CONFIG_NOSYSTEM: '1',
           GIT_CONFIG_GLOBAL: '/dev/null',
           GIT_CEILING_DIRECTORIES: root,
+          TMPDIR: join(root, TMP),
           ...env,
         },
       });
@@ -201,7 +252,13 @@ function runHook(
         status: result.status,
         stdout: result.stdout,
         stderr: result.stderr,
-        npm: (text(NPM_LOG) ?? '').split('\n').filter((line) => line !== ''),
+        npm: lines(text(NPM_LOG)),
+        view: lines(text(VIEW_LOG)),
+        caches: lines(text(CACHE_LOG)).map((line) => {
+          const [state = '', path = ''] = line.split(' ');
+          return { state, path };
+        }),
+        tmp: readdirSync(join(root, TMP)),
         stamp: text(STAMP),
         index: text(INDEX),
       };
@@ -444,10 +501,17 @@ for (const shell of SHELLS) {
 // The registry on the command line of npm ci
 
 test('the npm ci of the hook is the command of step 5 of 12.3, with the registry, host and strict-ssl flags', () => {
-  assert.equal(COMMAND.includes(`then npm ${NPM_CI} >&2 || exit 1;`), true);
+  assert.equal(
+    COMMAND.includes(
+      `then c=$(mktemp -d) || exit 1; npm ci ${FLAGS} >&2; st=$?; rm -rf "$c"; [ "$st" = 0 ] || exit 1;`,
+    ),
+    true,
+  );
   assert.equal(COMMAND.split('npm ci --').length, 2);
   assert.equal(
-    SPEC.includes(`5. If the line differs from \`node_modules/.kit-stamp\`: run \`npm ${NPM_CI} >&2\`.`),
+    SPEC.includes(
+      `5. If the line differs from \`node_modules/.kit-stamp\`: make a fresh, empty folder \`c\` with \`mktemp -d\` (or \`exit 1\`), run \`npm ci ${FLAGS} >&2\`, and remove \`c\` whatever the result.`,
+    ),
     true,
   );
 });
@@ -499,13 +563,15 @@ test('npm 10 takes the flags of the hook over the user npmrc, a userconfig and a
     // The flags of the command itself, after `npm ci`.
     const flags = (/ npm ci ([^>]*) >&2/.exec(COMMAND)?.[1] ?? '').split(' ');
     assert.deepEqual(flags, FLAGS.split(' '));
+    // `npm config get` takes the cache folder as a path; the hook gives it the fresh folder `c`.
+    const pinned = flags.map((flag) => (flag === '"$c"' ? join(root, 'cache') : flag));
     for (const env of machines) {
       const read = (args: readonly string[]): string =>
         execFileSync('npm', ['config', 'get', ...keys, ...args], { cwd: root, env, encoding: 'utf8' });
       // Without the flags the npmrc of the machine wins, so the test proves that npm reads it.
       assert.equal(read([]), HOSTILE_NPMRC);
       assert.equal(
-        read(flags),
+        read(pinned),
         'registry=https://registry.npmjs.org/\nreplace-registry-host=never\nignore-scripts=true\nstrict-ssl=true\n',
       );
     }
@@ -549,4 +615,87 @@ test('config-shim fails a missing, a changed or a linked .claude/settings.json',
   assert.deepEqual(settingsFindings({ [`${CLAUDE_SETTINGS_FILE}/x`]: '' }), [
     'config-shim .claude/settings.json: this is not a file',
   ]);
+});
+
+// The empty private cache of npm ci (step 5 of 12.3, 10.3)
+
+for (const shell of SHELLS) {
+  test(`${shell}: npm ci gets a fresh, empty --cache folder of mktemp, which the hook removes after it`, () => {
+    const lock = lockfile(true);
+    const result = runHook(shell, { 'package-lock.json': lock });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(result.npm, [NPM_CI]);
+    assert.equal(result.caches.length, 1);
+    // A new folder of `mktemp -d` in TMPDIR, outside node_modules, empty when npm runs; npm filled it, and it is gone.
+    assert.equal(result.caches[0]?.state, 'empty');
+    assert.match(result.caches[0]?.path ?? '', /\/\.tmp\/tmp\.[A-Za-z0-9]+$/);
+    assert.deepEqual(result.tmp, []);
+    assert.equal(result.stdout, 'The installed INDEX.md\n');
+    assert.equal(result.stamp, stampOf(lock, 'The installed INDEX.md\n', INSTALLED_PACKAGE));
+  });
+
+  test(`${shell}: when npm ci fails, the hook removes its cache folder too, and exits 1`, () => {
+    const result = runHook(shell, { 'package-lock.json': lockfile(true) }, { FAKE_NPM_EXIT: '7' });
+    assert.equal(result.status, 1);
+    assert.deepEqual(result.npm, [NPM_CI]);
+    assert.equal(result.caches[0]?.state, 'empty');
+    assert.deepEqual(result.tmp, []);
+    assert.equal(result.stamp, undefined);
+    assert.equal(result.stdout, '');
+  });
+
+  test(`${shell}: when the mktemp of the hook fails, it runs no npm ci and exits 1`, () => {
+    // The first mktemp is the one of kit-identity.sh, which works; the second, of the hook, fails.
+    const real = execFileSync('sh', ['-c', 'command -v mktemp'], { encoding: 'utf8' }).trim();
+    const result = runHook(shell, { 'package-lock.json': lockfile(true) }, {}, (root) => {
+      const calls = join(root, '.fake-bin/mktemp-calls');
+      const fake = `#!/bin/sh\nif [ -e '${calls}' ]; then exit 1; fi\n: > '${calls}'\nexec '${real}' "$@"\n`;
+      writeFileSync(join(root, '.fake-bin/mktemp'), fake);
+      chmodSync(join(root, '.fake-bin/mktemp'), 0o755);
+    });
+    assert.equal(result.status, 1);
+    assert.equal(result.view.length, 1);
+    assert.deepEqual(result.npm, []);
+    assert.equal(result.stamp, undefined);
+    assert.equal(result.stdout, '');
+    assert.deepEqual(result.tmp, []);
+  });
+
+  test(`${shell}: when the mktemp of kit-identity.sh fails, nothing is installed and the fixed text comes`, () => {
+    const result = runHook(shell, { 'package-lock.json': lockfile(true) }, {}, (root) => {
+      writeFileSync(join(root, '.fake-bin/mktemp'), '#!/bin/sh\nexit 1\n');
+      chmodSync(join(root, '.fake-bin/mktemp'), 0o755);
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, `${IDENTITY_FAILED}\n`);
+    assert.deepEqual(result.view, []);
+    assert.deepEqual(result.npm, []);
+  });
+
+  test(`${shell}: kit-identity asks the registry for the kit hash before npm ci, and leaves no cache behind`, () => {
+    const result = runHook(shell, { 'package-lock.json': lockfile(true) });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.view.length, 1);
+    assert.match(
+      result.view[0] ?? '',
+      /^view @raess\/astro-kit@1\.2\.3 dist\.integrity --registry=https:\/\/registry\.npmjs\.org\/ --replace-registry-host=never --strict-ssl=true --cache \S+\/\.tmp\/tmp\.[A-Za-z0-9]+$/,
+    );
+    assert.deepEqual(result.tmp, []);
+  });
+}
+
+test('every install of a site in the specification has the fresh, empty cache of 10.3', () => {
+  // The install lines, and the hook in the JSON block of 12.3, where the quotes are escaped.
+  const installs = SPEC.split(PINNED).length - 1;
+  assert.equal(installs >= 6, true);
+  assert.equal(
+    SPEC.split(`${PINNED} --cache "$c"`).length - 1 + SPEC.split(`${PINNED} --cache \\"$c\\"`).length - 1,
+    installs,
+  );
+  assert.equal(
+    SPEC.includes(
+      '`c` is a fresh, empty folder from `mktemp -d`, made just before the install and removed just after it, whatever its result',
+    ),
+    true,
+  );
 });

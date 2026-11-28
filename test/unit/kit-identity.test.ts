@@ -6,8 +6,8 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { delimiter, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { getRule, Report } from '../../src/registry.ts';
@@ -20,10 +20,14 @@ import {
   renderNpmrc,
 } from '../../src/shims.ts';
 import {
+  FAKE_NPM_VIEW,
   type Files,
   inTemp,
   json,
   MACHINE_NPM_SETTINGS,
+  type NpmCall,
+  npmCalls,
+  npmViewArgs,
   REFUSED_NPM_SETTINGS,
   scriptEnv,
   withoutNpmConfig,
@@ -185,9 +189,32 @@ interface Scratch {
   env?: Record<string, string>;
 }
 
-/** Runs the template with bash in a scratch git repository and gives its status and its output. */
-function runScript(scratch: Scratch): { status: number | null; stdout: string; stderr: string } {
+interface ScriptRun {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  /** The calls of the fake npm. */
+  npm: NpmCall[];
+  /** What is left in the TMPDIR of the script after it ran. */
+  tmp: string[];
+}
+
+/**
+ * Runs the template with bash in a scratch git repository and gives its status and its output. A fake npm
+ * (`FAKE_NPM_VIEW`) is first on the path, so the `npm view` of the script reads no registry: by default it answers
+ * the hash of the kit entry. The script's TMPDIR is a folder of its own, so the test sees what it leaves there.
+ */
+function runScript(scratch: Scratch): ScriptRun {
   return inTemp({}, (root) => {
+    const tools = join(root, '.git', 'test-tools');
+    const bin = join(tools, 'bin');
+    const tmp = join(tools, 'tmp');
+    mkdirSync(bin, { recursive: true });
+    mkdirSync(tmp);
+    writeFileSync(join(bin, 'npm'), FAKE_NPM_VIEW);
+    chmodSync(join(bin, 'npm'), 0o755);
+    const log = join(tools, 'npm.log');
+    writeFileSync(log, '');
     git(root, ['init', '-q', '-b', 'work']);
     for (const [branch, lock] of scratch.bases ?? [['main', lockfile('1.2.3')]]) {
       rmSync(join(root, 'package-lock.json'), { force: true });
@@ -195,8 +222,21 @@ function runScript(scratch: Scratch): { status: number | null; stdout: string; s
     }
     for (const path of ['package-lock.json', '.npmrc']) rmSync(join(root, path), { force: true });
     for (const [path, text] of Object.entries(scratch.files)) writeFileSync(join(root, path), text);
-    const result = spawnSync('bash', [TEMPLATE], { cwd: root, env: cleanEnv(scratch.env), encoding: 'utf8' });
-    return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+    const env = {
+      ...cleanEnv(),
+      PATH: [bin, process.env.PATH ?? ''].join(delimiter),
+      TMPDIR: tmp,
+      FAKE_NPM_LOG: log,
+      ...scratch.env,
+    };
+    const result = spawnSync('bash', [TEMPLATE], { cwd: root, env, encoding: 'utf8' });
+    return {
+      status: result.status,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      npm: npmCalls(readFileSync(log, 'utf8')),
+      tmp: readdirSync(tmp),
+    };
   });
 }
 
@@ -760,4 +800,89 @@ test('config-shim fails a protected file that is a symbolic link, dangling or no
     },
   );
   assert.deepEqual(findings, [`${KIT_IDENTITY_FILE}: is a link, not a file`, `${NPMRC_FILE}: is a link, not a file`]);
+});
+
+// The kit hash from the registry (10.3): npm's cache is keyed by the integrity hash, so the script asks the registry
+
+/** The message of a kit hash that is not the hash of the registry. */
+const notRegistryHash = (version: string): string =>
+  `the kit entry's hash is not the hash of ${KIT} ${version} on the npm registry`;
+
+/** The message of an `npm view` that gives no sha512 hash. */
+const noRegistryHash = (version: string): string =>
+  `the npm registry gave no sha512 hash for ${KIT} ${version}: it is unreachable or has no such version`;
+
+test('kit-identity asks the registry for the kit hash with the pinned flags and a fresh, empty cache, removed after', () => {
+  const result = runLock(lockfile('1.2.4'));
+  assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+  assert.equal(result.stdout, `${KIT} 1.2.4 and every other package from the npm registry\n`);
+  assert.equal(result.npm.length, 1);
+  const [call] = result.npm;
+  assert.ok(call);
+  assert.deepEqual(call.args, npmViewArgs('1.2.4', call.cache));
+  // The cache is a new folder of mktemp in TMPDIR, empty when npm runs, and the script removes it after npm filled it.
+  assert.equal(call.state, 'empty');
+  assert.match(call.cache, /\/test-tools\/tmp\/tmp\.[A-Za-z0-9]+$/);
+  assert.deepEqual(result.tmp, []);
+});
+
+test('kit-identity fails a kit hash that is not the hash of the registry, and removes the cache', () => {
+  const other = `sha512-${Buffer.from('another tarball').toString('base64')}`;
+  const result = runLock(lockfile('1.2.3'), { FAKE_VIEW_ANSWER: other });
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, errorLine(notRegistryHash('1.2.3')));
+  assert.equal(result.npm.length, 1);
+  assert.deepEqual(result.tmp, []);
+  // A hash of the registry with a second hash after it is not the same text: the check compares it exactly.
+  const lock = JSON.parse(lockfile('1.2.3')) as { packages: Record<string, { integrity: string }> };
+  const own = lock.packages[KIT_KEY]?.integrity ?? '';
+  assert.equal(
+    runLock(lockfile('1.2.3'), { FAKE_VIEW_ANSWER: `${own} sha1-AAAA` }).stdout,
+    errorLine(notRegistryHash('1.2.3')),
+  );
+  assert.equal(runLock(lockfile('1.2.3'), { FAKE_VIEW_ANSWER: own }).status, 0);
+});
+
+test('kit-identity fails with one fixed line when npm view fails or gives no sha512 hash, and removes the cache', () => {
+  for (const env of [
+    { FAKE_VIEW_EXIT: '1' },
+    { FAKE_VIEW_ANSWER: '' },
+    { FAKE_VIEW_ANSWER: 'sha1-AAAA' },
+    { FAKE_VIEW_ANSWER: '::error::forged' },
+  ]) {
+    const result = runLock(lockfile('1.2.3'), env);
+    assert.equal(result.status, 1, JSON.stringify(env));
+    assert.equal(result.stdout, errorLine(noRegistryHash('1.2.3')), JSON.stringify(env));
+    assert.equal(result.npm.length, 1, JSON.stringify(env));
+    assert.deepEqual(result.tmp, [], JSON.stringify(env));
+  }
+});
+
+test('kit-identity asks the registry only after every check of the files: a failing lockfile makes no npm call', () => {
+  for (const lock of [lockfile(undefined), lockfile('1.2.3+evil'), lockfile('1.2.3', { 'node_modules/x': {} })]) {
+    const result = runLock(lock);
+    assert.equal(result.status, 1);
+    assert.deepEqual(result.npm, []);
+  }
+  const down = runScript({
+    bases: [['main', lockfile('1.10.0')]],
+    files: { '.npmrc': NPMRC, 'package-lock.json': lockfile('1.9.0') },
+  });
+  assert.equal(down.status, 1);
+  assert.deepEqual(down.npm, []);
+});
+
+test('10.3 explains the cache, the registry check of the kit and why npm audit signatures does not help', () => {
+  for (const text of [
+    "npm's cache is keyed by the integrity hash, so a lockfile hash alone does not bind a URL to its bytes.",
+    'npm downloads every tarball from its exact URL and checks it against the lockfile hash',
+    '`npm view "@raess/astro-kit@$version" dist.integrity`',
+    '`npm audit signatures` does not close the gap: it checks the registry signatures of each name and version in the tree, never the bytes that were installed',
+    'The install keeps the default `fetch-retries` of npm (2)',
+  ]) {
+    assert.equal(SPEC.includes(text), true, text);
+  }
+  const { standard } = getRule(RULE);
+  assert.equal(standard.includes('whose hash is the one that the npm registry gives for that version'), true);
+  assert.equal(standard.includes('with a fresh, empty `--cache`'), true);
 });
