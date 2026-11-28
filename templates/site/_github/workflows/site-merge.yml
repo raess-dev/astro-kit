@@ -1,0 +1,61 @@
+# Managed by @raess/astro-kit. A protected file: the kit renders it, and only the protected task changes it.
+# The merge of a pull request on its own events (the kit's specification, 10.1): when it opens, becomes ready or gets
+# an approval. It is a file of its own: GitHub counts a skipped job as a passed check, so no workflow that runs on a
+# pull-request event holds a job with the name of a required check. The merge job of site.yml runs the same script
+# after each push.
+name: site-merge
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted]
+permissions: {}
+concurrency:
+  group: site-merge-${{ github.event.pull_request.number }}
+env:
+  REPO: ${{ github.repository }}
+defaults:
+  run:
+    shell: bash
+jobs:
+  merge-event:
+    if: >-
+      (github.event_name == 'pull_request' || github.event.review.state == 'approved') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - name: Merge the tested head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KIT_AGENTS: ${{ vars.KIT_AGENTS }}
+          PR: ${{ github.event.pull_request.number }}
+          TESTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PR:-}" ]; then
+            PR=$(gh api "repos/$REPO/pulls?state=open&head=${REPO%%/*}:$BRANCH" --jq '.[0].number // empty')
+            [ -n "$PR" ] || { echo 'this branch has no open pull request yet'; exit 0; }
+          fi
+          live=$(gh api "repos/$REPO/pulls/$PR" --jq '[.state, .draft, .head.sha, .base.ref, .user.login] | @tsv')
+          IFS=$'\t' read -r state draft head base author <<<"$live"
+          [ "$state" = open ] || { echo "the pull request is $state"; exit 0; }
+          [ "$draft" = false ] || { echo 'a draft waits for the owner'; exit 0; }
+          [ "$base" = main ] || { echo "the base is $base, not main"; exit 0; }
+          [ "$head" = "$TESTED_SHA" ] || { echo 'the head moved since this run started; the run of the new head merges it'; exit 0; }
+          jq -e --arg a "$author" '(. + ["dependabot[bot]"]) | index($a) != null' <<<"${KIT_AGENTS:-[]}" >/dev/null ||
+            { echo "$author is not an agent account: CI does not merge this pull request"; exit 0; }
+          files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)')
+          if grep -qE '^\.github/|^\.npmrc$|(^|/)wrangler\.[^/]+$' <<<"$files"; then
+            echo 'it changes a protected file: the owner approves it and merges it by hand'; exit 0
+          fi
+          if ! out=$(gh pr merge "$PR" --repo "$REPO" --squash --delete-branch --match-head-commit "$TESTED_SHA" 2>&1); then
+            echo "GitHub refused the merge: $out"
+            echo 'A required check is not green yet, or an owner file waits for the approval of the owner.'
+            exit 0
+          fi
+          gh workflow run site.yml --repo "$REPO" --ref main

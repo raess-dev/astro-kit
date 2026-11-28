@@ -523,3 +523,18 @@
   - `init --protected` still fails and writes nothing: it renders all seven protected files from part 9e.
   - The acceptance suite gets the `identity` case (`identity.test.ts`, in `kit / acceptance`): the script passes the
     complete lockfile of the test site with the packed kit, and fails without the kit entry and on a local tarball.
+- Milestone M9, part 9e: the site workflows and the protected files. The kit has 124 rules.
+  - The kit renders all seven protected files of 10.6: `.github/workflows/site.yml` (jobs `ci`, `preview`, `merge`,
+    `build`, `build-alert`, `deploy`, `smoke`, `rollback`, `feedback`, `protected`), `.github/workflows/site-merge.yml`
+    (`merge-event`), `.github/dependabot.yml` (the exact text of 10.5), `.github/kit-identity.sh`,
+    `.github/CODEOWNERS` (the code owner of the settings), `.npmrc` and `wrangler.jsonc`. Every action is pinned to a
+    commit; every install step runs `kit-identity.sh`, `npm ci` with the pinned registry flags and an empty private
+    cache, and `npm ls --all`; secrets sit only in the env of the step that needs them.
+  - Plain `init` writes the seven, and the "Next:" block no longer names `config-wrangler`. `init --protected`
+    rewrites only the seven from `astro-kit.json`, takes no other flag, and needs a valid `astro-kit.json`.
+  - `config-shim` now requires the six protected files that it compares, and compares each byte for byte. A site
+    without them, or with a hand-edited one, fails: the owner runs the protected task. `CODEOWNERS` is compared with
+    valid settings only.
+  - `templates/github-org-rulesets.json` holds the two rulesets of 10.2.
+  - The test site holds the rendered protected files in `test/site/.github/`. GitHub runs no workflow from there;
+    zizmor in `kit / scan` audits them.

@@ -147,23 +147,87 @@ export const KIT_IDENTITY_FILE = '.github/kit-identity.sh';
 /** The npm settings of a site (12.2): install scripts off, exact versions. `kit-identity.sh` reads it. */
 export const NPMRC_FILE = '.npmrc';
 
+/** The site workflow of 10.1. */
+export const SITE_WORKFLOW_FILE = '.github/workflows/site.yml';
+
+/** The workflow of the merge on pull-request events (10.1, `merge-event`). */
+export const SITE_MERGE_FILE = '.github/workflows/site-merge.yml';
+
+/** The Dependabot file of 10.5. */
+export const DEPENDABOT_FILE = '.github/dependabot.yml';
+
+/** The code owners of 10.2: the owner for every owner file of 4.2. */
+export const CODEOWNERS_FILE = '.github/CODEOWNERS';
+
+/** The text of a file of `templates/site/`. */
+const siteTemplate = (path: string): string => readFileSync(join(SITE_TEMPLATES, path), 'utf8');
+
 /**
  * The text of `.github/kit-identity.sh`: the exact script of 10.3, as `templates/site/_github/kit-identity.sh` holds
  * it. It depends on no setting. A unit test compares the template with the block of the specification.
  */
-export const renderKitIdentity = (): string => readFileSync(join(SITE_TEMPLATES, '_github/kit-identity.sh'), 'utf8');
+export const renderKitIdentity = (): string => siteTemplate('_github/kit-identity.sh');
 
 /** The text of `.npmrc` (12.2), as `templates/site/_npmrc` holds it: `ignore-scripts=true` and `save-exact=true`. */
-export const renderNpmrc = (): string => readFileSync(join(SITE_TEMPLATES, '_npmrc'), 'utf8');
+export const renderNpmrc = (): string => siteTemplate('_npmrc');
 
 /**
- * The protected files that this kit version renders, by project path. They depend on no setting. Part 9e of M9 adds
- * the workflows, `dependabot.yml` and `CODEOWNERS`, which depend on the settings (10.1, 10.2, 10.5).
+ * The text of `.github/workflows/site.yml` (10.1), as `templates/site/_github/workflows/site.yml` holds it. The file
+ * has no template variable: a step that differs for a forms site reads `astro-kit.json` or `dist` at run time.
+ */
+export const renderSiteWorkflow = (): string => siteTemplate('_github/workflows/site.yml');
+
+/** The text of `.github/workflows/site-merge.yml` (10.1), as the template holds it. It has no template variable. */
+export const renderSiteMergeWorkflow = (): string => siteTemplate('_github/workflows/site-merge.yml');
+
+/** The text of `.github/dependabot.yml`: the exact text of 10.5, as the template holds it. */
+export const renderDependabot = (): string => siteTemplate('_github/dependabot.yml');
+
+/**
+ * The text of `.github/CODEOWNERS` (10.2): `templates/site/_github/CODEOWNERS.tmpl` with `{{OWNER}}` replaced by the
+ * setting `codeOwner`. `config-options` allows only `@login` or `@org/team` there, so the value is one word.
+ */
+export const renderCodeOwners = (owner: string): string =>
+  siteTemplate('_github/CODEOWNERS.tmpl').replaceAll('{{OWNER}}', owner);
+
+/**
+ * The protected files that depend on no setting, by project path: the two workflows, `dependabot.yml`,
+ * `kit-identity.sh` and `.npmrc`. `config-shim` compares them in every run of preflight.
  */
 export const RENDERED_PROTECTED: Readonly<Record<string, () => string>> = {
+  [SITE_WORKFLOW_FILE]: renderSiteWorkflow,
+  [SITE_MERGE_FILE]: renderSiteMergeWorkflow,
+  [DEPENDABOT_FILE]: renderDependabot,
   [KIT_IDENTITY_FILE]: renderKitIdentity,
   [NPMRC_FILE]: renderNpmrc,
 };
+
+/** The six protected files that `config-shim` compares, in the order of 10.6. */
+export const COMPARED_PROTECTED: readonly string[] = [
+  SITE_WORKFLOW_FILE,
+  SITE_MERGE_FILE,
+  DEPENDABOT_FILE,
+  KIT_IDENTITY_FILE,
+  CODEOWNERS_FILE,
+  NPMRC_FILE,
+];
+
+/**
+ * The six protected files that `config-shim` compares, rendered for the settings, by project path in the order of
+ * 10.6. The seventh, `wrangler.jsonc`, is `renderWrangler` of `src/hosts/cloudflare.ts`, which `config-wrangler`
+ * compares.
+ */
+export function renderProtected(options: { codeOwner: string }): Record<string, string> {
+  // The order of 10.6; `COMPARED_PROTECTED` holds the same paths.
+  return {
+    [SITE_WORKFLOW_FILE]: renderSiteWorkflow(),
+    [SITE_MERGE_FILE]: renderSiteMergeWorkflow(),
+    [DEPENDABOT_FILE]: renderDependabot(),
+    [KIT_IDENTITY_FILE]: renderKitIdentity(),
+    [CODEOWNERS_FILE]: renderCodeOwners(options.codeOwner),
+    [NPMRC_FILE]: renderNpmrc(),
+  };
+}
 
 /** The Claude Code settings of a site (12.3): the SessionStart hook and `permissions.deny`. */
 export const CLAUDE_SETTINGS_FILE = '.claude/settings.json';
@@ -196,18 +260,21 @@ function readRendered(root: string, file: string, report: Report): Buffer | unde
 }
 
 /**
- * The protected files part of `config-shim` (part 9d of M9): `.github/kit-identity.sh` and `.npmrc` equal the kit's
- * rendering byte for byte, with no CRLF→LF and no trimEnd, because bash and `kit-identity.sh` read the bytes. A file
- * that does not match gets the hint of the protected task (10.6). It reads no setting, so it runs in every run of
- * preflight. Until part 9e of M9 makes the protected files required, a missing one is no finding: the test site and
- * a site of an earlier kit version have none yet. A symbolic link, dangling or not, is a finding.
+ * The protected files part of `config-shim` (10.6): each rendered protected file equals the kit's rendering byte for
+ * byte, with no CRLF→LF and no trimEnd. bash and `kit-identity.sh` read the bytes, and GitHub reads the workflow
+ * files as they are, so only the protected task's own output passes. A missing file, a symbolic link (dangling or
+ * not) and a file that does not match are findings; a file that does not match gets the hint of the protected task.
+ * The five files that depend on no setting are compared in every run of preflight. `CODEOWNERS` names the setting
+ * `codeOwner`: without valid settings only its presence is checked.
  */
-export function checkProtectedFiles(root: string, report: Report): void {
-  for (const [file, render] of Object.entries(RENDERED_PROTECTED)) {
-    if (lstatSync(join(root, file), { throwIfNoEntry: false }) === undefined) continue;
+export function checkProtectedFiles(root: string, options: { codeOwner: string } | undefined, report: Report): void {
+  for (const file of COMPARED_PROTECTED) {
     const bytes = readRendered(root, file, report);
-    const expected = render();
-    if (bytes === undefined || bytes.equals(Buffer.from(expected))) continue;
+    if (bytes === undefined) continue;
+    const render = RENDERED_PROTECTED[file];
+    const expected =
+      file === CODEOWNERS_FILE ? options && renderCodeOwners(options.codeOwner) : render === undefined ? '' : render();
+    if (expected === undefined || bytes.equals(Buffer.from(expected))) continue;
     const difference = firstDifference(bytes.toString('utf8'), expected);
     if (difference) report.add(RULE, `${file}:${difference.line}`, describe(difference, RENDERING));
     else report.add(RULE, file, `${RENDERING} has LF line ends and ends with one newline, byte for byte`);

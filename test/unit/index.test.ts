@@ -24,6 +24,7 @@ import {
   FORMS_SHIM_FILE,
   KIT_BLOCK,
   renderClaudeSettings,
+  renderProtected,
   SHIMS,
 } from '../../src/shims.ts';
 import { cspContent, cspMeta } from './audit-fixtures.ts';
@@ -345,7 +346,8 @@ function tokensOf(design: string, options: Options): string {
 
 /**
  * The smallest project that passes preflight for the settings: `astro-kit.json`, the two facts files that must
- * exist, the three shims, the agent files `AGENTS.md` and `CLAUDE.md` (part 9c of M9), `.claude/settings.json` (part 9d), `wrangler.jsonc`, the design document, its `tokens.css`, `elements.css` and an empty
+ * exist, the three shims, the agent files `AGENTS.md` and `CLAUDE.md` (part 9c of M9), `.claude/settings.json` (part 9d), the rendered protected files
+ * (part 9e), `wrangler.jsonc`, the design document, its `tokens.css`, `elements.css` and an empty
  * `fonts.css`. A forms site gets the forms text of `wrangler.jsonc` (10.4) and the forms shim (9.1).
  */
 function projectFiles(settings: unknown, themes: readonly ThemeName[] = LIGHT): Files {
@@ -359,6 +361,7 @@ function projectFiles(settings: unknown, themes: readonly ThemeName[] = LIGHT): 
     'AGENTS.md': `# Example\n\n${KIT_BLOCK}\n`,
     'CLAUDE.md': '@AGENTS.md\n',
     [CLAUDE_SETTINGS_FILE]: renderClaudeSettings(),
+    ...renderProtected(options),
     'wrangler.jsonc': renderWrangler(options),
     ...(options.features.forms ? { [FORMS_SHIM_FILE]: FORMS_SHIM } : {}),
     'docs/design.md': design,

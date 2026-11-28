@@ -56,13 +56,13 @@ export function preflight(root: string, report: Report): Options | undefined {
   }
   loadSchedule(root, report);
 
-  // 2. Shims: `config-shim`. The agent files in every run: the kit block of `AGENTS.md` and the line of `CLAUDE.md`
-  // (part 9c of M9). The rendered protected files that depend on no setting in every run too: `kit-identity.sh` and
-  // `.npmrc` (part 9d), each when it exists, and `.claude/settings.json`, always. With valid settings and forms, the
-  // forms shim too. Part 9e of M9 adds the protected files that depend on the settings, with valid settings only.
+  // 2. Shims: `config-shim`. The agent files in every run: the kit block of `AGENTS.md` and the line of `CLAUDE.md`.
+  // The six rendered protected files in every run too, each required and compared byte for byte; `CODEOWNERS` names
+  // the code owner, so its text is compared with valid settings only. `.claude/settings.json`, always. With valid
+  // settings and forms, the forms shim too.
   checkShims(root, report);
   checkAgentFiles(root, report);
-  checkProtectedFiles(root, report);
+  checkProtectedFiles(root, options, report);
   checkClaudeSettings(root, report);
   if (options?.features.forms === true) checkFormsShim(root, report);
 

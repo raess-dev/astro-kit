@@ -19,6 +19,7 @@ Run it in the project root.
                     --site https://host --locales de,fr --owner @login [--features forms,islands,scripts]
                     It keeps every file that exists, unless --force; astro-kit.json is always kept.
                     --shims writes only the shims and the shims of the enabled features.
+                    --protected rewrites only the seven protected files from astro-kit.json.
   check             Checks the project without a build: the kit's config rules, Biome, ESLint for the
                     islands, and astro check. It stops at the first step that fails.
   build             Runs astro build. The kit checks the project and the built site inside it.
@@ -160,6 +161,8 @@ async function dispatch(argv: readonly string[], root: string, io: Io): Promise<
     if (flags === undefined) return undefined;
     // `--shims` writes only shims: a flag of the settings other than `--features` has no use there.
     if (flags.has('--shims') && ['--site', '--locales', '--owner'].some((flag) => flags.has(flag))) return undefined;
+    // `--protected` renders from astro-kit.json only, and always overwrites: it takes no other flag.
+    if (flags.has('--protected') && flags.size > 1) return undefined;
     const { init } = await import('./init.ts');
     // `init` runs no check, so it never prints the passed line (6.4).
     return init(

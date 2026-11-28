@@ -1,0 +1,10 @@
+# Managed by @raess/astro-kit. The owner approves each change to these files.
+/astro-kit.json @raess
+/site.json @raess
+/docs/design.md @raess
+/legal.lock.json @raess
+/.claude/ @raess
+/.mcp.json @raess
+/.github/ @raess
+wrangler.* @raess
+/.npmrc @raess

@@ -39,9 +39,11 @@ import {
   notAFile,
   notAFolder,
   PINS,
+  PROTECTED_ALONE,
   PROTECTED_FILES,
-  PROTECTED_NOT_YET,
+  PROTECTED_NO_SETTINGS,
   projectPath,
+  protectedFiles,
   renderTemplate,
   SETTINGS_EXIST,
   siteName,
@@ -62,10 +64,10 @@ import {
   KIT_BLOCK,
   KIT_BLOCK_END,
   KIT_BLOCK_START,
-  RENDERED_PROTECTED,
   renderClaudeSettings,
   renderKitIdentity,
   renderNpmrc,
+  renderProtected,
   SHIMS,
 } from '../../src/shims.ts';
 import { type Files, inTempAsync, json } from './fixtures.ts';
@@ -139,7 +141,11 @@ const pathOf = (template: string): string =>
 /** The files that plain `init` writes for a static site with no astro-kit.json, in path order. */
 const PLAIN_FILES = [
   '.claude/settings.json',
+  '.github/CODEOWNERS',
+  '.github/dependabot.yml',
   '.github/kit-identity.sh',
+  '.github/workflows/site-merge.yml',
+  '.github/workflows/site.yml',
   '.gitignore',
   '.mcp.json',
   '.node-version',
@@ -164,6 +170,7 @@ const PLAIN_FILES = [
   'src/styles/pages/.gitkeep',
   'src/styles/tokens.css',
   'tsconfig.json',
+  'wrangler.jsonc',
 ];
 
 // The templates
@@ -176,7 +183,11 @@ test('the template tree holds the files of 3.3 that this part writes, and only t
       'CLAUDE.md',
       'KIT-FEEDBACK.md',
       '_claude/settings.json',
+      '_github/CODEOWNERS.tmpl',
+      '_github/dependabot.yml',
       '_github/kit-identity.sh',
+      '_github/workflows/site-merge.yml',
+      '_github/workflows/site.yml',
       '_gitignore',
       '_mcp.json',
       '_node-version',
@@ -195,10 +206,12 @@ test('the template tree holds the files of 3.3 that this part writes, and only t
       'src/styles/tokens.css',
     ],
   );
-  // Part 9d of M9 renders two of the seven protected files; part 9e adds the others (10.6).
-  assert.deepEqual(Object.keys(RENDERED_PROTECTED), ['.github/kit-identity.sh', '.npmrc']);
+  // From part 9e of M9 the kit renders all seven protected files (10.6): six from these templates, and wrangler.jsonc
+  // with renderWrangler (10.4).
+  const rendered = Object.keys(renderProtected({ codeOwner: '@o' }));
+  assert.deepEqual([...rendered, 'wrangler.jsonc'].sort(), [...PROTECTED_FILES].sort());
   for (const [path] of SITE_TEMPLATES) {
-    assert.equal(PROTECTED_FILES.includes(pathOf(path)), Object.hasOwn(RENDERED_PROTECTED, pathOf(path)), path);
+    assert.equal(PROTECTED_FILES.includes(pathOf(path)), rendered.includes(pathOf(path)), path);
     assert.equal(pathOf(path).startsWith('.claude/'), pathOf(path) === '.claude/settings.json', path);
     assert.equal(projectPath(path), pathOf(path));
   }
@@ -424,11 +437,14 @@ test('init writes the templates, and each written file equals its template', asy
   for (const [path, text] of Object.entries(SHIMS)) assert.equal(result.texts[path], text, path);
   assert.equal(result.texts['AGENTS.md']?.startsWith('# Example\n\nThe marketing site for https://example.ch,'), true);
   assert.equal(result.texts['CLAUDE.md'], '@AGENTS.md\n');
-  for (const path of PROTECTED_FILES) {
-    const render = Object.hasOwn(RENDERED_PROTECTED, path) ? RENDERED_PROTECTED[path] : undefined;
-    assert.equal(result.texts[path], render?.(), path);
-  }
-  assert.deepEqual(siteTemplates(variables).length, SITE_TEMPLATES.length);
+  // The protected files come from their renderers, the one source of init, init --protected and config-shim.
+  const options = parseOptions(JSON.parse(result.texts['astro-kit.json'] ?? ''), new Report());
+  assert.ok(options);
+  const rendered: Record<string, string> = { ...renderProtected(options), 'wrangler.jsonc': renderWrangler(options) };
+  for (const path of PROTECTED_FILES) assert.equal(result.texts[path], rendered[path], path);
+  assert.equal(result.texts['.github/CODEOWNERS']?.includes('/.github/ @example-owner\n'), true);
+  // siteTemplates leaves the six templates of protected files out.
+  assert.deepEqual(siteTemplates(variables).length, SITE_TEMPLATES.length - 6);
 });
 
 test('init prints wrote for each file in path order and the Next: block, on stdout; no passed line', async () => {
@@ -530,8 +546,7 @@ const FAILING: readonly { name: string; argv: readonly string[]; message: string
     argv: ['--shims', '--features', 'Forms'],
     message: unknownFeature('Forms'),
   },
-  { name: '--protected', argv: ['--protected'], message: PROTECTED_NOT_YET },
-  { name: '--protected with the other flags', argv: [...FLAGS, '--protected', '--force'], message: PROTECTED_NOT_YET },
+  { name: '--protected without astro-kit.json', argv: ['--protected'], message: PROTECTED_NO_SETTINGS },
   {
     name: 'an empty locale',
     argv: [...FLAGS.slice(0, 2), '--locales', 'de,,fr', '--owner', '@o'],
@@ -607,6 +622,10 @@ const USAGE_ERRORS: readonly (readonly string[])[] = [
   ['init', '--shims', '--locales', 'de'],
   ['init', '--site=https://example.ch'],
   ['init', '-f'],
+  ['init', '--protected', '--force'],
+  ['init', '--protected', '--shims'],
+  ['init', '--protected', ...FLAGS],
+  ['init', '--protected', '--features', 'forms'],
 ];
 
 for (const argv of USAGE_ERRORS) {
@@ -620,7 +639,7 @@ for (const argv of USAGE_ERRORS) {
 
 // A fresh init and preflight
 
-test('preflight on a fresh init: design-format, and config-wrangler until the protected files are rendered', async () => {
+test('preflight on a fresh init: design-format only, with the seven protected files that init rendered', async () => {
   await inTempAsync({}, async (root) => {
     assert.equal((await run(root, ['init', ...FLAGS])).code, 0);
     const ids = (): string[] => {
@@ -628,11 +647,8 @@ test('preflight on a fresh init: design-format, and config-wrangler until the pr
       preflight(root, report);
       return [...new Set(report.findings.map((finding) => finding.rule))].sort();
     };
-    assert.deepEqual(ids(), ['config-wrangler', 'design-format']);
-    const report = new Report();
-    const options = parseOptions(JSON.parse(readFileSync(join(root, 'astro-kit.json'), 'utf8')), report);
-    assert.notEqual(options, undefined);
-    if (options !== undefined) writeFileSync(join(root, 'wrangler.jsonc'), renderWrangler(options));
+    // From part 9e of M9 init writes wrangler.jsonc and the other protected files, so config-wrangler and
+    // config-shim pass.
     assert.deepEqual(ids(), ['design-format']);
     // The agent files that init writes pass `config-shim`.
     rmSync(join(root, 'docs/design.md'));
@@ -822,7 +838,11 @@ test('init writes into existing real folders, and keeps a regular file there', a
 /** The files that `--force` rewrites: the kit's own files. */
 const KIT_OWNED = [
   '.claude/settings.json',
+  '.github/CODEOWNERS',
+  '.github/dependabot.yml',
   '.github/kit-identity.sh',
+  '.github/workflows/site-merge.yml',
+  '.github/workflows/site.yml',
   '.gitignore',
   '.node-version',
   '.npmrc',
@@ -832,6 +852,7 @@ const KIT_OWNED = [
   'src/styles/pages/.gitkeep',
   'src/styles/tokens.css',
   'tsconfig.json',
+  'wrangler.jsonc',
   FORMS_SHIM_FILE,
   ISLANDS_SHIM_FILE,
 ];
@@ -886,7 +907,7 @@ for (const path of FORCE_KEPT) {
 test('init --force rewrites .claude/settings.json, the protected files that init writes and .gitignore', async () => {
   await inTempAsync({}, async (root) => {
     assert.equal((await run(root, ['init', ...FLAGS])).code, 0);
-    for (const path of ['.claude/settings.json', '.github/kit-identity.sh', '.npmrc']) {
+    for (const path of ['.claude/settings.json', ...PROTECTED_FILES]) {
       writeFileSync(join(root, path), `own text of ${path}\n`);
     }
     const forced = await run(root, ['init', '--force']);
@@ -894,6 +915,10 @@ test('init --force rewrites .claude/settings.json, the protected files that init
     assert.equal(readFileSync(join(root, '.claude/settings.json'), 'utf8'), renderClaudeSettings());
     assert.equal(readFileSync(join(root, '.github/kit-identity.sh'), 'utf8'), renderKitIdentity());
     assert.equal(readFileSync(join(root, '.npmrc'), 'utf8'), renderNpmrc());
+    for (const file of protectedFiles(optionsIn(root))) {
+      assert.equal(readFileSync(join(root, file.path), 'utf8'), file.text, file.path);
+      assert.equal(forced.out.includes(`wrote ${file.path}\n`), true, file.path);
+    }
     assert.equal(forced.out.includes('wrote .claude/settings.json\n'), true);
     // A project's own Claude Code settings go in .claude/settings.local.json, which .gitignore lists.
     assert.equal(
@@ -967,14 +992,107 @@ test('KIT-FEEDBACK.md ends with the line of 12.6', () => {
 
 // The Next: block and the temporary sentences (A6, A7)
 
-test('the Next: block says that check reports config-wrangler until a later kit version', () => {
-  const line = 'So check reports config-wrangler until a later kit version writes them.';
-  assert.equal(nextSteps(false).endsWith(`${line}\n`), true);
-  assert.equal(SPEC.includes(`its "Next:" block then ends with the line \`${line}\``), true);
+test('the Next: block ends with the check, now that init writes every protected file', () => {
+  assert.equal(nextSteps(false).endsWith('  4. npx --no astro-kit check\n'), true);
+  assert.equal(nextSteps(false).includes('config-wrangler'), false);
 });
 
-test('the temporary sentences name part 9e, now that part 9d is done', () => {
-  for (const stale of ['a later part of M9', 'part 9e of M9 renders', 'parts 9d and 9e', 'Parts 9d and 9e']) {
+test('no temporary sentence of parts 9d and 9e is left, now that part 9e is done', () => {
+  for (const stale of [
+    'a later part of M9',
+    'part 9e of M9 renders',
+    'parts 9d and 9e',
+    'Parts 9d and 9e',
+    'part 9e of M9',
+    'Part 9e adds',
+    'until a later kit version writes them',
+  ]) {
     assert.equal(SPEC.includes(stale), false, stale);
   }
+});
+
+// init --protected (6.4, 10.6)
+
+/** The settings of the `astro-kit.json` in a root. Throws when they are not valid. */
+function optionsIn(root: string) {
+  const report = new Report();
+  const options = parseOptions(JSON.parse(readFileSync(join(root, 'astro-kit.json'), 'utf8')), report);
+  if (options === undefined) throw new Error(report.format());
+  return options;
+}
+
+test('init --protected writes the seven protected files from astro-kit.json, prints wrote for each, and nothing else', async () => {
+  await inTempAsync({}, async (root) => {
+    assert.equal((await run(root, ['init', ...FLAGS])).code, 0);
+    for (const path of PROTECTED_FILES) rmSync(join(root, path));
+    writeFileSync(join(root, 'site.json'), 'own facts\n');
+    const result = await run(root, ['init', '--protected']);
+    assert.equal(result.code, 0, result.err);
+    assert.equal(result.err, '');
+    assert.equal(
+      result.out,
+      `${[...PROTECTED_FILES]
+        .sort()
+        .map((path) => `wrote ${path}`)
+        .join('\n')}\n`,
+    );
+    const files = protectedFiles(optionsIn(root));
+    assert.deepEqual(
+      files.map((file) => file.path),
+      [...PROTECTED_FILES],
+    );
+    for (const file of files) assert.equal(readFileSync(join(root, file.path), 'utf8'), file.text, file.path);
+    assert.equal(readFileSync(join(root, 'site.json'), 'utf8'), 'own facts\n');
+  });
+});
+
+test('init --protected always overwrites, and renders a changed setting: the owner and the forms', async () => {
+  await inTempAsync({}, async (root) => {
+    assert.equal((await run(root, ['init', ...FLAGS])).code, 0);
+    for (const path of PROTECTED_FILES) writeFileSync(join(root, path), 'stale\n');
+    const settings = JSON.parse(readFileSync(join(root, 'astro-kit.json'), 'utf8'));
+    settings.codeOwner = '@other-owner';
+    settings.features.forms = true;
+    settings.contact = { to: 'info@example.ch', from: 'form@example.ch' };
+    settings.processing = ['cdn', 'previews', 'forms', 'server'];
+    writeFileSync(join(root, 'astro-kit.json'), json(settings));
+    const result = await run(root, ['init', '--protected']);
+    assert.equal(result.code, 0, result.err);
+    const options = optionsIn(root);
+    for (const file of protectedFiles(options)) {
+      assert.equal(readFileSync(join(root, file.path), 'utf8'), file.text, file.path);
+    }
+    assert.equal(readFileSync(join(root, '.github/CODEOWNERS'), 'utf8').includes('/.npmrc @other-owner\n'), true);
+    assert.equal(readFileSync(join(root, 'wrangler.jsonc'), 'utf8'), renderWrangler(options));
+    assert.equal(readFileSync(join(root, 'wrangler.jsonc'), 'utf8').includes('"send_email"'), true);
+  });
+});
+
+test('init --protected with settings that are not valid, or a link where a file goes: the message, 1, and no write', async () => {
+  await inTempAsync({ 'astro-kit.json': '{}' }, async (root) => {
+    const result = await run(root, ['init', '--protected']);
+    assert.equal(result.code, 1);
+    assert.match(result.err, /^astro-kit init: astro-kit\.json is not valid; fix it first\.\n/);
+    assert.deepEqual(Object.keys(textsUnder(root)), ['astro-kit.json']);
+  });
+  await inTempAsync({}, async (root) => {
+    assert.equal((await run(root, ['init', ...FLAGS])).code, 0);
+    for (const path of PROTECTED_FILES) writeFileSync(join(root, path), 'stale\n');
+    rmSync(join(root, '.npmrc'));
+    symlinkSync(join(root, 'site.json'), join(root, '.npmrc'));
+    const result = await run(root, ['init', '--protected']);
+    assert.equal(result.code, 1);
+    assert.equal(result.err, `${notAFile('.npmrc')}\n`);
+    for (const path of PROTECTED_FILES.filter((file) => file !== '.npmrc')) {
+      assert.equal(readFileSync(join(root, path), 'utf8'), 'stale\n', path);
+    }
+  });
+});
+
+test('init --protected takes no other flag, and its messages', async () => {
+  assert.equal(PROTECTED_NO_SETTINGS.startsWith('astro-kit init: --protected'), true);
+  const { init } = await import('../../src/init.ts');
+  const io = { out: () => undefined, err: () => undefined };
+  assert.throws(() => init(tmpdir(), { protected: true, force: true }, io), new Error(PROTECTED_ALONE));
+  assert.throws(() => init(tmpdir(), { protected: true, site: 'https://example.ch' }, io), new Error(PROTECTED_ALONE));
 });

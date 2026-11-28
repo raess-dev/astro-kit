@@ -12,12 +12,17 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { getRule, Report } from '../../src/registry.ts';
 import {
+  COMPARED_PROTECTED,
   checkProtectedFiles,
+  DEPENDABOT_FILE,
   KIT_IDENTITY_FILE,
   NPMRC_FILE,
   RENDERED_PROTECTED,
   renderKitIdentity,
   renderNpmrc,
+  renderProtected,
+  SITE_MERGE_FILE,
+  SITE_WORKFLOW_FILE,
 } from '../../src/shims.ts';
 import {
   FAKE_NPM_VIEW,
@@ -55,7 +60,14 @@ test('templates/site/_npmrc is the .npmrc of 12.2, and renderNpmrc gives it', ()
   const npmrc = 'ignore-scripts=true\nsave-exact=true\n';
   assert.equal(renderNpmrc(), npmrc);
   assert.equal(readFileSync(fileURLToPath(new URL('../../templates/site/_npmrc', import.meta.url)), 'utf8'), npmrc);
-  assert.deepEqual(Object.keys(RENDERED_PROTECTED), [KIT_IDENTITY_FILE, NPMRC_FILE]);
+  // From part 9e of M9 the five protected files that depend on no setting (10.6); CODEOWNERS names the owner.
+  assert.deepEqual(Object.keys(RENDERED_PROTECTED), [
+    SITE_WORKFLOW_FILE,
+    SITE_MERGE_FILE,
+    DEPENDABOT_FILE,
+    KIT_IDENTITY_FILE,
+    NPMRC_FILE,
+  ]);
 });
 
 test('config-kit-identity is a ci rule of the config group, and the script links its row of standards.md', () => {
@@ -83,19 +95,41 @@ test('the standard of config-kit-identity names the refused settings, the truste
 
 // The protected files part of `config-shim`
 
+/** The code owner of the cases. */
+const OWNER = { codeOwner: '@example-owner' };
+
+/**
+ * The six rendered protected files for `OWNER`, without a file whose path is also a folder of one of `files`. From
+ * part 9e of M9 every one is required, so each case starts from all of them.
+ */
+const renderedBut = (files: Files): Files =>
+  Object.fromEntries(
+    Object.entries(renderProtected(OWNER)).filter(
+      ([path]) => !Object.keys(files).some((own) => own.startsWith(`${path}/`)),
+    ),
+  );
+
 /** The findings of the protected files part of `config-shim` in a root, as `<where>: <detail>`. */
-function protectedFindings(files: Files): string[] {
-  return inTemp(files, (root) => {
+function protectedFindings(files: Files, options: { codeOwner: string } | undefined = OWNER): string[] {
+  return inTemp({ ...renderedBut(files), ...files }, (root) => {
     const report = new Report();
-    checkProtectedFiles(root, report);
+    checkProtectedFiles(root, options, report);
     return report.findings.map((finding) => `${finding.rule} ${finding.where}: ${finding.detail}`);
   });
 }
 
-test('config-shim passes the rendered kit-identity.sh and .npmrc, and a project without them', () => {
+test('config-shim passes the rendered protected files, and fails each one that is missing', () => {
   assert.deepEqual(protectedFindings({ [KIT_IDENTITY_FILE]: renderKitIdentity(), [NPMRC_FILE]: renderNpmrc() }), []);
-  // Until part 9e of M9 makes the protected files required, a missing one is no finding.
-  assert.deepEqual(protectedFindings({}), []);
+  // From part 9e of M9 every rendered protected file is required (10.6).
+  const missing = inTemp({}, (root) => {
+    const report = new Report();
+    checkProtectedFiles(root, OWNER, report);
+    return report.findings.map((finding) => `${finding.where}: ${finding.detail}`);
+  });
+  assert.deepEqual(
+    missing,
+    COMPARED_PROTECTED.map((file) => `${file}: the file is missing`),
+  );
 });
 
 test('config-shim fails a kit-identity.sh or an .npmrc that differs from the rendering, at the first line', () => {
@@ -788,14 +822,14 @@ test('config-shim compares kit-identity.sh and .npmrc byte for byte: CRLF or a m
 });
 
 test('config-shim fails a protected file that is a symbolic link, dangling or not', () => {
+  const { [KIT_IDENTITY_FILE]: _script, [NPMRC_FILE]: _npmrc, ...others } = renderProtected(OWNER);
   const findings = inTemp(
-    { 'elsewhere/npmrc': renderNpmrc(), 'elsewhere/kit-identity.sh': renderKitIdentity() },
+    { ...others, 'elsewhere/npmrc': renderNpmrc(), 'elsewhere/kit-identity.sh': renderKitIdentity() },
     (root) => {
-      mkdirSync(join(root, '.github'));
       symlinkSync(join(root, 'elsewhere/kit-identity.sh'), join(root, KIT_IDENTITY_FILE));
       symlinkSync(join(root, 'elsewhere/missing'), join(root, NPMRC_FILE));
       const report = new Report();
-      checkProtectedFiles(root, report);
+      checkProtectedFiles(root, OWNER, report);
       return report.findings.map((finding) => `${finding.where}: ${finding.detail}`);
     },
   );
