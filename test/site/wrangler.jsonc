@@ -3,11 +3,29 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "laerchenwald-example",
   "compatibility_date": "2026-11-01",
-  "assets": { "directory": "./dist/client", "not_found_handling": "404-page", "html_handling": "auto-trailing-slash", "run_worker_first": ["/api/forms/*"] },
+  "assets": {
+    "directory": "./dist/client",
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash",
+    "run_worker_first": ["/api/forms/*"]
+  },
   "workers_dev": false,
   "preview_urls": false,
-  "routes": [{ "pattern": "laerchenwald.example", "custom_domain": true }],
-  "send_email": [{ "name": "EMAIL", "allowed_destination_addresses": ["info@laerchenwald.example"] }],
+  "routes": [
+    {
+      "pattern": "laerchenwald.example",
+      "custom_domain": true
+    }
+  ],
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "allowed_destination_addresses": [
+        // The destination set of the form endpoint, sorted.
+        "info@laerchenwald.example"
+      ]
+    }
+  ],
   "ratelimits": [
     { "name": "FORM_RATE_LIMIT", "namespace_id": "1001", "simple": { "limit": 3, "period": 60 } },
     { "name": "FORM_RATE_LIMIT_ALL", "namespace_id": "1002", "simple": { "limit": 20, "period": 60 } }
@@ -15,6 +33,11 @@
   "observability": { "enabled": true },
   "env": {
     // Bindings are not inherited: a preview never sends mail.
-    "preview": { "name": "laerchenwald-example-preview", "routes": [], "workers_dev": true, "preview_urls": true }
+    "preview": {
+      "name": "laerchenwald-example-preview",
+      "routes": [],
+      "workers_dev": true,
+      "preview_urls": true
+    }
   }
 }

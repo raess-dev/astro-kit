@@ -105,6 +105,8 @@ export interface ContextInput {
   kitVersion: string;
   facts: Facts;
   redirects: RedirectRow[];
+  /** The text of `legal.lock.json`. Without it, or with `undefined`, the project has no such file. */
+  legalLock?: string | undefined;
   design: Design;
   report: Report;
   /** The environment variables. The default is an empty object. */
@@ -157,6 +159,7 @@ function contextOf(input: ContextInput, store: Store): BuildContext {
     write: store.write,
     facts: input.facts,
     redirects: input.redirects,
+    legalLock: input.legalLock,
     design: input.design,
     report: input.report,
     env: input.env ?? {},

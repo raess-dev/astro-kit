@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import type * as Cloudflare from '../../src/hosts/cloudflare.ts';
 import type * as OptionsModule from '../../src/options.ts';
 import type * as RegistryModule from '../../src/registry.ts';
-import { edit, kitModule, read, write } from './harness.ts';
+import { base, edit, kitModule, read, write } from './harness.ts';
 
 /** The three contact pages: each holds the two forms and the two notes. */
 const CONTACT_PAGES = ['src/pages/kontakt.astro', 'src/pages/fr/contact.astro', 'src/pages/en/contact.astro'];
@@ -92,7 +92,8 @@ export const ISLAND_CLASS = 'more-links--open';
 /**
  * The Solid island of the `islands` variant: a list of links to other pages of the hotel. Its server markup shows
  * every link, so the page works without JavaScript (`a11y-no-js`). After hydration it adds the modifier
- * `more-links--open`, a class that only the browser sees.
+ * `more-links--open`, a class that only the browser sees. It has no `@jsxImportSource` pragma: the TS preset of the
+ * kit names `solid-js` as the JSX source (12.2), so `astro check` reads the JSX with the types of Solid.
  */
 const MORE_LINKS = `/**
  * More links to the pages of the hotel, as a Solid island. The server markup shows every link. In the browser the
@@ -115,7 +116,12 @@ export default function MoreLinks(props: Props) {
   let root: HTMLDivElement | undefined;
   onMount(() => root?.classList.add('${ISLAND_CLASS}'));
   return (
-    <div class="more-links stack" ref={root}>
+    <div
+      class="more-links stack"
+      ref={(element) => {
+        root = element;
+      }}
+    >
       <p>{props.label}</p>
       <ul class="more-links__list">
         <For each={props.links}>
@@ -165,14 +171,17 @@ const MORE_LINKS_CSS = `@layer components {
 /**
  * The `islands` variant of 14.2: `features.islands` on, and the Solid island `src/components/MoreLinks.tsx` with its
  * CSS file on the German rooms page, hydrated with `client:visible`. Its links lead to pages that the main navigation
- * links too, so the page links no page that its translations do not (`content-stale`). `init --shims` writes the
- * ESLint shim from M9 (14.2, Variants).
+ * links too, so the page links no page that its translations do not (`content-stale`). The ESLint shim
+ * `eslint.config.mjs` comes from the templates of the packed kit, as `init --shims` writes it once that command
+ * exists (a later part of M9), so that `check` passes its comparison and runs ESLint (14.2, Variants).
  */
 export function toIslands(dir: string): void {
   changeSettings(dir, (value) => {
     value.features.islands = true;
   });
+  const shim = join(base(), 'node_modules/@raess/astro-kit/templates/features/islands/eslint.config.mjs');
   write(dir, {
+    'eslint.config.mjs': readFileSync(shim, 'utf8'),
     'src/components/MoreLinks.tsx': MORE_LINKS,
     'src/styles/components/more-links.css': MORE_LINKS_CSS,
   });
@@ -189,14 +198,15 @@ export function toIslands(dir: string): void {
     "import { linkTo } from '../data/routes.ts';\n",
     "import { linkTo } from '../data/routes.ts';\nimport { UI } from '../data/ui.ts';\n",
   );
+  // The markup in the form of the Biome preset of the kit, so that `check` passes.
   const links = ['restaurant', 'gettingHere', 'contact']
-    .map((key) => `{ href: linkTo('${key}', locale), text: UI[locale].pages.${key} }`)
-    .join(', ');
+    .map((key) => `        { href: linkTo('${key}', locale), text: UI[locale].pages.${key} },\n`)
+    .join('');
   edit(
     dir,
     page,
     /\n {2}<\/TextSection>\n<\/Page>/,
-    `\n    <MoreLinks client:visible label="Mehr über das Hotel" links={[${links}]} />\n  </TextSection>\n</Page>`,
+    `\n    <MoreLinks\n      client:visible\n      label="Mehr über das Hotel"\n      links={[\n${links}      ]}\n    />\n  </TextSection>\n</Page>`,
   );
   edit(
     dir,
@@ -243,22 +253,34 @@ const MAP_PAGES = [
   },
 ] as const;
 
-/** The sentence about the map for the privacy page of each locale: it names the processor (`legal-origins`). */
+/**
+ * The sentence about the map for the privacy page of each locale: it names the processor (`legal-origins`). Each
+ * text is a list of lines in the form that the Biome preset of the kit gives them, so that `check` passes.
+ */
 const PRIVACY_TEXTS = [
   {
     file: 'src/pages/datenschutz.astro',
     before: '    <h2>Ihre Rechte</h2>',
-    text: 'Auf der Anreiseseite zeigt eine Karte den Weg zum Hotel. Sie lädt ihre Daten erst nach einem Klick von der <span lang="en">OpenStreetMap Foundation</span>, die dabei Ihre IP-Adresse erhält.',
+    lines: [
+      'Auf der Anreiseseite zeigt eine Karte den Weg zum Hotel. Sie lädt ihre Daten erst nach einem Klick von der',
+      '<span lang="en">OpenStreetMap Foundation</span>, die dabei Ihre IP-Adresse erhält.',
+    ],
   },
   {
     file: 'src/pages/fr/protection-des-donnees.astro',
     before: '    <h2>Vos droits</h2>',
-    text: 'Sur la page d’accès, une carte montre le chemin de l’hôtel. Elle ne charge ses données auprès de l’<span lang="en">OpenStreetMap Foundation</span> qu’après un clic, et celle-ci reçoit alors votre adresse IP.',
+    lines: [
+      'Sur la page d’accès, une carte montre le chemin de l’hôtel. Elle ne charge ses données qu’après un clic. Elle les',
+      'charge auprès de la <span lang="en">OpenStreetMap Foundation</span>, qui reçoit alors votre adresse IP.',
+    ],
   },
   {
     file: 'src/pages/en/privacy.astro',
     before: '    <h2>Your rights</h2>',
-    text: 'On the getting-here page, a map shows the way to the hotel. It loads its data from the OpenStreetMap Foundation only after a click, and the foundation then receives your IP address.',
+    lines: [
+      'On the getting-here page, a map shows the way to the hotel. It loads its data from the OpenStreetMap Foundation',
+      'only after a click, and the foundation then receives your IP address.',
+    ],
   },
 ] as const;
 
@@ -291,9 +313,10 @@ export function toOrigins(dir: string): void {
     value.origins = [MAP_ORIGIN];
   });
   for (const page of MAP_PAGES) {
+    // The markup in the form of the Biome preset of the kit, so that `check` passes.
     const markup =
-      `    <p>\n      <button type="button" data-map-button data-map-title="${page.title}">${page.button}</button>\n    </p>\n` +
-      `    <p>${page.notice} <a href={linkTo('privacy', locale)}>${page.privacy}</a>.</p>\n`;
+      `    <p>\n      <button type="button" data-map-button data-map-title="${page.title}">\n        ${page.button}\n      </button>\n    </p>\n` +
+      `    <p>\n      ${page.notice}\n      <a href={linkTo('privacy', locale)}>${page.privacy}</a>.\n    </p>\n`;
     edit(
       dir,
       page.file,
@@ -302,6 +325,7 @@ export function toOrigins(dir: string): void {
     );
   }
   for (const privacy of PRIVACY_TEXTS) {
-    edit(dir, privacy.file, privacy.before, `    <p>\n      ${privacy.text}\n    </p>\n\n${privacy.before}`);
+    const text = privacy.lines.map((line) => `      ${line}\n`).join('');
+    edit(dir, privacy.file, privacy.before, `    <p>\n${text}    </p>\n\n${privacy.before}`);
   }
 }

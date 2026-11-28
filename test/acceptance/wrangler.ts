@@ -18,9 +18,19 @@ export const WRANGLER_STATIC = `// Managed by @raess/astro-kit. A protected file
   "assets": { "directory": "./dist", "not_found_handling": "404-page", "html_handling": "auto-trailing-slash" },
   "workers_dev": false,
   "preview_urls": false,
-  "routes": [{ "pattern": "example.ch", "custom_domain": true }],
+  "routes": [
+    {
+      "pattern": "example.ch",
+      "custom_domain": true
+    }
+  ],
   "env": {
-    "preview": { "name": "example-ch-preview", "routes": [], "workers_dev": true, "preview_urls": true }
+    "preview": {
+      "name": "example-ch-preview",
+      "routes": [],
+      "workers_dev": true,
+      "preview_urls": true
+    }
   }
 }
 `;
@@ -31,11 +41,29 @@ export const WRANGLER_FORMS = `// Managed by @raess/astro-kit. A protected file:
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "example-ch",
   "compatibility_date": "2026-11-01",
-  "assets": { "directory": "./dist/client", "not_found_handling": "404-page", "html_handling": "auto-trailing-slash", "run_worker_first": ["/api/forms/*"] },
+  "assets": {
+    "directory": "./dist/client",
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash",
+    "run_worker_first": ["/api/forms/*"]
+  },
   "workers_dev": false,
   "preview_urls": false,
-  "routes": [{ "pattern": "example.ch", "custom_domain": true }],
-  "send_email": [{ "name": "EMAIL", "allowed_destination_addresses": ["info@example.ch"] }],
+  "routes": [
+    {
+      "pattern": "example.ch",
+      "custom_domain": true
+    }
+  ],
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "allowed_destination_addresses": [
+        // The destination set of the form endpoint, sorted.
+        "info@example.ch"
+      ]
+    }
+  ],
   "ratelimits": [
     { "name": "FORM_RATE_LIMIT", "namespace_id": "1001", "simple": { "limit": 3, "period": 60 } },
     { "name": "FORM_RATE_LIMIT_ALL", "namespace_id": "1002", "simple": { "limit": 20, "period": 60 } }
@@ -43,7 +71,12 @@ export const WRANGLER_FORMS = `// Managed by @raess/astro-kit. A protected file:
   "observability": { "enabled": true },
   "env": {
     // Bindings are not inherited: a preview never sends mail.
-    "preview": { "name": "example-ch-preview", "routes": [], "workers_dev": true, "preview_urls": true }
+    "preview": {
+      "name": "example-ch-preview",
+      "routes": [],
+      "workers_dev": true,
+      "preview_urls": true
+    }
   }
 }
 `;

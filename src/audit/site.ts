@@ -23,12 +23,16 @@
  * reports a tag in another letter case (`de-ch`) as a tag that names no locale. `routes-translation` counts such an
  * alternate as listed, so that the one wrong tag gives one finding.
  */
+import { readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import type { HTMLElement } from 'node-html-parser';
-import type { BuildContext, BuiltPage } from '../context.ts';
+import { type BuildContext, type BuiltPage, LOCK_FILE } from '../context.ts';
+import { sha256 } from '../csp.ts';
 import { snippet } from '../css/rules.ts';
 import { FORM_ACTION_PREFIX } from '../forms/limits.ts';
-import { fieldPlace, type Locale, OPTIONS_FILE } from '../options.ts';
+import { fieldPlace, type Locale, OPTIONS_FILE, type Options } from '../options.ts';
 import { redirectMatcher } from '../redirects.ts';
+import type { Report } from '../registry.ts';
 import { localeHome, NOT_FOUND_PATH, pagePathProblems, pathSegments } from '../routes.ts';
 import {
   type Alternate,
@@ -40,11 +44,13 @@ import {
   decodePath,
   domOf,
   type HrefTarget,
+  hidingMarks,
   isIndexable,
   legalText,
   linkedPages,
   linksOf,
   localeOf,
+  lockedText,
   MAX_NAME,
   nameKey,
   type PageDom,
@@ -550,7 +556,7 @@ export function auditLinksDepth(ctx: BuildContext): void {
 // legal
 
 /** The kinds of legal paths in `astro-kit.json`, in the order of 5.2. */
-const LEGAL_KINDS = ['legalNote', 'privacy', 'accessibility'] as const;
+export const LEGAL_KINDS = ['legalNote', 'privacy', 'accessibility'] as const;
 
 type LegalKind = (typeof LEGAL_KINDS)[number];
 
@@ -653,6 +659,141 @@ export function auditLegalStatement(ctx: BuildContext): void {
   }
 }
 
+// The legal lock (5.6, `legal-approved`): `legal.lock.json` holds one hash for each declared legal path that is built,
+// and the owner approves each change to it. `lockEntries` hashes the locked text, `renderLock` gives the text that
+// `astro-kit legal --write` writes, and `checkLock` is the build half of the rule, which the build audit and
+// `legal --check` run. The browser half is `src/browser/legal.ts`.
+
+/** The text of `legal.lock.json` in a project root, or `undefined` when the root holds no such file. */
+export function readLock(root: string): string | undefined {
+  const file = join(root, LOCK_FILE);
+  return statSync(file, { throwIfNoEntry: false })?.isFile() === true ? readFileSync(file, 'utf8') : undefined;
+}
+
+/**
+ * Every declared legal path (`legal.legalNote`, `legal.privacy`, `legal.accessibility`), once, sorted. A path that is
+ * declared twice, for example as the legal note and as the accessibility page, is one path.
+ */
+export function declaredLegalPaths(options: Pick<Options, 'legal'>): string[] {
+  const paths = new Set<string>();
+  for (const kind of LEGAL_KINDS) for (const path of Object.values(options.legal[kind] ?? {})) paths.add(path);
+  return [...paths].sort();
+}
+
+/** The hash of the locked text (`lockedText`) of each declared legal path that is built, in the sorted order of the paths. */
+export function lockEntries(
+  options: Pick<Options, 'legal'>,
+  pages: ReadonlyMap<string, BuiltPage>,
+): Map<string, string> {
+  const entries = new Map<string, string>();
+  for (const path of declaredLegalPaths(options)) {
+    const page = pages.get(path);
+    if (page !== undefined) entries.set(path, sha256(lockedText(page)));
+  }
+  return entries;
+}
+
+/**
+ * The text of `legal.lock.json`: the entries with sorted keys, two-space indentation and a final newline (6.4). A
+ * value that is not a text is written as JSON writes it, so the format check of `checkLock` can render any object.
+ */
+export function renderLock(entries: ReadonlyMap<string, unknown>): string {
+  const sorted = [...entries].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `${JSON.stringify(Object.fromEntries(sorted), null, 2)}\n`;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** The fix of a lock that is not in the kit's format. */
+export const LOCK_FORMAT_HINT =
+  'Review the legal pages of the build, then run `npx --no astro-kit legal --write`: it writes the file in the format of the kit. Say so in the pull request: the owner approves the new `legal.lock.json`.';
+
+/** The fix of a legal text with a part that a visitor does not see. */
+export const LEGAL_HIDDEN_HINT =
+  'Show the whole legal text: remove `hidden`, `aria-hidden`, `dialog`, `template` and the class `visually-hidden` from `main` of the legal page and from the elements around it, and hide no part of it with CSS. A text that is not wanted is removed, and the owner approves the change.';
+
+/**
+ * The build half of `legal-approved`: for each declared legal path that is built, the hash of its locked text
+ * (`lockedText`) equals the entry of that path in `legal.lock.json`, the file has no other key, its text is the
+ * text of `renderLock` for its own entries, and `main` holds no hiding markup (`hidingMarks`).
+ *
+ * - `lock` is the text of the file, or `undefined` when there is no file. A missing file has no entry, so each
+ *   built path is a finding, and a project with no built legal page has none. A text that is not JSON and a JSON
+ *   value that is not an object are one finding each, at `legal.lock.json`, and nothing else is compared.
+ * - A text that differs from `renderLock` of its own entries (another order, a duplicate key, another format) is
+ *   one finding at `legal.lock.json`, with the hint `LOCK_FORMAT_HINT`. The pages are still compared, with the value
+ *   that JSON gives a key: the last one of a duplicate key.
+ * - A built path without an entry, or whose hash differs, is one finding at the page path, with both hashes. A
+ *   value that is not a text differs from every hash.
+ * - A built path whose `main`, or an element around it, holds hiding markup is one finding at the page path that
+ *   names the first mark and counts the others, with the hint `LEGAL_HIDDEN_HINT`.
+ * - A key that is no declared legal path is one finding at its field: `legal.lock.json: /alt/`. A key of a
+ *   declared path that is not built is no other key: that page is `legal-pages`'s.
+ */
+export function checkLock(
+  options: Pick<Options, 'legal'>,
+  pages: ReadonlyMap<string, BuiltPage>,
+  lock: string | undefined,
+  report: Report,
+): void {
+  let value: unknown = {};
+  try {
+    if (lock !== undefined) value = JSON.parse(lock);
+  } catch {
+    report.add('legal-approved', LOCK_FILE, 'the file is not valid JSON');
+    return;
+  }
+  if (!isRecord(value)) {
+    report.add('legal-approved', LOCK_FILE, 'the file is not a JSON object');
+    return;
+  }
+  const locked = new Map(Object.entries(value));
+  if (lock !== undefined && lock !== renderLock(locked)) {
+    report.add(
+      'legal-approved',
+      LOCK_FILE,
+      'the text is not the text that `legal --write` writes: sorted keys, each key once, two-space indentation and a final newline',
+      LOCK_FORMAT_HINT,
+    );
+  }
+  for (const [path, hash] of lockEntries(options, pages)) {
+    if (!locked.has(path)) {
+      report.add(
+        'legal-approved',
+        path,
+        `the legal text hashes to ${hash}, and ${LOCK_FILE} holds no hash for this page`,
+      );
+    } else {
+      const entry = locked.get(path);
+      if (entry !== hash) {
+        const held = typeof entry === 'string' ? entry : JSON.stringify(entry);
+        report.add('legal-approved', path, `the legal text hashes to ${hash}, and ${LOCK_FILE} holds ${held}`);
+      }
+    }
+    const page = pages.get(path);
+    const marks = page === undefined ? [] : hidingMarks(page);
+    const [first] = marks;
+    if (first !== undefined) {
+      const more = marks.length > 1 ? ` and ${marks.length - 1} more` : '';
+      report.add('legal-approved', path, `markup hides a part of the legal text: ${first}${more}`, LEGAL_HIDDEN_HINT);
+    }
+  }
+  const declared = new Set(declaredLegalPaths(options));
+  for (const key of [...locked.keys()].sort()) {
+    if (!declared.has(key))
+      report.add('legal-approved', fieldPlace(LOCK_FILE, [key]), 'no declared legal path has this key');
+  }
+}
+
+/**
+ * `legal-approved`: the hash of the legal text of each declared legal path that is built equals its entry in
+ * `legal.lock.json`, and the file has no other key (``checkLock`, which `legal --check` runs too).
+ */
+export function auditLegalApproved(ctx: BuildContext): void {
+  checkLock(ctx.options, siteOf(ctx).pages, ctx.legalLock, ctx.report);
+}
+
 /**
  * The text of a processor as the legal text holds text: in NFC, with each run of white space as one space, trimmed
  * (Measurement details, "Legal text and page text"). Without it, a processor with two spaces could never match.
@@ -708,6 +849,7 @@ export const SITE_RULES: readonly AuditRule[] = [
   { id: 'content-nfc', run: auditContentNfc },
   { id: 'legal-pages', run: auditLegalPages },
   { id: 'legal-statement', run: auditLegalStatement },
+  { id: 'legal-approved', run: auditLegalApproved },
   { id: 'legal-origins', run: auditLegalOrigins },
 ];
 

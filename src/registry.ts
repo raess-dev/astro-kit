@@ -5,7 +5,7 @@
  * the failure message and a fix hint (specification, section 8).
  */
 
-export type Stage = 'config' | 'build' | 'config + build' | 'browser' | 'ci' | 'smoke' | 'zone';
+export type Stage = 'config' | 'build' | 'config + build' | 'build + browser' | 'browser' | 'ci' | 'smoke' | 'zone';
 
 /** An `error` finding fails its command. A `warn` finding is printed and fails nothing (11.5). */
 export type Level = 'error' | 'warn';
@@ -92,7 +92,7 @@ export const RULES: readonly Rule[] = [
     'config-shim',
     'config',
     'config',
-    "`astro.config.mjs`, `biome.json` and `tsconfig.json` equal the kit shims after CRLF→LF and trimEnd + newline, and no other `astro.config.*` file exists. The root `biome.json` is the only Biome config: no other file named `biome.json`, `biome.jsonc`, `.biome.json` or `.biome.jsonc` exists in any folder of the project, outside `.git` and the folders that Biome skips (`node_modules`, `dist`, `.astro`, `.wrangler`). The rendered protected files equal the kit's rendering for the settings, compared in the same way: `.github/workflows/site.yml`, `.github/workflows/site-merge.yml`, `.github/dependabot.yml`, `.github/kit-identity.sh`, `.github/CODEOWNERS` and `.npmrc` (a file that does not match gets the hint of the protected task). `AGENTS.md` holds the kit block, and `CLAUDE.md` holds the line `@AGENTS.md`. With `features.forms`, `src/pages/api/forms/[form].ts` equals the forms shim, compared in the same way, in every command that runs preflight: a missing or different file fails. So `build` and `test` prove the endpoint that the test server stub stands for. The other feature shim (`eslint.config.mjs`) is compared in `check`.",
+    "`astro.config.mjs`, `biome.json` and `tsconfig.json` equal the kit shims after CRLF→LF and trimEnd + newline, and no other `astro.config.*` file exists. The root `eslint.config.mjs` is the only ESLint config: no file whose name starts with `eslint.config.` (any letter case) exists in any other folder or under another name, outside `.git` and the folders that Biome skips; `check` names the root file with `--config`. The root `biome.json` is the only Biome config: no other file named `biome.json`, `biome.jsonc`, `.biome.json` or `.biome.jsonc` exists in any folder of the project, outside `.git` and the folders that Biome skips (`node_modules`, `dist`, `.astro`, `.wrangler`). The rendered protected files equal the kit's rendering for the settings, compared in the same way: `.github/workflows/site.yml`, `.github/workflows/site-merge.yml`, `.github/dependabot.yml`, `.github/kit-identity.sh`, `.github/CODEOWNERS` and `.npmrc` (a file that does not match gets the hint of the protected task). `AGENTS.md` holds the kit block, and `CLAUDE.md` holds the line `@AGENTS.md`. With `features.forms`, `src/pages/api/forms/[form].ts` equals the forms shim, compared in the same way, in every command that runs preflight: a missing or different file fails. So `build` and `test` prove the endpoint that the test server stub stands for. The other feature shim (`eslint.config.mjs`) is compared in `check`.",
     'A file that the kit manages is missing or differs from the text of the kit, or the project holds a second config file.',
     'For a shim, run `npx --no astro-kit init --shims --force`. Remove every other Astro or Biome config file. For a protected file: The protected files do not match the settings. Say so in the pull request: the owner starts the protected task for this branch.',
   ),
@@ -140,9 +140,9 @@ export const RULES: readonly Rule[] = [
     'config-suppression',
     'config',
     'config',
-    'Nothing takes a file out of the checks. `src/` contains no `biome-ignore`, `@ts-ignore`, `@ts-expect-error` or `@ts-nocheck`, in any letter case (`.astro .ts .tsx .js .mjs .jsx .mts .cts .cjs .css .md .mdx`). Each of these files has at most 1,048,576 B. No folder under `src/` or `public/` is named `node_modules`, `dist`, `.astro` or `.wrangler`, and no symbolic link there leads into such a folder. No symbolic link under `src/` or `public/` leads out of the project, and neither folder is such a link.',
+    'Nothing takes a file out of the checks. `src/` contains no `biome-ignore`, `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck` or `eslint-disable` (each form), and no ESLint config comment (`/* eslint ` or `// eslint `), in any letter case (`.astro .ts .tsx .js .mjs .jsx .mts .cts .cjs .css .md .mdx`). Each of these files has at most 1,048,576 B. No file under `src/` has the extension `.jsx`: an island is a `.tsx` file. No symbolic link stands under `src/`, and `src` is no link. No folder under `src/` or `public/` is named `node_modules`, `dist`, `.astro` or `.wrangler`, and no symbolic link under `public/` leads into such a folder. No symbolic link under `public/` leads out of the project, and `public` is no such link.',
     'A comment switches a check off, or a file lies where the checks do not read it.',
-    'Remove the comment and fix the cause. Rename the folder, split the large file, or replace the link with a file inside the project. If the check is wrong, add an entry to `KIT-FEEDBACK.md`.',
+    'Remove the comment and fix the cause. Rename a `.jsx` island to `.tsx`. Rename the folder, split the large file, or replace the link with the file itself. If the check is wrong, add an entry to `KIT-FEEDBACK.md`.',
   ),
   r(
     'config-server',
@@ -911,6 +911,14 @@ export const RULES: readonly Rule[] = [
     'Remove the claim, or ask the owner to add the audit to `site.json` `accessibilityAudit`.',
   ),
   r(
+    'legal-approved',
+    'legal',
+    'build + browser',
+    "Build: for each declared legal path (`legal.legalNote`, `legal.privacy`, `legal.accessibility`) that is built, the `sha256` of the page's locked text equals the entry of that path in `legal.lock.json`, and the file has no other key. The locked text is the whole text of `main`, hidden parts and template content included, in NFC, with each run of white space as one space, trimmed; then, for each element of `main` in document order and each of the attributes `title`, `alt`, `aria-label`, `value` and `placeholder` that it carries, in this order, a line feed and `<name>=<value>`, the value read in the same way. `main` and the elements around it hold no hiding markup: no `hidden` attribute (any value, `until-found` too), no `aria-hidden` attribute (any value), no `dialog`, no `template` and no kit class `visually-hidden`. The text of the file is the text that `npx --no astro-kit legal --write` writes for its entries: sorted keys, each key once, two-space indentation and a final newline. `legal --write` writes the file from `dist`, and the owner approves each change to it. So no word of the legal text changes without the owner. A missing file has no entry. A text that is not JSON and a value that is not a JSON object are one finding each, at `legal.lock.json`. A built path without an entry, or with another hash, is a finding at the page, with both hashes. A key that is no declared legal path is a finding at its field. A path that is not built is left to `legal-pages`, and so is its key. Browser: in every run of `test`, with or without `--all`, on each built declared legal page, at 1280×800 and then at 390×844 with JavaScript on, after `settle`, the `sha256` of the live locked text of `main`, read in Chromium in the same way, equals the entry of the page in `legal.lock.json` (without one, the hash of the built page), so a script that changes a word fails, with both hashes; and the text that a visitor is shown in `main` equals its whole text, read in the same way: no CSS hides a part of it (`display`, `visibility`, `content-visibility`, `opacity: 0`, a transparent color, a box under 1×1 px, `clip`, `clip-path`, `mask`, an element around it that clips it, a place left of or above the page, or right of the viewport outside a scroller), and no `::before`, `::after` or `::marker` in `main` adds text. One finding for each page, which names the first difference.",
+    'The legal text of a legal page is not the text that the owner approved in `legal.lock.json`, or a visitor is not shown all of it.',
+    'Undo the change of the legal text. When the change is wanted, run `npx --no astro-kit legal --write` after the build and say so in the pull request: the owner approves the new `legal.lock.json`.',
+  ),
+  r(
     'legal-origins',
     'legal',
     'build',
@@ -1118,6 +1126,11 @@ export interface Finding {
    * what the rule skipped, not what failed.
    */
   message?: string;
+  /**
+   * The fix of this finding, printed in place of the hint of its rule: for a rule whose findings need different
+   * fixes (`legal-approved`: a changed text, a hidden part, a lock that is not in the kit's format).
+   */
+  hint?: string;
 }
 
 export function getRule(id: string, rules: RuleMap = RULE_BY_ID): Rule {
@@ -1183,7 +1196,7 @@ export function formatFindings(findings: readonly Finding[], rules: RuleMap = RU
     }
     lines.push(`${rule.level === 'warn' || finding.warning === true ? '!' : '✗'} ${text}`);
     // The hint fixes a failure. A warning with a message of its own has nothing to fix.
-    if (finding.message === undefined) lines.push(`    fix: ${rule.hint}`);
+    if (finding.message === undefined) lines.push(`    fix: ${finding.hint ?? rule.hint}`);
     lines.push(`    rule: ${DOCS_PATH}#${rule.id}`);
   }
   return lines.join('\n');
@@ -1219,8 +1232,10 @@ export class Report {
     this.rules = options.rules ?? RULE_BY_ID;
   }
 
-  add(rule: string, where: string, detail?: string): void {
+  /** Adds a finding. `hint` replaces the hint of the rule for this finding (`Finding.hint`). */
+  add(rule: string, where: string, detail?: string, hint?: string): void {
     const finding: Finding = detail === undefined ? { rule, where } : { rule, where, detail };
+    if (hint !== undefined) finding.hint = hint;
     const [marked] = applyWaivers([finding], this.waivers, this.rules);
     this.findings.push(marked ?? finding);
   }

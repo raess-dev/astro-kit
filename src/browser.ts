@@ -22,6 +22,7 @@ import {
   type Page,
 } from 'playwright-core';
 import { descendantsOf, domOf, isTemplate, tagOf, tokensOf } from './audit/dom.ts';
+import { declaredLegalPaths, readLock } from './audit/site.ts';
 import {
   ACTION_LIMIT_MS,
   type BrowserRule,
@@ -254,6 +255,8 @@ export interface BrowserInput {
   components: readonly string[];
   /** Gets the findings. Its waivers apply. */
   report: Report;
+  /** The text of `legal.lock.json`, or `undefined` without one (the browser half of `legal-approved`). */
+  legalLock?: string | undefined;
   /** `--all`: every page, not only the sample. */
   all?: boolean;
   /** `--shots`: the folder for the images, as an absolute path. */
@@ -389,6 +392,7 @@ async function inParallel(count: number, limit: number, work: (index: number) =>
 function pagesOf(rule: BrowserRule, run: TestRun): readonly TestPage[] {
   if (rule.pages === 'sample') return run.sample;
   if (rule.pages === 'home') return run.home ? [run.home] : [];
+  if (rule.pages === 'legal') return run.legal;
   return run.pages;
 }
 
@@ -443,6 +447,7 @@ export async function runBrowser(input: BrowserInput): Promise<void> {
     proxy = await startRefusingProxy();
     const pages = testPages(served.root, input.options, input.components);
     const sample = samplePages(pages);
+    const legalPaths = new Set(declaredLegalPaths(input.options));
     const browser = input.browser ?? (await launchBrowser(input.env ?? {}));
     // The browser of `origins-gesture`, launched once at its first use: its switches name the host of `site`.
     const siteHost = new URL(input.options.site).hostname;
@@ -456,6 +461,8 @@ export async function runBrowser(input: BrowserInput): Promise<void> {
         pages: input.all === true ? pages : sample,
         sample,
         home: pages.find((page) => page.isDefaultHome),
+        legal: pages.filter((page) => legalPaths.has(page.where)),
+        legalLock: input.legalLock,
         received: served.received,
         browser,
         proxy: proxyOption(proxy),
@@ -531,6 +538,7 @@ export async function test(root: string, flags: TestFlags, io: ToolIo): Promise<
     design,
     components: componentNames(root),
     report,
+    legalLock: readLock(root),
     all: flags.all,
     shots: flags.shots === undefined ? undefined : resolve(root, flags.shots),
     env: io.env,

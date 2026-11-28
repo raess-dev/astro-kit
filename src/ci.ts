@@ -1,19 +1,22 @@
 /**
  * The commands that run tools or write a rendered file, and the tool runner (specification, 6.4).
  *
- * This milestone has the commands `build` and `tokens`. The tool runner starts each tool as one process, with the
+ * The commands `build`, `check`, `tokens` and `legal` are here. The tool runner starts each tool as one process, with the
  * running Node and the bin script from `node_modules`: never npm, npx or a shell.
  */
 import { spawn } from 'node:child_process';
-import { appendFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
+import { type BuiltPage, fileOfPagePath, LOCK_FILE } from './context.ts';
 import { loadDesign } from './design/parse.ts';
 import { checkTokens, renderTokens, TOKENS_FILE } from './design/tokens.ts';
 import { checkModeThemes } from './modes.ts';
-import { loadOptions } from './options.ts';
+import { loadOptions, type Options } from './options.ts';
 import { type Finding, Report } from './registry.ts';
+import { localeOfPath } from './routes.ts';
 
+export { LOCK_FILE } from './context.ts';
 export { TOKENS_FILE } from './design/tokens.ts';
 
 /** The environment of a command: the variables of the process, or the ones of a test. */
@@ -184,6 +187,71 @@ export function runTool(root: string, pkg: string, args: readonly string[], io: 
 /** The command `build`: `astro build`. The integration of the kit runs every check inside it. */
 export const build = (root: string, io: ToolIo): Promise<number> => runTool(root, 'astro', ['build'], io);
 
+/** The tools of `check` after its config part, in their order (6.4): a package and its arguments. */
+export const BIOME_CHECK = ['@biomejs/biome', ['ci', '--colors=off', '--error-on-warnings', '.']] as const;
+/**
+ * ESLint with the root shim only (`--config`), and with no inline config comment (`--no-inline-config`): no
+ * `eslint-disable` comment and no `eslint` config comment in a source switches a Solid rule off.
+ */
+export const ESLINT_CHECK = [
+  'eslint',
+  ['--config', 'eslint.config.mjs', '--no-inline-config', '--max-warnings', '0', 'src'],
+] as const;
+export const ASTRO_CHECK = ['astro', ['check']] as const;
+
+/** What the config part of `check` found. */
+export interface CheckConfig {
+  findings: Finding[];
+  /** True when the settings are valid and turn islands on: then `check` runs ESLint on a `.tsx` or `.ts` source. */
+  islands: boolean;
+}
+
+/**
+ * The config part of the command `check` (6.4): preflight, which runs every config-stage rule that reads the
+ * project files, the forms shim included (6.1, step 2); then, with valid settings and islands, the comparison of the
+ * islands shim `eslint.config.mjs` (`config-shim`). It never throws for a finding.
+ */
+export async function checkConfig(root: string): Promise<CheckConfig> {
+  // Preflight loads every config rule, so it loads only when `check` runs.
+  const [{ preflight }, { checkIslandsShim }] = await Promise.all([import('./preflight.ts'), import('./shims.ts')]);
+  const report = new Report();
+  const options = preflight(root, report);
+  const islands = options?.features.islands === true;
+  if (islands) checkIslandsShim(root, report);
+  return { findings: report.findings, islands };
+}
+
+/**
+ * Says whether `src/` holds a file that ESLint lints with the Solid rules (9.2): a `.tsx` island, or a `.ts` file,
+ * where a helper of an island can read a signal. At any depth; a symbolic link is not followed (`config-suppression`
+ * fails one under `src/`).
+ */
+export function hasLintedSource(root: string): boolean {
+  const visit = (folder: string): boolean => {
+    if (!statSync(folder, { throwIfNoEntry: false })?.isDirectory()) return false;
+    return readdirSync(folder, { withFileTypes: true }).some((entry) =>
+      entry.isDirectory()
+        ? visit(join(folder, entry.name))
+        : entry.isFile() && (entry.name.endsWith('.tsx') || entry.name.endsWith('.ts')),
+    );
+  };
+  return visit(join(root, 'src'));
+}
+
+/**
+ * The tools of the command `check` (6.4), after its config part: `biome ci --colors=off --error-on-warnings .`;
+ * with islands and a `.tsx` or `.ts` file under `src/`, `eslint --config eslint.config.mjs --no-inline-config --max-warnings 0
+ * src`; then `astro check`. Each tool starts
+ * only when every earlier one ended with 0, so the first failure ends the command. Returns 0, or 1 for a failure.
+ */
+export async function checkTools(root: string, islands: boolean, io: ToolIo): Promise<number> {
+  const tools = [BIOME_CHECK, ...(islands && hasLintedSource(root) ? [ESLINT_CHECK] : []), ASTRO_CHECK];
+  for (const [pkg, args] of tools) {
+    if ((await runTool(root, pkg, args, io)) !== 0) return 1;
+  }
+  return 0;
+}
+
 /** What the command `tokens` did. */
 export interface TokensResult {
   findings: Finding[];
@@ -215,4 +283,74 @@ export function tokens(root: string, { check }: { check: boolean }): TokensResul
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, renderTokens(design, options));
   return { findings: report.findings, written: true };
+}
+
+// legal
+
+/** The message for a project with no build: `legal` needs `dist/index.html` or `dist/client/index.html` (6.4). */
+export const LEGAL_NO_BUILD = 'astro-kit legal: dist/index.html is missing; run npx --no astro-kit build first';
+
+const isFile = (file: string): boolean => statSync(file, { throwIfNoEntry: false })?.isFile() === true;
+
+/**
+ * The client directory of the build in a project root: `dist/` when it holds `index.html`, else `dist/client/` when
+ * that holds it (13.1 item 16), as `test` reads a build. Throws `LEGAL_NO_BUILD` without either.
+ */
+function builtClient(root: string): string {
+  for (const folder of [join(root, 'dist'), join(root, 'dist/client')]) {
+    if (isFile(join(folder, 'index.html'))) return folder;
+  }
+  throw new Error(LEGAL_NO_BUILD);
+}
+
+/** The built page of each declared legal path that the client directory holds, by path. */
+function builtLegalPages(
+  client: string,
+  options: Options,
+  paths: readonly string[],
+  parseHtml: (html: string) => BuiltPage['root'],
+): Map<string, BuiltPage> {
+  const pages = new Map<string, BuiltPage>();
+  for (const path of paths) {
+    const file = fileOfPagePath(path);
+    if (!isFile(join(client, file))) continue;
+    const html = readFileSync(join(client, file), 'utf8');
+    pages.set(path, { file, path, locale: localeOfPath(path, options), is404: false, html, root: parseHtml(html) });
+  }
+  return pages;
+}
+
+/** What the command `legal` did. */
+export interface LegalResult {
+  findings: Finding[];
+  /** True when the command wrote `legal.lock.json`. */
+  written: boolean;
+}
+
+/**
+ * The command `legal` (6.4). It reads the declared legal pages of the build in `dist`.
+ *
+ * - `write`: writes `legal.lock.json` with one hash for each declared legal path that is built (`renderLock`).
+ * - Else (`--check`): compares the file with the build, as `legal-approved` does, and returns its findings. It
+ *   writes nothing.
+ *
+ * Settings that are not valid give their `config-options` findings, and the command reads no page and writes
+ * nothing. A project with no build throws `LEGAL_NO_BUILD`.
+ */
+export async function legal(root: string, { write }: { write: boolean }): Promise<LegalResult> {
+  const report = new Report();
+  const options = loadOptions(root, report);
+  if (options === undefined) return { findings: report.findings, written: false };
+  // The audits and the HTML parser load only when `legal` runs.
+  const [{ checkLock, declaredLegalPaths, lockEntries, readLock, renderLock }, { parseHtml }] = await Promise.all([
+    import('./audit/site.ts'),
+    import('./build.ts'),
+  ]);
+  const pages = builtLegalPages(builtClient(root), options, declaredLegalPaths(options), parseHtml);
+  if (write) {
+    writeFileSync(join(root, LOCK_FILE), renderLock(lockEntries(options, pages)));
+    return { findings: report.findings, written: true };
+  }
+  checkLock(options, pages, readLock(root), report);
+  return { findings: report.findings, written: false };
 }

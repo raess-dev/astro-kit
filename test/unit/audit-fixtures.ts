@@ -12,6 +12,7 @@
  * A test takes `page()` or `site()` and changes one thing. The smallest input that meets one rule is often smaller:
  * a test may write its own HTML, in the same shape.
  */
+import { lockEntries, renderLock } from '../../src/audit/site.ts';
 import { memoryContext } from '../../src/build.ts';
 import type { BuildContext, Design } from '../../src/context.ts';
 import { metaDirectives, SPECULATION_HASH, scriptResources, sha256 } from '../../src/csp.ts';
@@ -366,6 +367,11 @@ export interface ContextSettings {
   report?: Report;
   /** The project root. The default is `/site`, a folder that holds no package. */
   root?: string;
+  /**
+   * The text of `legal.lock.json`, or `null` for a project without the file. The default is the lock that
+   * `legal --write` writes for the files, so that `legal-approved` passes (`renderLock`).
+   */
+  legalLock?: string | null;
 }
 
 /** A `BuildContext` of a client directory of strings or bytes (`memoryContext`), with a new `Report`. */
@@ -375,7 +381,7 @@ export function contextOf(
 ): BuildContext {
   const facts = factsOf(settings.site, settings.schedule);
   const root = settings.root ?? '/site';
-  return memoryContext({
+  const ctx = memoryContext({
     root,
     dist: `${root}/dist`,
     options: settings.options ?? OPTIONS,
@@ -386,6 +392,12 @@ export function contextOf(
     report: settings.report ?? new Report(),
     files,
   });
+  const { legalLock } = settings;
+  ctx.legalLock =
+    legalLock === undefined
+      ? renderLock(lockEntries(ctx.options, new Map(ctx.pages.map((built) => [built.path, built]))))
+      : (legalLock ?? undefined);
+  return ctx;
 }
 
 // Results

@@ -953,7 +953,7 @@ const WRANGLER_CASES: readonly WranglerCase[] = [
     'one more line at the end',
     { [WRANGLER_FILE]: `${RENDERED}// more\n` },
     STATIC,
-    ['wrangler.jsonc:14: the text of the kit ends before this line'],
+    ['wrangler.jsonc:24: the text of the kit ends before this line'],
   ],
   [
     'an empty file',
@@ -976,9 +976,7 @@ const WRANGLER_CASES: readonly WranglerCase[] = [
     'forms: the static text',
     { [WRANGLER_FILE]: RENDERED },
     FORMS,
-    [
-      'wrangler.jsonc:6: the kit renders `  "assets": { "directory": "./dist/client", "not_found_handling": "404-page", "html_handling": "auto-trailing-slash", "run_worker_first": ["/api/forms/*"] },` here',
-    ],
+    ['wrangler.jsonc:6: the kit renders `  "assets": {` here'],
   ],
   ['forms: a missing file', {}, FORMS, ['wrangler.jsonc: the file is missing']],
 ];

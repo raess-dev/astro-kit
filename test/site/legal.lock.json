@@ -1,1 +1,8 @@
-{}
+{
+  "/datenschutz/": "sha256-C98X14iZWsaCSKyVKvsea8z0bZIgz20fFrJ/Zj4coR0=",
+  "/en/legal-note/": "sha256-4AQE8ni3YZkk2oWzLrQpMeoiOmA+OJV5DrnAsk/oaaE=",
+  "/en/privacy/": "sha256-+AW/qNk5/eXeeX5pAeQMX7gWNNsdUSLxBtLiu2qMUdI=",
+  "/fr/mentions-legales/": "sha256-UDFyZvnFs4GfZb+bpB1GnjkkDKlcHZKXoH2ZPn6gVeY=",
+  "/fr/protection-des-donnees/": "sha256-5yLuoNe6zMEbVkaeWdNaCxeaRfwYQqpcjrp4gaqfFfo=",
+  "/impressum/": "sha256-yeGHr8t/6ouRnax8iOVM6iMsA/lQEUog99zYMiUkqII="
+}

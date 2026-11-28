@@ -3,7 +3,17 @@
  * image originals (specification, section 8). Each exported check is one rule. A check adds every finding to the
  * report: it never stops at the first one, and it never throws for a finding.
  */
-import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  lstatSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
 import { dirname, extname, join, relative, sep } from 'node:path';
 import { asciiLower } from './css/parse.ts';
 import { fieldPlace, LIMITS, type Limits, type Options, readJson } from './options.ts';
@@ -319,10 +329,12 @@ const TRANSITIONS_IMPORT = new RegExp(
 );
 
 /**
- * The four comments that switch a check of Biome or TypeScript off, in any letter case: TypeScript reads
- * `@ts-nocheck` in any case.
+ * The comments that switch a check of Biome, TypeScript or ESLint off, in any letter case: TypeScript reads
+ * `@ts-nocheck` in any case. For ESLint: every `eslint-disable` form (`-line`, `-next-line`), and a config comment,
+ * a block or line comment whose first word is `eslint`, which sets a rule. `check` runs ESLint with
+ * `--no-inline-config` too, so such a comment never counts there.
  */
-const SUPPRESSION = /biome-ignore|@ts-ignore|@ts-expect-error|@ts-nocheck/gi;
+const SUPPRESSION = /biome-ignore|@ts-ignore|@ts-expect-error|@ts-nocheck|eslint-disable|\/[*/]\s*eslint(?=\s|$)/gi;
 
 const SERVER_DEFER = /\bserver:defer\b/g;
 
@@ -344,6 +356,31 @@ export function checkImports(root: string, report: Report): void {
  * and no source is larger than Biome reads. No file under `src/` or `public/` lies in a folder that Biome skips, and
  * no symbolic link there leads out of the project.
  */
+/** The extension of a JSX source: an island is a `.tsx` file (9.2), and ESLint lints only `.tsx`. */
+const JSX_EXTENSION = '.jsx';
+
+/**
+ * The symbolic links under `src/`, and `src` itself when it is one, as sorted paths from the root. The search does
+ * not follow a link.
+ */
+export function sourceLinks(root: string): string[] {
+  const found: string[] = [];
+  const top = join(root, 'src');
+  const stats = lstatSync(top, { throwIfNoEntry: false });
+  if (stats === undefined) return found;
+  if (stats.isSymbolicLink()) return ['src'];
+  if (!stats.isDirectory()) return found;
+  const visit = (folder: string, path: string): void => {
+    for (const entry of readdirSync(folder, { withFileTypes: true })) {
+      const child = `${path}/${entry.name}`;
+      if (entry.isSymbolicLink()) found.push(child);
+      else if (entry.isDirectory()) visit(join(folder, entry.name), child);
+    }
+  };
+  visit(top, 'src');
+  return found.sort(byText);
+}
+
 export function checkSuppression(root: string, report: Report): void {
   for (const source of sources(root, SUPPRESSION_EXTENSIONS)) {
     if (source.text === undefined) {
@@ -355,13 +392,26 @@ export function checkSuppression(root: string, report: Report): void {
       report.add('config-suppression', `${source.path}:${hit.line}`, hit.match[0]);
     }
   }
+  // Every symbolic link under `src/` is a finding of its own, so the walk does not name it again.
+  const links = new Set(sourceLinks(root));
+  const isLink = (place: string): boolean => links.has(place.endsWith('/') ? place.slice(0, -1) : place);
   const walks = WALKED_FOLDERS.map((folder) => walk(root, folder));
   for (const place of walks.flatMap((found) => found.unchecked)) {
+    if (isLink(place)) continue;
     const names = UNCHECKED_FOLDERS.join(', ');
     report.add('config-suppression', place, `Biome skips every folder with one of these names: ${names}`);
   }
   for (const place of walks.flatMap((found) => found.outside)) {
+    if (isLink(place)) continue;
     report.add('config-suppression', place, 'the link leads out of the project, so no check reads its target');
+  }
+  for (const place of links) {
+    report.add('config-suppression', place, 'a symbolic link: a source under src/ is a file, not a link to one');
+  }
+  for (const file of walks[0]?.files ?? []) {
+    if (extname(file.path).toLowerCase() === JSX_EXTENSION && !isLink(file.path)) {
+      report.add('config-suppression', file.path, 'a .jsx file: an island is a .tsx file, which ESLint lints');
+    }
   }
 }
 

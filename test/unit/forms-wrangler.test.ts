@@ -21,11 +21,11 @@ import { specBlock } from './spec.ts';
 
 const BLOCK = specBlock('**Exact text of a forms site.**', 'jsonc');
 
-/** The block of 10.4 with its three variables filled in. */
+/** The block of 10.4 with its three variables filled in: each address on a line of its own (10.4). */
 const formsText = (worker: string, host: string, addresses: readonly string[]): string =>
   `${BLOCK.replaceAll('<worker>', worker)
     .replaceAll('<the host of site>', host)
-    .replace('<destinations>', addresses.map((address) => `"${address}"`).join(', '))}\n`;
+    .replace('<destinations>', addresses.map((address) => `"${address}"`).join(',\n        '))}\n`;
 
 /** The test site with its own recipient for the booking form. */
 const OWN_TO: Options = optionsOf({
@@ -56,7 +56,7 @@ test('the destination set: contact.to, each form recipient and contact.probe, so
 
 test('the forms text has full-line // comments only and no trailing commas: without them it is JSON', () => {
   const text = renderWrangler(OWN_TO);
-  assert.equal(text.split('\n').filter((line) => line.includes('//')).length, 2, 'the two comment lines');
+  assert.equal(text.split('\n').filter((line) => line.includes('//')).length, 3, 'the three comment lines');
   const parsed = parseJsonc(text);
   assert.ok(parsed.ok);
   assert.deepEqual(parsed.value, {
@@ -136,8 +136,8 @@ const BINDING_CASES: readonly BindingCase[] = [
     'the addresses in another order, one twice',
     {
       [WRANGLER_FILE]: RENDERED.replace(
-        `["info@${HOST}", "probe@${HOST}"]`,
-        `["probe@${HOST}", "info@${HOST}", "probe@${HOST}"]`,
+        `"info@${HOST}",\n        "probe@${HOST}"`,
+        `"probe@${HOST}", "info@${HOST}", "probe@${HOST}"`,
       ),
     },
     WITH_PROBE,
@@ -163,7 +163,7 @@ const BINDING_CASES: readonly BindingCase[] = [
   ],
   [
     'the probe inbox is missing',
-    { [WRANGLER_FILE]: RENDERED.replace(`, "probe@${HOST}"`, '') },
+    { [WRANGLER_FILE]: RENDERED.replace(`,\n        "probe@${HOST}"`, '') },
     WITH_PROBE,
     [EMAIL_SET],
   ],
@@ -329,10 +329,10 @@ test('config-wrangler compares a forms site with the forms text', () => {
     return report.findings.map((finding) => `${finding.where}: ${finding.detail}`);
   };
   assert.deepEqual(findings(RENDERED), []);
-  assert.deepEqual(findings(RENDERED.replace(`, "probe@${HOST}"`, '')), [
-    `wrangler.jsonc:10: the kit renders \`  "send_email": [{ "name": "EMAIL", "allowed_destination_addresses": ["info@${HOST}", "probe@${HOST}"] }],\` here`,
+  assert.deepEqual(findings(RENDERED.replace(`,\n        "probe@${HOST}"`, '')), [
+    `wrangler.jsonc:25: the kit renders \`        "info@${HOST}",\` here`,
   ]);
   assert.deepEqual(findings(RENDERED.replace('    // Bindings are not inherited: a preview never sends mail.\n', '')), [
-    'wrangler.jsonc:17: the kit renders `    // Bindings are not inherited: a preview never sends mail.` here',
+    'wrangler.jsonc:36: the kit renders `    // Bindings are not inherited: a preview never sends mail.` here',
   ]);
 });

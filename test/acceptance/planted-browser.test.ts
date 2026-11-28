@@ -4,7 +4,8 @@
  * (`dist/client/` with forms), and one `test --all` run must report exactly the ids of the set, and no passed line.
  *
  * Each plant is the smallest violation of its rule, on a page that no other plant touches, so that one plant gives
- * one id and no other plant gives it. A plant adds a style sheet or a script of its own as a file of the client
+ * one id and no other plant gives it. The one exception is the `legal-approved` plant: every legal page holds a plant
+ * already, so it shares the German legal note with `a11y-axe`. A plant adds a style sheet or a script of its own as a file of the client
  * directory, and links it from its page: the CSP of the site allows a file of its own origin (`'self'`), while a
  * change to an inline style or script would break its hash. The a11y plants stand on the pages that were outside
  * the browser sample at M6, where the site has such a page; from M7 the contact pages and `/fr/emplois/` are in the
@@ -33,6 +34,7 @@ const BROWSER_IDS = [
   'a11y-spacing',
   'a11y-targets',
   'contrast-pairs',
+  'legal-approved',
   'modes-behavior',
   'perf-cls',
   'perf-image-oversize',
@@ -152,7 +154,8 @@ const PLANTS: readonly { id: string; plant: (dir: string) => void }[] = [
   },
   {
     // A script adds a link to the French privacy page, so the link exists with JavaScript on only. Its URL is on no
-    // other link of the page, and it stands in a sentence, so it is no target of `a11y-targets`.
+    // other link of the page, and it stands in a sentence, so it is no target of `a11y-targets`. It goes into the
+    // footer, not into `main`: a change of the live text of `main` would give `legal-approved` too.
     id: 'a11y-no-js',
     plant: (dir) =>
       script(
@@ -165,7 +168,7 @@ const PLANTS: readonly { id: string; plant: (dir: string) => void }[] = [
           "link.href = '/fr/chambres/#prix';",
           "link.textContent = 'les prix des chambres';",
           "paragraph.append('Voir aussi ', link, '.');",
-          "document.querySelector('main')?.append(paragraph);",
+          "document.querySelector('footer')?.append(paragraph);",
           '',
         ].join('\n'),
       ),
@@ -249,6 +252,14 @@ const PLANTS: readonly { id: string; plant: (dir: string) => void }[] = [
     },
   },
   {
+    // The browser half of `legal-approved`: a style sheet adds text after the heading of the German legal note, so
+    // the text that a visitor is shown is not the locked text. Every declared legal page holds a plant of another
+    // rule already, so this one shares the page of `a11y-axe`: axe reads no generated text as a failure, and the
+    // image without `alt` adds no text. The build half does not see it, because the plant is in the built files.
+    id: 'legal-approved',
+    plant: (dir) => style(dir, '/impressum/', 'plant-legal', 'main h1::after { content: " (gilt nicht)"; }\n'),
+  },
+  {
     // An extra CSS file on the home page changes a color token under `:root[data-mode="dark"]`: the shadow color,
     // which is in no pair and which the site uses nowhere, so only the comparison with the design value fails.
     id: 'modes-behavior',
@@ -289,7 +300,8 @@ const PLANTS: readonly { id: string; plant: (dir: string) => void }[] = [
   },
   {
     // A noise PNG as the first element of `main` on the French legal note, the largest element of the first screen,
-    // with neither `fetchpriority="high"` nor `loading="eager"`.
+    // with neither `fetchpriority="high"` nor `loading="eager"`. It has `role="presentation"` and no `alt`, which axe
+    // accepts: an `alt` would be a line of the locked text, and the live hash would give `legal-approved` too.
     id: 'perf-lcp-priority',
     plant: (dir) => {
       write(dir, { [`${CLIENT}/plant-noise.png`]: png(480, 360, true) });
@@ -302,7 +314,7 @@ const PLANTS: readonly { id: string; plant: (dir: string) => void }[] = [
       intoMain(
         dir,
         '/fr/mentions-legales/',
-        '<img class="plant-lcp" src="/plant-noise.png" width="480" height="360" alt="Un bruit gris" loading="lazy">',
+        '<img class="plant-lcp" src="/plant-noise.png" width="480" height="360" role="presentation" loading="lazy">',
       );
     },
   },
