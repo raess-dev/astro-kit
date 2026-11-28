@@ -27,6 +27,16 @@
       }
     },
     {
+      "includes": ["templates/site/src/styles/tokens.css", "templates/site/src/styles/elements.css"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noEmptyBlock": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["src/**"],
       "linter": {
         "rules": {

@@ -124,6 +124,11 @@ One spike alone: `node --test test/acceptance/spikes/s05.ts`.
   Controls show that each comparison can fail. A gap is a defect of the kit or of the test: fix the module at the
   cause, add the value to its unit test, and correct the specification. The file takes a few seconds after the
   build.
+- `fresh-init.test.ts`: the fresh init of 14.2 (part 9c of M9), in an empty case folder that walks up to the
+  packages of the base copy. `init` writes the templates; the case writes `wrangler.jsonc` with `renderWrangler`
+  until `init --protected` exists; `check` gives exactly `design-format`. With the smallest design and
+  `elements.css` of `fresh-init.ts`, `tokens` writes `tokens.css`, `check` passes, and `build` gives exactly
+  `legal-pages` and `routes-404`, because the site has no page.
 - `planted-build.test.ts`: the `build` set of the planted sets of M5. One copy of the site gets every plant of the
   set, one plant for each id, and `build` runs once. The test asserts the exact sorted ids, status 1 and no passed
   line. A plant on the shared layout or the header acts on one page only. The ids of later rules join with them:

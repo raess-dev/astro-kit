@@ -44,15 +44,16 @@ function recorder(env: Io['env'] = {}): { io: Io; out: () => string; err: () => 
 
 /**
  * The commands of 6.4 that a later part of M9 adds. `legal` without its flag is a usage error, so it stays in the
- * list; `check` and `legal --write | --check` exist from part 9b.
+ * list; `check` and `legal --write | --check` exist from part 9b, and `init` from part 9c.
  */
-const LATER = ['init', 'ci', 'smoke', 'routes', 'provision', 'feedback', 'settings', 'legal'] as const;
+const LATER = ['ci', 'smoke', 'routes', 'provision', 'feedback', 'settings', 'legal'] as const;
 
 test('the usage names the commands of this milestone and no later one', () => {
   assert.equal(USAGE.includes('npx --no astro-kit <command>'), true);
   assert.equal(SPEC.includes('In the project root: `npx --no astro-kit <command>`.'), true);
   const commands = [...USAGE.matchAll(/^ {2}(\S+(?: \[?--[a-z]+\]?)?) {2,}\S/gm)].map((match) => match[1]);
   assert.deepEqual(commands, [
+    'init',
     'check',
     'build',
     'test [--all]',

@@ -1,16 +1,18 @@
 /**
  * The `islands` variant of 14.2 (milestone M8): islands on, and the Solid island `MoreLinks` on the German rooms page
  * (`toIslands` of `variants.ts`). From M9 a variant runs `check`, `build` and `test` (14.2, Variants): `check`
- * compares the ESLint shim and runs `eslint --config eslint.config.mjs --no-inline-config --max-warnings 0 src` on the island. The shim comes from the templates of
- * the packed kit until `init --shims` exists. The islands pins come from the base copy, installed with `--no-save`.
+ * compares the ESLint shim and runs `eslint --config eslint.config.mjs --no-inline-config --max-warnings 0 src` on the island. `init --shims` writes the
+ * shim from the settings and keeps the other shims (part 9c). The islands pins come from the base copy, installed
+ * with `--no-save`.
  * Run: node --test test/acceptance/variants-islands.test.ts
  */
 import assert from 'node:assert/strict';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type * as IslandsModule from '../../src/islands.ts';
 import {
+  base,
   browse,
   CLIENT,
   cspMeta,
@@ -36,6 +38,18 @@ const PASSED = { last: true, count: 1 } as const;
 test('M8 variant islands: a Solid island passes check with ESLint, builds and passes test, with no Trusted Types and its browser-only class', async () => {
   const dir = siteCase('variant-islands');
   toIslands(dir);
+
+  // `init --shims` writes the ESLint shim of the enabled islands and keeps every shim that exists. It runs no check,
+  // so it prints no passed line (6.4).
+  const shims = run(dir, 'init --shims');
+  assert.equal(shims.status, 0, tail(shims));
+  assert.equal(
+    shims.stdout,
+    'kept astro.config.mjs\nkept biome.json\nwrote eslint.config.mjs\nkept src/pages/api/forms/[form].ts\nkept tsconfig.json\nNext:\n  npx --no astro-kit check\n',
+  );
+  assert.deepEqual(passedLine(shims), { last: false, count: 0 });
+  const template = join(base(), 'node_modules/@raess/astro-kit/templates/features/islands/eslint.config.mjs');
+  assert.equal(read(dir, 'eslint.config.mjs'), readFileSync(template, 'utf8'));
 
   const checked = run(dir, 'check');
   assert.equal(checked.status, 0, tail(checked));

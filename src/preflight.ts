@@ -26,7 +26,7 @@ import {
 import { loadRedirects } from './redirects.ts';
 import type { Report } from './registry.ts';
 import { checkScriptSources } from './scripts.ts';
-import { checkFormsShim, checkShims } from './shims.ts';
+import { checkAgentFiles, checkFormsShim, checkShims } from './shims.ts';
 
 /**
  * Runs the config-stage checks and adds each finding to the report. Returns the settings, or `undefined` when
@@ -56,11 +56,12 @@ export function preflight(root: string, report: Report): Options | undefined {
   }
   loadSchedule(root, report);
 
-  // 2. Shims: `config-shim`. With valid settings and forms, the forms shim too.
+  // 2. Shims: `config-shim`. The agent files in every run: the kit block of `AGENTS.md` and the line of `CLAUDE.md`
+  // (part 9c of M9). With valid settings and forms, the forms shim too. A later part of M9 adds the rendered
+  // protected files here, with valid settings only.
   checkShims(root, report);
+  checkAgentFiles(root, report);
   if (options?.features.forms === true) checkFormsShim(root, report);
-  // M9: the rest of `config-shim` runs here, with valid settings only: the rendered protected files, the kit block
-  // of `AGENTS.md` and the line of `CLAUDE.md`.
 
   // 3. Package: `config-overrides`, `config-dep-spec`, `config-dep-allowlist`.
   checkOverrides(root, report);

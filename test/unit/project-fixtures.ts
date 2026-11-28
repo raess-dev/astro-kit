@@ -8,7 +8,7 @@ import { renderTokens } from '../../src/design/tokens.ts';
 import { renderWrangler } from '../../src/hosts/cloudflare.ts';
 import { type Options, parseOptions } from '../../src/options.ts';
 import { Report } from '../../src/registry.ts';
-import { SHIMS } from '../../src/shims.ts';
+import { CLAUDE_FILE, KIT_BLOCK, SHIMS } from '../../src/shims.ts';
 
 // The project of a case
 
@@ -128,9 +128,12 @@ export const TOKENS_CSS = renderTokens(designOf(DESIGN_MD), optionsOf(SETTINGS))
 /** The text of `wrangler.jsonc` that the kit renders for the smallest settings: a static site. */
 export const WRANGLER_JSONC = renderWrangler(optionsOf(SETTINGS));
 
+/** The smallest `AGENTS.md`: a heading of the project and the kit block of 12.1 (part 9c of M9). */
+export const AGENTS_MD = `# Example\n\n${KIT_BLOCK}\n`;
+
 /**
  * The smallest project that passes preflight with no finding: the settings, the two facts files that must exist,
- * the three source shims, `wrangler.jsonc`, the design document, the `tokens.css` that the kit renders from it,
+ * the three source shims, the agent files `AGENTS.md` and `CLAUDE.md`, `wrangler.jsonc`, the design document, the `tokens.css` that the kit renders from it,
  * `elements.css` and an empty `fonts.css`. A later milestone adds the files that its rules need.
  */
 export const SMALLEST: Files = {
@@ -138,6 +141,8 @@ export const SMALLEST: Files = {
   'site.json': json(SITE),
   'schedule.json': json(SCHEDULE),
   ...SHIMS,
+  'AGENTS.md': AGENTS_MD,
+  [CLAUDE_FILE]: '@AGENTS.md\n',
   [WRANGLER]: WRANGLER_JSONC,
   [DESIGN]: DESIGN_MD,
   [TOKENS]: TOKENS_CSS,

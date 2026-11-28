@@ -445,3 +445,18 @@
     `legal-approved` plant. The `a11y-no-js` plant of the `browser` set adds its link to the footer, and the
     `perf-lcp-priority` image has `role="presentation"` and no `alt`, so neither changes the locked text of a legal
     page and gives `legal-approved` as well.
+- Milestone M9, part 9c: the command `init` and the site templates in `templates/site/`. The kit has 123 rules.
+  - `init --site --locales --owner [--features]` writes `astro-kit.json` with the defaults of 5.3, `package.json`
+    with the pins, the three source shims, the feature shims, `AGENTS.md` with the kit block, `CLAUDE.md`
+    (`@AGENTS.md`), `KIT-FEEDBACK.md`, `.mcp.json`, `.gitignore`, `.node-version`, the `docs/spec.md` and
+    `docs/design.md` skeletons, the facts and data files and the style skeletons. It keeps every file that exists
+    unless `--force`, and it never overwrites `astro-kit.json`, whose values win over the flags. `--shims` writes
+    only the shims and the shims of the enabled features. It prints `wrote` and `kept` lines and a "Next:" block,
+    and no passed line.
+  - `init --protected` fails with a message and exit 1, and `init` writes no protected file of 10.6 and no
+    `.claude/settings.json`: later parts of M9 render them.
+  - `config-shim` compares the kit block of `AGENTS.md` and needs the line `@AGENTS.md` in `CLAUDE.md`, in every
+    run of preflight. Its hint says where the block comes from.
+  - The acceptance suite gets the fresh init (`fresh-init.test.ts`): `check` gives `design-format`, and with a
+    design `check` passes and `build` gives `legal-pages` and `routes-404`. The `islands` variant runs
+    `init --shims` in place of copying the ESLint shim.
