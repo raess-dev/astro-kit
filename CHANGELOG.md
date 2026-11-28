@@ -432,6 +432,8 @@
     the page loads fails, with both hashes. One finding for each page; the spec lists what it does not measure.
   - The browser half judges text in a `display: contents` element by the nearest element with a box
     (`checkVisibility` is false for a boxless element), so a shown legal page with such an element passes.
+  - A `::before`, `::after` or `::marker` adds text only when a visitor is shown it: a hidden, transparent, zero-opacity
+    or zero-size pseudo-element, or one inside an element that is not rendered, passes.
   - The rendering of `wrangler.jsonc` (10.4) is now in the format of the Biome preset for any settings, and the
     preset formats it like every other file: the objects that hold a setting are expanded, and the destination
     addresses stand one on each line after a comment line.

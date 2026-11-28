@@ -166,6 +166,20 @@ for (const [name, css, detail] of [
   });
 }
 
+test('legal-approved (browser): a pseudo-element with text that no visitor is shown passes', async () => {
+  const css =
+    'h1::before{content:"Hinweis";visibility:hidden}h1::after{content:"Alt";opacity:0}' +
+    'li::before{content:"x";color:transparent}li::after{content:"y";font-size:0}' +
+    '.gone{display:none}.gone span::after{content:"Versteckt"}';
+  const main = MAIN.replace('</main>', '<div class="gone"><span></span></div></main>');
+  assert.deepEqual(await run(site(main, css)), []);
+});
+
+test('legal-approved (browser): a shown pseudo-element of a hidden element still adds text', async () => {
+  const css = 'h1{visibility:hidden}h1::before{content:"Neu: ";visibility:visible}';
+  assert.deepEqual(await run(site(MAIN, css)), ['/impressum/ 1280×800: h1::before adds the text "\\"Neu: \\""']);
+});
+
 test('legal-approved (browser): an empty or decorative pseudo-element passes; one outside main passes', async () => {
   const css =
     'h1::before{content:"";display:block;block-size:2px}h1::after{content:"  "}' +

@@ -101,21 +101,49 @@ export function firstDifference(page: Page, quoteMax: number): Promise<string | 
       if (/\b(?:attr|counters?)\(/.test(rest)) return true;
       return /\b(?:open|close)-quote\b/.test(rest) && style(element).quotes !== 'auto';
     };
-    /** The first pseudo-element of `element` that adds text: `::marker` and `::before` (`start`), or `::after`. */
+    /**
+     * Says whether a pseudo-element of `element` with the style `computed` is shown: the nearest element with a box
+     * is rendered and not at `opacity: 0` (its own `visibility` is not read, since the pseudo-element can override
+     * it), and the pseudo-element is visible, not fully transparent and has a font size above 0.
+     */
+    const pseudoShown = (element: Element, computed: CSSStyleDeclaration): boolean => {
+      let boxed: Element = element;
+      while (style(boxed).display === 'contents' && boxed.parentElement !== null) boxed = boxed.parentElement;
+      const rendered = boxed.checkVisibility({
+        opacityProperty: true,
+        checkOpacity: true,
+        contentVisibilityAuto: false,
+        checkVisibilityCSS: false,
+        visibilityProperty: false,
+      } as CheckVisibilityOptions);
+      return (
+        rendered &&
+        computed.visibility === 'visible' &&
+        computed.opacity !== '0' &&
+        !transparent(computed.color) &&
+        !transparent(computed.webkitTextFillColor) &&
+        Number.parseFloat(computed.fontSize) > 0
+      );
+    };
+    /** The first pseudo-element of `element` that adds shown text: `::marker` and `::before` (`start`), or `::after`. */
     const pseudoText = (element: Element, start: boolean): string | null => {
       if (start && style(element).display.includes('list-item')) {
-        const marker = getComputedStyle(element, '::marker').content;
-        if (marker !== 'normal' && addsText(marker, element)) {
-          return `${nameOf(element)}::marker adds the text ${quote(marker)}`;
-        }
-        const type = style(element).listStyleType;
-        if (type.startsWith('"') || type.startsWith("'") || counterStyles.has(type)) {
-          return `${nameOf(element)}::marker adds the text of list-style-type ${quote(type)}`;
+        const markerStyle = getComputedStyle(element, '::marker');
+        // A marker that no visitor is shown adds no text; `::before` is still read below.
+        if (pseudoShown(element, markerStyle)) {
+          const marker = markerStyle.content;
+          if (marker !== 'normal' && addsText(marker, element)) {
+            return `${nameOf(element)}::marker adds the text ${quote(marker)}`;
+          }
+          const type = style(element).listStyleType;
+          if (type.startsWith('"') || type.startsWith("'") || counterStyles.has(type)) {
+            return `${nameOf(element)}::marker adds the text of list-style-type ${quote(type)}`;
+          }
         }
       }
       const pseudo = start ? '::before' : '::after';
       const computed = getComputedStyle(element, pseudo);
-      if (computed.display !== 'none' && addsText(computed.content, element)) {
+      if (computed.display !== 'none' && addsText(computed.content, element) && pseudoShown(element, computed)) {
         return `${nameOf(element)}${pseudo} adds the text ${quote(computed.content)}`;
       }
       return null;
