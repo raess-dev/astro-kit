@@ -7,18 +7,30 @@
  *   (`_x` becomes `.x`, a `.tmpl` file is rendered and loses its suffix) and the feature shims of
  *   `templates/features/<feature>/`.
  * - `--shims` writes only the shims and the shims of the enabled features.
- * - It never overwrites a file without `--force`, and it never overwrites `astro-kit.json`.
+ * - It never overwrites a file without `--force`, and `--force` rewrites only the kit's files: it keeps the files of
+ *   `FORCE_KEPT`.
+ * - A planning pass checks every path before the first write (`plan`): a link, or a file or folder in the wrong
+ *   place, throws, and the run writes nothing.
  *
  * The protected files of 10.6 are not written here yet: `--protected` throws, and the template tree holds none of
- * them (`PROTECTED_FILES`). A later part of milestone M9 renders them.
+ * them (`PROTECTED_FILES`). Parts 9d and 9e of milestone M9 render them.
  */
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import {
+  closeSync,
+  constants,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { siteHost, workerName } from './hosts/cloudflare.ts';
 import { loadOptions, OPTIONS_FILE, type Options, parseOptions } from './options.ts';
 import { Report } from './registry.ts';
-import { SHIMS } from './shims.ts';
+import { FORMS_SHIM_FILE, ISLANDS_SHIM_FILE, SHIMS } from './shims.ts';
 import { KIT_VERSION } from './virtual.ts';
 
 /** Where `init` writes, as the command line gives it. */
@@ -56,9 +68,39 @@ export const PROTECTED_FILES: readonly string[] = [
   'wrangler.jsonc',
 ];
 
-/** The message of `init --protected` until a later part of M9 renders the protected files. */
+/** The message of `init --protected` until parts 9d and 9e of M9 render the protected files. */
 export const PROTECTED_NOT_YET =
   'astro-kit init: --protected is not available in this kit version: it renders none of the protected files of 10.6 yet, so it wrote nothing.';
+
+/**
+ * The files that `--force` never rewrites (6.4): the files of the project and of its owner. The kit block of 12.1
+ * names the owner-approved ones (`astro-kit.json`, `site.json`, `docs/design.md`, `legal.lock.json`, `.mcp.json`);
+ * the others hold the project's own text or data (12.2). `--force` rewrites only the kit's files: the shims, the
+ * feature shims, `.gitignore`, `.node-version`, `src/styles/tokens.css` (the kit renders it) and the two `.gitkeep`.
+ */
+export const FORCE_KEPT: readonly string[] = [
+  '.mcp.json',
+  'AGENTS.md',
+  'CLAUDE.md',
+  'KIT-FEEDBACK.md',
+  'astro-kit.json',
+  'docs/design.md',
+  'docs/spec.md',
+  'glossary.json',
+  'legal.lock.json',
+  'package.json',
+  'redirects.json',
+  'schedule.json',
+  'site.json',
+  'src/styles/elements.css',
+  'src/styles/fonts.css',
+];
+
+/** The message of a path where init would write a file, and which is a link or no regular file (6.4). */
+export const notAFile = (path: string): string => `astro-kit init: ${path} is not a file`;
+
+/** The message of a parent path of a file of init that is a link or no folder (6.4). */
+export const notAFolder = (path: string): string => `astro-kit init: ${path} is not a folder`;
 
 /** The message of an existing `astro-kit.json` and a flag that sets a value (6.4). */
 export const SETTINGS_EXIST = 'astro-kit init: astro-kit.json exists; its values are used and the flags are ignored.';
@@ -288,13 +330,24 @@ export function siteTemplates(variables: Readonly<Record<string, string>>): Init
   });
 }
 
-/** The feature shims of the enabled features: the files of `templates/features/<feature>/`. */
-export function featureShims(features: readonly InitFeature[]): InitFile[] {
-  return features.flatMap((feature) => {
-    const folder = join(TEMPLATES, 'features', feature);
-    if (!statSync(folder, { throwIfNoEntry: false })?.isDirectory()) return [];
-    return templateFiles(folder).map((path) => ({ path, text: readFileSync(join(folder, path), 'utf8') }));
-  });
+/** The feature shims of each feature (9.1, 9.2), as paths under `templates/features/<feature>/`. `scripts` has none. */
+export const FEATURE_SHIMS: Readonly<Record<InitFeature, readonly string[]>> = {
+  forms: [FORMS_SHIM_FILE],
+  islands: [ISLANDS_SHIM_FILE],
+  scripts: [],
+};
+
+/** The feature shims of the enabled features, read from `templates/features/<feature>/`. Throws for a missing one. */
+export function featureShims(features: readonly InitFeature[], templates: string = TEMPLATES): InitFile[] {
+  return features.flatMap((feature) =>
+    FEATURE_SHIMS[feature].map((path) => {
+      const file = join(templates, 'features', feature, path);
+      if (lstatSync(file, { throwIfNoEntry: false })?.isFile() !== true) {
+        throw new Error(`astro-kit init: the template templates/features/${feature}/${path} is missing`);
+      }
+      return { path, text: readFileSync(file, 'utf8') };
+    }),
+  );
 }
 
 /** The three source shims of 12.2. */
@@ -302,7 +355,10 @@ const sourceShims = (): InitFile[] => Object.entries(SHIMS).map(([path, text]) =
 
 /** The settings of the project: the valid `astro-kit.json` of the root, else `undefined` when there is none. */
 function existingSettings(root: string): Options | undefined {
-  if (statSync(join(root, OPTIONS_FILE), { throwIfNoEntry: false }) === undefined) return undefined;
+  const stats = lstatSync(join(root, OPTIONS_FILE), { throwIfNoEntry: false });
+  if (stats === undefined) return undefined;
+  // A link is never read or written (6.4): it could name a file outside the project.
+  if (!stats.isFile() || stats.nlink > 1) throw new Error(notAFile(OPTIONS_FILE));
   const report = new Report();
   const options = loadOptions(root, report);
   if (options === undefined) {
@@ -337,20 +393,71 @@ export function nextSteps(shims: boolean): string {
     '  3. npx --no astro-kit tokens',
     '  4. npx --no astro-kit check',
     'This kit version writes no protected file (.github/, .npmrc, wrangler.jsonc) and no .claude/settings.json yet.',
+    'So check reports config-wrangler until a later kit version writes them.',
     '',
   ].join('\n');
 }
 
+/** What `init` does with one file: write a new one, rewrite an existing one, or keep it. */
+type Step = 'create' | 'overwrite' | 'keep';
+
 /**
- * Writes one file unless it exists, and with `force` also over an existing one. Returns the line of 6.4: `wrote
- * <file>` or `kept <file>`.
+ * The planning pass (6.4): it reads every path that a file of init names, under the root, and writes nothing.
+ * `lstat` reads each segment as it is, so a link is seen and never followed.
+ *
+ * - A parent segment that is a link, or exists and is no folder, throws `notAFolder`.
+ * - The file itself: a link, a non-regular file, or a file with more than one link (a hard link) throws `notAFile`.
+ * - A missing file is created. An existing one is kept, and with `force` it is rewritten unless `FORCE_KEPT` holds it.
  */
-function writeOne(root: string, file: InitFile, force: boolean): string {
+export function plan(root: string, paths: readonly string[], force: boolean): Map<string, Step> {
+  const folders = new Map<string, boolean>();
+  /** True when the folder exists. Throws when the path is a link or no folder. */
+  const folder = (path: string): boolean => {
+    const known = folders.get(path);
+    if (known !== undefined) return known;
+    const stats = lstatSync(join(root, path), { throwIfNoEntry: false });
+    if (stats !== undefined && !stats.isDirectory()) throw new Error(notAFolder(path));
+    folders.set(path, stats !== undefined);
+    return stats !== undefined;
+  };
+  const steps = new Map<string, Step>();
+  for (const path of paths) {
+    const segments = path.split('/');
+    let exists = true;
+    for (let index = 1; index < segments.length && exists; index += 1) {
+      exists = folder(segments.slice(0, index).join('/'));
+    }
+    const stats = exists ? lstatSync(join(root, path), { throwIfNoEntry: false }) : undefined;
+    if (stats !== undefined && (!stats.isFile() || stats.nlink > 1)) throw new Error(notAFile(path));
+    steps.set(path, stats === undefined ? 'create' : force && !FORCE_KEPT.includes(path) ? 'overwrite' : 'keep');
+  }
+  return steps;
+}
+
+/**
+ * Writes one file of the plan. A new file is opened with `wx`, so it never replaces what appeared after the plan; an
+ * existing one with `O_NOFOLLOW` where the system has it, so a link that appeared since is not followed. Every
+ * error of the file system becomes a message of init.
+ */
+function writeOne(root: string, file: InitFile, step: 'create' | 'overwrite'): void {
   const path = join(root, file.path);
-  if (statSync(path, { throwIfNoEntry: false }) !== undefined && !force) return `kept ${file.path}`;
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, file.text);
-  return `wrote ${file.path}`;
+  const segments = file.path.split('/');
+  try {
+    for (let index = 1; index < segments.length; index += 1) {
+      const parent = join(root, ...segments.slice(0, index));
+      if (lstatSync(parent, { throwIfNoEntry: false }) === undefined) mkdirSync(parent);
+    }
+    const flags = step === 'create' ? 'wx' : constants.O_WRONLY | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0);
+    const fd = openSync(path, flags);
+    try {
+      writeFileSync(fd, file.text);
+    } finally {
+      closeSync(fd);
+    }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? 'an error';
+    throw new Error(`astro-kit init: ${file.path} could not be written (${code}): it changed while init ran`);
+  }
 }
 
 /**
@@ -399,7 +506,19 @@ export function init(root: string, flags: InitFlags, io: InitIo): number {
   }
 
   const byPath = (a: { path: string }, b: { path: string }): number => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
-  const lines = files.sort(byPath).map((file) => ({ path: file.path, line: writeOne(root, file, force) }));
+  files.sort(byPath);
+  // Every path is checked before the first write, so a run that fails writes nothing (6.4).
+  const steps = plan(
+    root,
+    files.map((file) => file.path),
+    force,
+  );
+  const lines = files.map((file) => {
+    const step = steps.get(file.path) ?? 'keep';
+    if (step === 'keep') return { path: file.path, line: `kept ${file.path}` };
+    writeOne(root, file, step);
+    return { path: file.path, line: `wrote ${file.path}` };
+  });
   // An existing `astro-kit.json` is kept, also with `--force` (12.2): the owner changes it through the settings page.
   if (existing !== undefined && flags.shims !== true) lines.push({ path: OPTIONS_FILE, line: `kept ${OPTIONS_FILE}` });
   const text = [...lines.sort(byPath).map((entry) => entry.line), ...notes].join('\n');

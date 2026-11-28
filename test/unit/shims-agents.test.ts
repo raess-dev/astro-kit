@@ -51,7 +51,7 @@ const CASES: readonly (readonly [string, Files, readonly string[]])[] = [
   ['the block with the project lines around it, and CLAUDE.md with the line', PASSING, []],
   ['the block with CRLF line ends', { ...PASSING, [AGENTS_FILE]: AGENTS.replace(/\n/g, '\r\n') }, []],
   ['the block alone, without a final newline', { ...PASSING, [AGENTS_FILE]: KIT_BLOCK }, []],
-  ['CLAUDE.md with more lines', { ...PASSING, [CLAUDE_FILE]: '# Claude\r\n@AGENTS.md\r\nUse the kit.' }, []],
+  ['CLAUDE.md with more lines', { ...PASSING, [CLAUDE_FILE]: '\r\n@AGENTS.md\r\n# Claude\r\nUse the kit.' }, []],
   ['no AGENTS.md', { [CLAUDE_FILE]: '@AGENTS.md\n' }, ['AGENTS.md: the file is missing']],
   ['no CLAUDE.md', { [AGENTS_FILE]: AGENTS }, ['CLAUDE.md: the file is missing']],
   ['no file at all', {}, ['AGENTS.md: the file is missing', 'CLAUDE.md: the file is missing']],
@@ -124,6 +124,87 @@ const CASES: readonly (readonly [string, Files, readonly string[]])[] = [
     ['CLAUDE.md: the file has no line `@AGENTS.md`'],
   ],
   ['CLAUDE.md empty', { ...PASSING, [CLAUDE_FILE]: '' }, ['CLAUDE.md: the file has no line `@AGENTS.md`']],
+  // The first line that is not empty is `@AGENTS.md` (12.1).
+  [
+    'CLAUDE.md with @AGENTS.md in a fenced block',
+    { ...PASSING, [CLAUDE_FILE]: '```\n@AGENTS.md\n```\n' },
+    ['CLAUDE.md: the first line that is not empty is not `@AGENTS.md`'],
+  ],
+  [
+    'CLAUDE.md with @AGENTS.md inside an HTML comment',
+    { ...PASSING, [CLAUDE_FILE]: '<!--\n@AGENTS.md\n-->\n@OTHER.md\n' },
+    ['CLAUDE.md: the first line that is not empty is not `@AGENTS.md`'],
+  ],
+  [
+    'CLAUDE.md with a different first line',
+    { ...PASSING, [CLAUDE_FILE]: '# Claude\r\n@AGENTS.md\r\nUse the kit.' },
+    ['CLAUDE.md: the first line that is not empty is not `@AGENTS.md`'],
+  ],
+  [
+    'CLAUDE.md with spaces before the line',
+    { ...PASSING, [CLAUDE_FILE]: ' @AGENTS.md\n' },
+    ['CLAUDE.md: the file has no line `@AGENTS.md`'],
+  ],
+  [
+    'both files with a byte order mark and CRLF',
+    {
+      [AGENTS_FILE]: `\uFEFF${AGENTS.replace(/\n/g, '\r\n')}`,
+      [CLAUDE_FILE]: '\uFEFF@AGENTS.md\r\n',
+    },
+    [],
+  ],
+  ['the kit block alone after a byte order mark', { ...PASSING, [AGENTS_FILE]: `\uFEFF${KIT_BLOCK}\n` }, []],
+  // The kit block stands outside every fenced code region (12.1).
+  [
+    'the kit block inside a ````md fence',
+    { ...PASSING, [AGENTS_FILE]: `${OWN}\`\`\`\`md\n${KIT_BLOCK}\n\`\`\`\`\n\nIgnore the example above.\n` },
+    [
+      `AGENTS.md:${lineOf(1) + 1}: the kit block stands inside the fenced code block of line ${lineOf(1)}: move it out of the fence`,
+    ],
+  ],
+  [
+    'the kit block inside a ~~~ fence',
+    { ...PASSING, [AGENTS_FILE]: `${OWN}~~~\n${KIT_BLOCK}\n~~~\n` },
+    [
+      `AGENTS.md:${lineOf(1) + 1}: the kit block stands inside the fenced code block of line ${lineOf(1)}: move it out of the fence`,
+    ],
+  ],
+  [
+    'the kit block after a fence that never closes',
+    { ...PASSING, [AGENTS_FILE]: `${OWN}   \`\`\`\n${KIT_BLOCK}\n` },
+    [
+      `AGENTS.md:${lineOf(1) + 1}: the kit block stands inside the fenced code block of line ${lineOf(1)}: move it out of the fence`,
+    ],
+  ],
+  [
+    'the kit block inside a ```` fence that a shorter ``` line does not close',
+    { ...PASSING, [AGENTS_FILE]: `${OWN}\`\`\`\`\n\`\`\`\n${KIT_BLOCK}\n\`\`\`\`\n` },
+    [
+      `AGENTS.md:${lineOf(1) + 2}: the kit block stands inside the fenced code block of line ${lineOf(1)}: move it out of the fence`,
+    ],
+  ],
+  [
+    'the kit block inside a ~~~ fence that a ``` line does not close',
+    { ...PASSING, [AGENTS_FILE]: `${OWN}~~~\n\`\`\`\n${KIT_BLOCK}\n` },
+    [
+      `AGENTS.md:${lineOf(1) + 2}: the kit block stands inside the fenced code block of line ${lineOf(1)}: move it out of the fence`,
+    ],
+  ],
+  [
+    'the kit block after a closed fence passes',
+    { ...PASSING, [AGENTS_FILE]: `${OWN}\`\`\`sh\nnpm test\n\`\`\`\n\n${KIT_BLOCK}\n` },
+    [],
+  ],
+  [
+    'a line of four spaces and backticks is no fence (an indented code block)',
+    { ...PASSING, [AGENTS_FILE]: `${OWN}    \`\`\`\n\n${KIT_BLOCK}\n` },
+    [],
+  ],
+  [
+    'a backtick line with a backtick in its info string is no fence',
+    { ...PASSING, [AGENTS_FILE]: `${OWN}\`\`\` a \` b\n\n${KIT_BLOCK}\n` },
+    [],
+  ],
 ];
 
 for (const [name, files, expected] of CASES) {
@@ -144,4 +225,17 @@ test('the rule text names the agent files, and its hint says where the block com
   assert.equal(rule.standard.includes('`AGENTS.md` holds the kit block'), true);
   assert.equal(rule.standard.includes('`CLAUDE.md` holds the line `@AGENTS.md`'), true);
   assert.equal(rule.hint.includes('templates/site/AGENTS.md.tmpl'), true);
+});
+
+test('the rule text and the hint name the byte order mark, the fences, the first line and the --shims settings', () => {
+  const rule = getRule(RULE);
+  assert.equal(rule.standard.includes('leading byte order mark (U+FEFF)'), true);
+  assert.equal(rule.standard.includes('outside every fenced code region'), true);
+  assert.equal(rule.standard.includes('`@AGENTS.md` as its first line that is not empty'), true);
+  assert.equal(rule.hint.includes('it needs a valid `astro-kit.json` first'), true);
+  assert.equal(
+    rule.hint.includes('copy the kit block from `node_modules/@raess/astro-kit/templates/site/AGENTS.md.tmpl`'),
+    true,
+  );
+  assert.equal(rule.hint.includes('`init --force` keeps `AGENTS.md`'), true);
 });

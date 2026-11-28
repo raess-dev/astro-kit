@@ -454,9 +454,25 @@
     only the shims and the shims of the enabled features. It prints `wrote` and `kept` lines and a "Next:" block,
     and no passed line.
   - `init --protected` fails with a message and exit 1, and `init` writes no protected file of 10.6 and no
-    `.claude/settings.json`: later parts of M9 render them.
+    `.claude/settings.json`: parts 9d and 9e of M9 render them.
   - `config-shim` compares the kit block of `AGENTS.md` and needs the line `@AGENTS.md` in `CLAUDE.md`, in every
     run of preflight. Its hint says where the block comes from.
   - The acceptance suite gets the fresh init (`fresh-init.test.ts`): `check` gives `design-format`, and with a
     design `check` passes and `build` gives `legal-pages` and `routes-404`. The `islands` variant runs
     `init --shims` in place of copying the ESLint shim.
+- Milestone M9, part 9c, after review: `init` refuses links and keeps the owner's files.
+  - A planning pass reads every path of init with `lstat` before the first write and follows no link. A symbolic
+    link on a path, a hard link, a folder where a file goes, or a link or file where a folder goes fails with
+    `astro-kit init: <path> is not a file` (or `is not a folder`), exit 1, and nothing is written. A new file is
+    opened with `wx`. So init can no longer write outside the project or into a protected file through a link, and
+    a failed run never leaves a part of a project or a raw `EEXIST` or `EISDIR`.
+  - `--force` rewrites only the kit's files: the shims, the feature shims, `.gitignore`, `.node-version`,
+    `tokens.css` and the `.gitkeep` files. It keeps `astro-kit.json`, `package.json`, the agent files,
+    `KIT-FEEDBACK.md`, `.mcp.json`, `docs/spec.md`, `docs/design.md`, the data files, `elements.css` and
+    `fonts.css`, and prints `kept` for each.
+  - The feature shims are listed per feature; a missing template throws.
+  - `config-shim` drops a leading byte order mark in both agent files, fails a kit block inside a code fence, and
+    needs `@AGENTS.md` as the first line of `CLAUDE.md` that is not empty. Its hint says that `init --shims` needs
+    valid settings and that `init --force` keeps `AGENTS.md`.
+  - The "Next:" block says that `check` reports `config-wrangler` until a later kit version writes the protected
+    files.

@@ -223,7 +223,10 @@ export function checkShims(root: string, report: Report): void {
 /** The agent file of the project. The project writes its own instructions in it; the kit owns one block. */
 export const AGENTS_FILE = 'AGENTS.md';
 
-/** The file that Claude Code reads. It holds the line `@AGENTS.md`, and the project may add lines. */
+/**
+ * The file that Claude Code reads. Its first line that is not empty is `@AGENTS.md`, and the project may add lines
+ * after it.
+ */
 export const CLAUDE_FILE = 'CLAUDE.md';
 
 /** The line of `CLAUDE.md` that names `AGENTS.md` (12.1). */
@@ -273,10 +276,13 @@ function readProjectFile(root: string, file: string, report: Report): string | u
 /**
  * The agent files part of `config-shim` (12.1, part 9c of M9).
  *
+ * - Both files are read after a leading U+FEFF (a byte order mark) is dropped and CRLF→LF.
  * - `AGENTS.md` holds the kit block once. The block is the text from the line `<!-- kit:start -->` to the next line
- *   `<!-- kit:end -->`, and it equals `KIT_BLOCK` after CRLF→LF, byte for byte. The lines outside the block are the
- *   project's, and the rule never reads them.
- * - `CLAUDE.md` holds the line `@AGENTS.md`. Its other lines are the project's.
+ *   `<!-- kit:end -->`, and it equals `KIT_BLOCK` byte for byte. It stands outside every fenced code region (a fence
+ *   of 3 or more backticks or tildes): an agent reads a fenced block as an example, not as a rule. The other lines
+ *   outside the block are the project's, and the rule reads them only for the fences.
+ * - The first line of `CLAUDE.md` that is not empty is `@AGENTS.md`. Claude Code reads no import inside a fenced
+ *   block or an HTML comment, and a first line rules both out. The lines after it are the project's.
  *
  * It reads no setting, so it runs in every run of preflight.
  */
@@ -284,14 +290,51 @@ export function checkAgentFiles(root: string, report: Report): void {
   const agents = readProjectFile(root, AGENTS_FILE, report);
   if (agents !== undefined) checkKitBlock(agents, report);
   const claude = readProjectFile(root, CLAUDE_FILE, report);
-  if (claude !== undefined && !claude.replace(/\r\n/g, '\n').split('\n').includes(CLAUDE_LINE)) {
+  if (claude === undefined) return;
+  const lines = agentLines(claude);
+  if (!lines.includes(CLAUDE_LINE)) {
     report.add(RULE, CLAUDE_FILE, `the file has no line \`${CLAUDE_LINE}\``);
+  } else if (lines.find((line) => line.trim() !== '') !== CLAUDE_LINE) {
+    report.add(RULE, CLAUDE_FILE, `the first line that is not empty is not \`${CLAUDE_LINE}\``);
   }
+}
+
+/** The lines of an agent file: a leading U+FEFF dropped, CRLF→LF. */
+const agentLines = (text: string): string[] =>
+  text
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n/g, '\n')
+    .split('\n');
+
+/** A fence line of CommonMark: up to 3 spaces, then 3 or more backticks or tildes. */
+const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+
+/**
+ * The index of the line that opens the fenced code region around the line `at`, or `undefined` when `at` stands
+ * outside every fence. A fence closes at a line of the same character, at least as long, with only spaces after it;
+ * a fence that never closes runs to the end of the text. A backtick fence has no backtick in its info string.
+ */
+export function fenceAround(lines: readonly string[], at: number): number | undefined {
+  let open: { index: number; char: string; length: number } | undefined;
+  for (let index = 0; index < at; index += 1) {
+    const match = FENCE.exec(lines[index] ?? '');
+    if (match === null) continue;
+    const run = match[1] ?? '';
+    const rest = match[2] ?? '';
+    const char = run.charAt(0);
+    if (open === undefined) {
+      if (char === '`' && rest.includes('`')) continue;
+      open = { index, char, length: run.length };
+    } else if (char === open.char && run.length >= open.length && rest.trim() === '') {
+      open = undefined;
+    }
+  }
+  return open?.index;
 }
 
 /** Compares the kit block of an `AGENTS.md` text with `KIT_BLOCK`. */
 function checkKitBlock(text: string, report: Report): void {
-  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const lines = agentLines(text);
   const starts = lines.flatMap((line, index) => (line === KIT_BLOCK_START ? [index] : []));
   const ends = lines.flatMap((line, index) => (line === KIT_BLOCK_END ? [index] : []));
   const [start] = starts;
@@ -307,6 +350,15 @@ function checkKitBlock(text: string, report: Report): void {
   const end = ends[0];
   if (end === undefined || end < start) {
     report.add(RULE, `${AGENTS_FILE}:${start + 1}`, `the kit block has no line \`${KIT_BLOCK_END}\` after its start`);
+    return;
+  }
+  const fence = fenceAround(lines, start);
+  if (fence !== undefined) {
+    report.add(
+      RULE,
+      `${AGENTS_FILE}:${start + 1}`,
+      `the kit block stands inside the fenced code block of line ${fence + 1}: move it out of the fence`,
+    );
     return;
   }
   const wanted = KIT_BLOCK.split('\n');

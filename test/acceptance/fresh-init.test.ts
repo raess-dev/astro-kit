@@ -2,7 +2,7 @@
  * The fresh init of 14.2 (part 9c of M9): `init` in an empty folder, then the kit's own commands on what it wrote.
  *
  * 1. `init --site https://example.ch --locales de,fr --owner @example-owner` writes the templates and prints no passed
- *    line. Until a later part of M9 renders the protected files, the case writes `wrangler.jsonc` with
+ *    line. Until parts 9d and 9e of M9 render the protected files, the case writes `wrangler.jsonc` with
  *    `renderWrangler` of the packed kit, as `init --protected` will. Then `check` fails with exactly `design-format`:
  *    the skeleton of `docs/design.md` has empty tables.
  * 2. With the smallest valid `docs/design.md` and `elements.css` of `fresh-init.ts`, `tokens` writes `tokens.css`, and
@@ -40,7 +40,7 @@ test('M9 fresh init: init writes the templates; check gives design-format, and w
   }
   assert.ok(init.stdout.includes('\nNext:\n'), tail(init));
   assert.equal(read(dir, 'CLAUDE.md'), '@AGENTS.md\n');
-  // No protected file yet (10.6): a later part of M9 renders them.
+  // No protected file yet (10.6): parts 9d and 9e of M9 render them.
   for (const file of ['.github', '.npmrc', 'wrangler.jsonc', '.claude'])
     assert.equal(existsSync(join(dir, file)), false, file);
 

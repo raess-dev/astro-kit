@@ -57,7 +57,7 @@ export function preflight(root: string, report: Report): Options | undefined {
   loadSchedule(root, report);
 
   // 2. Shims: `config-shim`. The agent files in every run: the kit block of `AGENTS.md` and the line of `CLAUDE.md`
-  // (part 9c of M9). With valid settings and forms, the forms shim too. A later part of M9 adds the rendered
+  // (part 9c of M9). With valid settings and forms, the forms shim too. Parts 9d and 9e of M9 add the rendered
   // protected files here, with valid settings only.
   checkShims(root, report);
   checkAgentFiles(root, report);

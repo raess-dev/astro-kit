@@ -4,7 +4,20 @@
  * build the result (14.1).
  */
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  linkSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +25,8 @@ import { renderLock } from '../../src/audit/site.ts';
 import { type Io, main, PASSED_LINE } from '../../src/cli.ts';
 import { renderWrangler } from '../../src/hosts/cloudflare.ts';
 import {
+  FEATURE_SHIMS,
+  FORCE_KEPT,
   featureShims,
   INIT_FEATURES,
   initSettings,
@@ -21,6 +36,8 @@ import {
   NO_OWNER,
   NO_SITE,
   nextSteps,
+  notAFile,
+  notAFolder,
   PINS,
   PROTECTED_FILES,
   PROTECTED_NOT_YET,
@@ -447,9 +464,9 @@ test('init never overwrites a file without --force, and never overwrites astro-k
     assert.equal(readFileSync(join(root, 'AGENTS.md'), 'utf8'), '# Mine\n');
     const forced = await run(root, ['init', '--force']);
     assert.equal(forced.code, 0);
-    const lines = PLAIN_FILES.map((path) => (path === 'astro-kit.json' ? `kept ${path}` : `wrote ${path}`));
+    const lines = PLAIN_FILES.map((path) => (FORCE_KEPT.includes(path) ? `kept ${path}` : `wrote ${path}`));
     assert.equal(forced.out, `${lines.join('\n')}\n${nextSteps(false)}`);
-    assert.deepEqual(textsUnder(root), { ...first, 'astro-kit.json': settings });
+    assert.deepEqual(textsUnder(root), { ...first, 'astro-kit.json': settings, 'AGENTS.md': '# Mine\n' });
   });
 });
 
@@ -595,4 +612,317 @@ test('preflight on a fresh init: design-format, and config-wrangler until the pr
     rmSync(join(root, 'docs/design.md'));
     assert.deepEqual(ids(), ['design-format']);
   });
+});
+
+// Links and the planning pass (6.4)
+
+/**
+ * Every entry under a folder, read with `lstat` and never through a link: a folder as `dir`, a link as `-> target`,
+ * a file as its text.
+ */
+function entriesUnder(folder: string, path = ''): Record<string, string> {
+  const entries: Record<string, string> = {};
+  if (!existsSync(folder)) return entries;
+  for (const name of readdirSync(folder).sort()) {
+    const child = path === '' ? name : `${path}/${name}`;
+    const full = join(folder, name);
+    const stats = lstatSync(full);
+    if (stats.isSymbolicLink()) entries[child] = `-> ${readlinkSync(full)}`;
+    else if (stats.isDirectory()) Object.assign(entries, { [child]: 'dir' }, entriesUnder(full, child));
+    else entries[child] = readFileSync(full, 'utf8');
+  }
+  return entries;
+}
+
+/** A case of the planning pass: it prepares the root and a folder outside it, runs init, and gives both trees. */
+interface LinkCase {
+  name: string;
+  argv: readonly string[];
+  /** Prepares `root` and `outside`, two sibling temp folders. */
+  setup: (root: string, outside: string) => void;
+  message: string;
+}
+
+const LINK_CASES: readonly LinkCase[] = [
+  {
+    name: 'a dangling link at a file path',
+    argv: FLAGS,
+    setup: (root, outside) => symlinkSync(join(outside, 'pwned.md'), join(root, 'AGENTS.md')),
+    message: notAFile('AGENTS.md'),
+  },
+  {
+    name: 'a link at a file path to a file outside the root',
+    argv: FLAGS,
+    setup: (root, outside) => {
+      writeFileSync(join(outside, 'victim'), 'secret\n');
+      symlinkSync(join(outside, 'victim'), join(root, 'CLAUDE.md'));
+    },
+    message: notAFile('CLAUDE.md'),
+  },
+  {
+    name: 'a link at a file path to a file outside the root, with --force',
+    argv: [...FLAGS, '--force'],
+    setup: (root, outside) => {
+      writeFileSync(join(outside, 'victim'), 'secret\n');
+      symlinkSync(join(outside, 'victim'), join(root, 'biome.json'));
+    },
+    message: notAFile('biome.json'),
+  },
+  {
+    name: 'a linked parent folder (docs -> ../x)',
+    argv: FLAGS,
+    setup: (root, outside) => symlinkSync(outside, join(root, 'docs')),
+    message: notAFolder('docs'),
+  },
+  {
+    name: 'a linked parent folder below the first segment (src/styles)',
+    argv: FLAGS,
+    setup: (root, outside) => {
+      mkdirSync(join(root, 'src'));
+      symlinkSync(outside, join(root, 'src/styles'));
+    },
+    message: notAFolder('src/styles'),
+  },
+  {
+    name: 'a link to .github/workflows/site.yml, with --force',
+    argv: [...FLAGS, '--force'],
+    setup: (root) => {
+      mkdirSync(join(root, '.github/workflows'), { recursive: true });
+      writeFileSync(join(root, '.github/workflows/site.yml'), 'name: site\n');
+      symlinkSync('.github/workflows/site.yml', join(root, 'redirects.json'));
+    },
+    message: notAFile('redirects.json'),
+  },
+  {
+    name: 'a linked docs folder that names .github/workflows',
+    argv: FLAGS,
+    setup: (root) => {
+      mkdirSync(join(root, '.github/workflows'), { recursive: true });
+      symlinkSync('.github/workflows', join(root, 'docs'));
+    },
+    message: notAFolder('docs'),
+  },
+  {
+    name: 'a folder at a file path',
+    argv: FLAGS,
+    setup: (root) => mkdirSync(join(root, 'CLAUDE.md')),
+    message: notAFile('CLAUDE.md'),
+  },
+  {
+    name: 'a folder at a file path, with --force',
+    argv: [...FLAGS, '--force'],
+    setup: (root) => mkdirSync(join(root, 'tsconfig.json')),
+    message: notAFile('tsconfig.json'),
+  },
+  {
+    name: 'a file at a folder path',
+    argv: FLAGS,
+    setup: (root) => writeFileSync(join(root, 'docs'), 'a file\n'),
+    message: notAFolder('docs'),
+  },
+  {
+    name: 'a file at a folder path, with --force',
+    argv: [...FLAGS, '--force'],
+    setup: (root) => writeFileSync(join(root, 'src'), 'a file\n'),
+    message: notAFolder('src'),
+  },
+  {
+    name: 'a hard link at a file path, with --force',
+    argv: [...FLAGS, '--force'],
+    setup: (root, outside) => {
+      writeFileSync(join(outside, 'victim'), 'secret\n');
+      linkSync(join(outside, 'victim'), join(root, '.gitignore'));
+    },
+    message: notAFile('.gitignore'),
+  },
+  {
+    name: 'astro-kit.json as a link',
+    argv: [],
+    setup: (root, outside) => {
+      writeFileSync(join(outside, 'settings.json'), json(initSettings('https://example.ch', ['de'], [], '@o')));
+      symlinkSync(join(outside, 'settings.json'), join(root, 'astro-kit.json'));
+    },
+    message: notAFile('astro-kit.json'),
+  },
+  {
+    name: 'a shim as a link, with --shims --force',
+    argv: ['--shims', '--force'],
+    setup: (root, outside) => {
+      writeFileSync(join(outside, 'victim'), 'secret\n');
+      symlinkSync(join(outside, 'victim'), join(root, 'astro.config.mjs'));
+    },
+    message: notAFile('astro.config.mjs'),
+  },
+];
+
+for (const c of LINK_CASES) {
+  test(`init refuses ${c.name}: the message, 1, and no file written inside or outside the root`, async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'astro-kit-outside-'));
+    try {
+      await inTempAsync({}, async (root) => {
+        c.setup(root, outside);
+        const before = { root: entriesUnder(root), outside: entriesUnder(outside) };
+        const result = await run(root, ['init', ...c.argv]);
+        assert.equal(result.code, 1);
+        assert.equal(result.err, `${c.message}\n`);
+        assert.equal(result.out, '');
+        assert.deepEqual({ root: entriesUnder(root), outside: entriesUnder(outside) }, before);
+      });
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+}
+
+test('the messages of the planning pass are the texts of 6.4', () => {
+  assert.equal(notAFile('a/b'), 'astro-kit init: a/b is not a file');
+  assert.equal(notAFolder('a'), 'astro-kit init: a is not a folder');
+  assert.equal(SPEC.includes('throw `astro-kit init: <path> is not a file` (`is not a folder` for a parent)'), true);
+});
+
+test('init writes into existing real folders, and keeps a regular file there', async () => {
+  const result = await initIn(
+    { 'docs/spec.md': '# Ours\n', 'src/styles/elements.css': '@layer elements {\n}\n' },
+    FLAGS,
+  );
+  assert.equal(result.code, 0);
+  assert.equal(result.texts['docs/spec.md'], '# Ours\n');
+  assert.equal(result.out.includes('kept docs/spec.md\n'), true);
+  assert.equal(result.out.includes('wrote docs/design.md\n'), true);
+});
+
+// --force keeps the files of the project and of its owner (6.4)
+
+/** The files that `--force` rewrites: the kit's own files. */
+const KIT_OWNED = [
+  '.gitignore',
+  '.node-version',
+  'astro.config.mjs',
+  'biome.json',
+  'src/styles/components/.gitkeep',
+  'src/styles/pages/.gitkeep',
+  'src/styles/tokens.css',
+  'tsconfig.json',
+  FORMS_SHIM_FILE,
+  ISLANDS_SHIM_FILE,
+];
+
+test('FORCE_KEPT is the list of the 6.4 sentence, and every file of init is kept or kit-owned', async () => {
+  const marker = 'It always keeps the files of the project and of its owner (`FORCE_KEPT` in `src/init.ts`): ';
+  const start = SPEC.indexOf(marker);
+  assert.notEqual(start, -1);
+  const sentence = SPEC.slice(start + marker.length, SPEC.indexOf(', and prints `kept <path>`', start));
+  const listed = [...sentence.matchAll(/`([^`]+)`/g)].map((match) => match[1] ?? '');
+  assert.deepEqual([...listed].sort(), [...FORCE_KEPT].sort());
+  // The owner-approved files of the kit block (12.1), but the folder `.claude/`, which init does not write yet.
+  for (const path of ['astro-kit.json', 'site.json', 'docs/design.md', 'legal.lock.json', '.mcp.json']) {
+    assert.equal(KIT_BLOCK.includes(`\`${path}\``), true, path);
+    assert.equal(FORCE_KEPT.includes(path), true, path);
+  }
+  // The files that the owner named (decision of 2026-11-28).
+  for (const path of ['package.json', 'AGENTS.md', 'docs/spec.md', 'KIT-FEEDBACK.md']) {
+    assert.equal(FORCE_KEPT.includes(path), true, path);
+  }
+  const all = await initIn({}, [...FLAGS, '--features', 'forms,islands,scripts']);
+  const written = Object.keys(all.texts).sort();
+  assert.deepEqual(written, [...FORCE_KEPT, ...KIT_OWNED].sort());
+  for (const path of KIT_OWNED) assert.equal(FORCE_KEPT.includes(path), false, path);
+});
+
+for (const path of FORCE_KEPT) {
+  test(`init --force keeps ${path} and prints kept ${path}`, async () => {
+    await inTempAsync({}, async (root) => {
+      assert.equal((await run(root, ['init', ...FLAGS, '--features', 'forms,islands'])).code, 0);
+      // A text of the project: astro-kit.json stays valid settings, so init reads it.
+      const own =
+        path === 'astro-kit.json'
+          ? json({ ...initSettings('https://example.ch', ['de', 'fr'], ['forms', 'islands'], '@other') })
+          : `own text of ${path}\n`;
+      writeFileSync(join(root, path), own);
+      writeFileSync(join(root, 'biome.json'), '{}\n');
+      const forced = await run(root, ['init', '--force']);
+      assert.equal(forced.code, 0, forced.err);
+      assert.equal(readFileSync(join(root, path), 'utf8'), own);
+      assert.equal(forced.out.includes(`kept ${path}\n`), true);
+      // A kit file is rewritten in the same run.
+      assert.equal(readFileSync(join(root, 'biome.json'), 'utf8'), SHIMS['biome.json']);
+      assert.equal(forced.out.includes('wrote biome.json\n'), true);
+    });
+  });
+}
+
+test('init --force writes a kept file that is missing', async () => {
+  await inTempAsync({}, async (root) => {
+    assert.equal((await run(root, ['init', ...FLAGS])).code, 0);
+    rmSync(join(root, 'site.json'));
+    const forced = await run(root, ['init', '--force']);
+    assert.equal(forced.code, 0);
+    assert.equal(forced.out.includes('wrote site.json\n'), true);
+    assert.equal(forced.out.includes('kept docs/spec.md\n'), true);
+  });
+});
+
+// The feature shims (A9)
+
+test('the feature shims are listed per feature, and a missing template throws', () => {
+  assert.deepEqual(FEATURE_SHIMS, { forms: [FORMS_SHIM_FILE], islands: [ISLANDS_SHIM_FILE], scripts: [] });
+  for (const feature of INIT_FEATURES) {
+    assert.deepEqual(filesUnder(join(TEMPLATES, 'features', feature)), [...FEATURE_SHIMS[feature]], feature);
+  }
+  const empty = mkdtempSync(join(tmpdir(), 'astro-kit-templates-'));
+  try {
+    mkdirSync(join(empty, 'features/islands'), { recursive: true });
+    assert.throws(
+      () => featureShims(['forms'], empty),
+      new Error(`astro-kit init: the template templates/features/forms/${FORMS_SHIM_FILE} is missing`),
+    );
+    assert.throws(
+      () => featureShims(['islands'], empty),
+      new Error(`astro-kit init: the template templates/features/islands/${ISLANDS_SHIM_FILE} is missing`),
+    );
+    assert.deepEqual(featureShims(['scripts'], empty), []);
+  } finally {
+    rmSync(empty, { recursive: true, force: true });
+  }
+});
+
+// The templates against the specification (A8)
+
+test('docs/spec.md has the six sections of 12.2, in order', () => {
+  const marker = '- **`docs/spec.md`** sections: ';
+  const start = SPEC.indexOf(marker);
+  assert.notEqual(start, -1);
+  const list = SPEC.slice(start + marker.length, SPEC.indexOf('. Brand and design', start));
+  // The names, without the notes in brackets.
+  const names = list
+    .replace(/\s*\([^)]*\)/g, '')
+    .split(', ')
+    .map((name) => name.trim());
+  assert.equal(names.length, 6);
+  const template = readFileSync(join(TEMPLATES, 'site/docs/spec.md'), 'utf8');
+  const headings = [...template.matchAll(/^## (.+)$/gm)].map((match) => match[1]);
+  assert.deepEqual(headings, names);
+});
+
+test('KIT-FEEDBACK.md ends with the line of 12.6', () => {
+  const marker = 'The template ends with `';
+  const start = SPEC.indexOf(marker);
+  assert.notEqual(start, -1);
+  const line = SPEC.slice(start + marker.length, SPEC.indexOf('`', start + marker.length));
+  assert.equal(line, '<!-- Entries start below this line. -->');
+  assert.equal(readFileSync(join(TEMPLATES, 'site/KIT-FEEDBACK.md'), 'utf8').endsWith(`\n${line}\n`), true);
+});
+
+// The Next: block and the temporary sentences (A6, A7)
+
+test('the Next: block says that check reports config-wrangler until a later kit version', () => {
+  const line = 'So check reports config-wrangler until a later kit version writes them.';
+  assert.equal(nextSteps(false).endsWith(`${line}\n`), true);
+  assert.equal(SPEC.includes(`its "Next:" block then ends with the line \`${line}\``), true);
+});
+
+test('the temporary sentences name parts 9d and 9e', () => {
+  for (const stale of ['a later part of M9', 'part 9e of M9 renders']) {
+    assert.equal(SPEC.includes(stale), false, stale);
+  }
 });
