@@ -5,7 +5,7 @@
  * `kit-identity.sh` of the templates guards the install. No test installs a package.
  */
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
@@ -134,6 +134,13 @@ printf '{"name":"@raess/astro-kit"}\\n' > ${KIT_PACKAGE}
 [ -n "\${FAKE_NPM_NO_INDEX:-}" ] || printf 'The installed INDEX.md\\n' > ${INDEX}
 `;
 
+/**
+ * The arguments of the one npm call of the hook (step 5 of 12.3): the registry on the command line, so that no npmrc
+ * moves the download host.
+ */
+const NPM_CI =
+  'ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --replace-registry-host=never';
+
 const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
 
 /** The stamp of 12.3: the sha256 of the lockfile, of INDEX.md and of the kit's package.json (`-` when missing). */
@@ -253,7 +260,7 @@ for (const shell of SHELLS) {
       [INDEX]: 'The old INDEX.md\n',
     });
     assert.equal(result.status, 0, result.stderr);
-    assert.deepEqual(result.npm, ['ci --ignore-scripts --no-audit --no-fund']);
+    assert.deepEqual(result.npm, [NPM_CI]);
     assert.equal(result.stamp, stampOf(lock, 'The installed INDEX.md\n', INSTALLED_PACKAGE));
     assert.equal(result.stdout, 'The installed INDEX.md\n');
     assert.equal(result.stderr.includes('npm output for the terminal only'), true);
@@ -263,7 +270,7 @@ for (const shell of SHELLS) {
     const lock = lockfile(true);
     const result = runHook(shell, { 'package-lock.json': lock });
     assert.equal(result.status, 0, result.stderr);
-    assert.deepEqual(result.npm, ['ci --ignore-scripts --no-audit --no-fund']);
+    assert.deepEqual(result.npm, [NPM_CI]);
     assert.equal(result.stamp, stampOf(lock, 'The installed INDEX.md\n', INSTALLED_PACKAGE));
     assert.equal(result.stdout, 'The installed INDEX.md\n');
   });
@@ -271,7 +278,7 @@ for (const shell of SHELLS) {
   test(`${shell}: when npm ci fails, the hook exits 1, writes no stamp and prints nothing`, () => {
     const result = runHook(shell, { 'package-lock.json': lockfile(true) }, { FAKE_NPM_EXIT: '7' });
     assert.equal(result.status, 1);
-    assert.deepEqual(result.npm, ['ci --ignore-scripts --no-audit --no-fund']);
+    assert.deepEqual(result.npm, [NPM_CI]);
     assert.equal(result.stamp, undefined);
     assert.equal(result.stdout, '');
   });
@@ -292,7 +299,7 @@ for (const shell of SHELLS) {
       [KIT_PACKAGE]: INSTALLED_PACKAGE,
     });
     assert.equal(result.status, 0, result.stderr);
-    assert.deepEqual(result.npm, ['ci --ignore-scripts --no-audit --no-fund']);
+    assert.deepEqual(result.npm, [NPM_CI]);
     assert.equal(result.stdout, 'The installed INDEX.md\n');
     assert.equal(result.stamp, stampOf(lock, 'The installed INDEX.md\n', INSTALLED_PACKAGE));
   });
@@ -305,7 +312,7 @@ for (const shell of SHELLS) {
       [INDEX]: 'The installed INDEX.md\n',
       [KIT_PACKAGE]: '{"name":"@raess/astro-kit","version":"6.6.6"}\n',
     });
-    assert.deepEqual(result.npm, ['ci --ignore-scripts --no-audit --no-fund']);
+    assert.deepEqual(result.npm, [NPM_CI]);
     assert.equal(result.stamp, stampOf(lock, 'The installed INDEX.md\n', INSTALLED_PACKAGE));
   });
 
@@ -354,10 +361,68 @@ for (const shell of SHELLS) {
     const lock = lockfile(true);
     const result = runHook(shell, { 'package-lock.json': lock }, { FAKE_NPM_NO_INDEX: '1' });
     assert.equal(result.status, 0, result.stderr);
-    assert.deepEqual(result.npm, ['ci --ignore-scripts --no-audit --no-fund']);
+    assert.deepEqual(result.npm, [NPM_CI]);
     assert.equal(result.stdout, `${NOT_PLAIN_KIT}\n`);
     assert.equal(result.stamp, stampOf(lock, undefined, INSTALLED_PACKAGE));
   });
+
+  test(`${shell}: with the npm proxy settings and HTTPS_PROXY of a proxied machine, npm ci runs`, () => {
+    const proxy = 'http://127.0.0.1:8765/';
+    const lock = lockfile(true);
+    const result = runHook(
+      shell,
+      { 'package-lock.json': lock },
+      {
+        npm_config_https_proxy: proxy,
+        NPM_CONFIG_PROXY: proxy,
+        HTTPS_PROXY: proxy,
+        HTTP_PROXY: proxy,
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(result.npm, [NPM_CI]);
+    assert.equal(result.stdout, 'The installed INDEX.md\n');
+  });
+
+  test(`${shell}: with NPM_CONFIG_USERCONFIG set, kit-identity fails and nothing is installed`, () => {
+    const result = runHook(
+      shell,
+      { 'package-lock.json': lockfile(true) },
+      { NPM_CONFIG_USERCONFIG: '/tmp/other.npmrc' },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, `${IDENTITY_FAILED}\n`);
+    assert.deepEqual(result.npm, []);
+  });
+
+  // A link at a parent folder of the kit: the check fails closed (step 6 of 12.3).
+  for (const parent of ['node_modules', 'node_modules/@raess'] as const) {
+    test(`${shell}: a linked ${parent} prints the fixed line and no file text, and exits 0`, () => {
+      const lock = lockfile(true);
+      const secret = 'a secret file of the machine\n';
+      const below = 'node_modules/@raess/astro-kit'.slice(parent.length);
+      const result = runHook(
+        shell,
+        {
+          'package-lock.json': lock,
+          [`elsewhere/linked${below}/docs/INDEX.md`]: secret,
+          [`elsewhere/linked${below}/package.json`]: INSTALLED_PACKAGE,
+        },
+        {},
+        (root) => {
+          mkdirSync(join(root, parent, '..'), { recursive: true });
+          symlinkSync(join(root, 'elsewhere/linked'), join(root, parent));
+          // The stamp sits at node_modules/.kit-stamp, so through a linked node_modules it is in the target.
+          const stampDir = parent === 'node_modules' ? join(root, 'elsewhere/linked') : join(root, 'node_modules');
+          writeFileSync(join(stampDir, '.kit-stamp'), stampOf(lock, secret, INSTALLED_PACKAGE));
+        },
+      );
+      assert.equal(result.status, 0, result.stderr);
+      assert.deepEqual(result.npm, []);
+      assert.equal(result.stdout, `${NOT_PLAIN_KIT}\n`);
+      assert.equal(result.stdout.includes('secret'), false);
+    });
+  }
 
   test(`${shell}: when node fails, the hook exits 1, runs no npm ci and writes no stamp`, () => {
     const result = runHook(shell, { 'package-lock.json': lockfile(true) }, {}, (root) => {
@@ -370,6 +435,40 @@ for (const shell of SHELLS) {
     assert.equal(result.stdout, '');
   });
 }
+
+// The registry on the command line of npm ci
+
+test('the npm ci of the hook is the command of step 5 of 12.3, with the registry and replace-registry-host flags', () => {
+  assert.equal(COMMAND.includes(`then npm ${NPM_CI} >&2 || exit 1;`), true);
+  assert.equal(COMMAND.split('npm ci --').length, 2);
+  assert.equal(
+    SPEC.includes(`5. If the line differs from \`node_modules/.kit-stamp\`: run \`npm ${NPM_CI} >&2\`.`),
+    true,
+  );
+});
+
+test('npm 10 takes the registry flags of the hook over a registry= line of the user npmrc', () => {
+  inTemp(
+    { 'home/.npmrc': 'registry=http://127.0.0.1:1/\nreplace-registry-host=always\nignore-scripts=false\n' },
+    (root) => {
+      const env = { ...scriptEnv(process.env), HOME: join(root, 'home') };
+      const read = (args: readonly string[]): string =>
+        execFileSync('npm', ['config', 'get', 'registry', 'replace-registry-host', 'ignore-scripts', ...args], {
+          cwd: root,
+          env,
+          encoding: 'utf8',
+        });
+      // Without the flags the user npmrc wins, so the test proves that npm reads it.
+      assert.equal(read([]), 'registry=http://127.0.0.1:1/\nreplace-registry-host=always\nignore-scripts=false\n');
+      // The flags of the command itself, after `npm ci`.
+      const flags = (/ npm ci ([^>]*) >&2/.exec(COMMAND)?.[1] ?? '').split(' ');
+      assert.equal(
+        read(flags),
+        'registry=https://registry.npmjs.org/\nreplace-registry-host=never\nignore-scripts=true\n',
+      );
+    },
+  );
+});
 
 // The Claude Code settings part of `config-shim`
 

@@ -7,7 +7,7 @@ jq -Rse '. == "ignore-scripts=true\nsave-exact=true\n"' .npmrc >/dev/null 2>&1 |
   fail '.npmrc must be exactly the two lines ignore-scripts=true and save-exact=true'
 settings=$(jq -nr '[$ENV | to_entries[] | select(.value != "" and (.key | test("\\Anpm_config_"; "i")))
   | .key[11:] | gsub("_"; "-") | ascii_downcase
-  | select(IN("registry", "proxy", "https-proxy", "strict-ssl", "ignore-scripts", "replace-registry-host"))] | unique | join(", ")')
+  | select(IN("registry", "strict-ssl", "ignore-scripts", "replace-registry-host", "userconfig", "globalconfig"))] | unique | join(", ")')
 [ -z "$settings" ] || fail "unset the npm_config_ variables of the environment that set $settings"
 [ ! -e npm-shrinkwrap.json ] || fail 'remove npm-shrinkwrap.json; package-lock.json is the only lockfile'
 lockfile='length == 1 and (.[0].packages | type == "object" and all(.[]; type == "object"))'
@@ -32,7 +32,10 @@ jq -e '(has("name") | not) and ((.integrity | strings) // "" | startswith("sha51
   fail 'the kit entry must be the kit itself, with a sha512 integrity hash'
 version=$(jq -r '(.version | strings) // ""' <<<"$kit")
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'the kit version must be a plain version X.Y.Z, without a prerelease or build part'
-base="origin/${BASE_REF:-main}"
+ref=${BASE_REF:-main}
+[[ "$ref" =~ ^[A-Za-z0-9._/-]+$ && "$ref" != *..* && "$ref" != -* ]] ||
+  fail 'BASE_REF must be a plain branch name: letters, digits and . _ / -, without .. and not starting with -'
+base="origin/$ref"
 if ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null 2>&1; then
   [ "${GITHUB_ACTIONS:-}" != true ] || fail 'the base branch is not in the clone; fetch it before this step'
   echo "kit-identity: there is no $base here, so the kit version is not compared with the base" >&2

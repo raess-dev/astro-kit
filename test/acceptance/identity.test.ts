@@ -45,7 +45,7 @@ const git = (dir: string, args: readonly string[]): void => {
 
 /**
  * Runs the script of the case with bash, without the npm settings of the environment that the script refuses (10.3):
- * `npm run` sets `npm_config_ignore_scripts`, and a machine behind a proxy sets `npm_config_https_proxy`. npm itself
+ * `npm run` sets `npm_config_ignore_scripts`, and a cloud machine sets `NPM_CONFIG_USERCONFIG`. npm itself
  * keeps them, so `npm install` below still reaches the registry.
  */
 function identity(dir: string): { status: number | null; stdout: string; stderr: string } {

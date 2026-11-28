@@ -465,12 +465,6 @@ const ENV_FORMS: readonly (readonly [string, string])[] = [
   ['npm_config_registry', 'registry'],
   ['NPM_CONFIG_REGISTRY', 'registry'],
   ['Npm_Config_Registry', 'registry'],
-  ['npm_config_proxy', 'proxy'],
-  ['NPM_CONFIG_PROXY', 'proxy'],
-  ['npm_config_https_proxy', 'https-proxy'],
-  ['npm_config_https-proxy', 'https-proxy'],
-  ['NPM_CONFIG_HTTPS_PROXY', 'https-proxy'],
-  ['NPM_CONFIG_HTTPS-PROXY', 'https-proxy'],
   ['npm_config_strict_ssl', 'strict-ssl'],
   ['npm_config_strict-ssl', 'strict-ssl'],
   ['NPM_CONFIG_STRICT_SSL', 'strict-ssl'],
@@ -480,6 +474,29 @@ const ENV_FORMS: readonly (readonly [string, string])[] = [
   ['npm_config_replace_registry_host', 'replace-registry-host'],
   ['npm_config_replace-registry-host', 'replace-registry-host'],
   ['NPM_CONFIG_REPLACE_REGISTRY_HOST', 'replace-registry-host'],
+  ['npm_config_userconfig', 'userconfig'],
+  ['NPM_CONFIG_USERCONFIG', 'userconfig'],
+  ['Npm_Config_UserConfig', 'userconfig'],
+  ['npm_config_globalconfig', 'globalconfig'],
+  ['NPM_CONFIG_GLOBALCONFIG', 'globalconfig'],
+  ['Npm_Config_GlobalConfig', 'globalconfig'],
+];
+
+/**
+ * The proxy settings of npm in the forms that npm reads, and the plain proxy variables: the script allows them all,
+ * because a proxy only tunnels TLS and `strict-ssl` stays on (10.3).
+ */
+const PROXY_FORMS: readonly string[] = [
+  'npm_config_proxy',
+  'NPM_CONFIG_PROXY',
+  'npm_config_https_proxy',
+  'npm_config_https-proxy',
+  'NPM_CONFIG_HTTPS_PROXY',
+  'NPM_CONFIG_HTTPS-PROXY',
+  'HTTPS_PROXY',
+  'https_proxy',
+  'HTTP_PROXY',
+  'http_proxy',
 ];
 
 test('kit-identity fails each refused npm setting of the environment, in every form that npm reads', () => {
@@ -504,14 +521,80 @@ test('kit-identity fails each refused npm setting of the environment, in every f
 });
 
 test('npm 10 reads each form of ENV_FORMS as the setting that kit-identity refuses', () => {
-  inTemp({}, (root) => {
+  // npm keeps `userconfig` and `globalconfig` from `npm config get`, so for them the test reads a setting of the
+  // npmrc that the variable names: `strict-ssl=false`, which the default `true` of npm is not.
+  inTemp({ 'home/.keep': '', 'other.npmrc': 'strict-ssl=false\n' }, (root) => {
     for (const [name, setting] of ENV_FORMS) {
-      const value = setting === 'strict-ssl' || setting === 'ignore-scripts' ? 'false' : 'http://127.0.0.1:1/';
-      const env = { ...scriptEnv(process.env), NPM_CONFIG_USERCONFIG: '/dev/null', [name]: value };
-      const got = execFileSync('npm', ['config', 'get', setting], { cwd: root, env, encoding: 'utf8' }).trim();
-      assert.equal(got, value, name);
+      const npmrc = setting === 'userconfig' || setting === 'globalconfig';
+      const value = npmrc
+        ? join(root, 'other.npmrc')
+        : setting === 'strict-ssl' || setting === 'ignore-scripts'
+          ? 'false'
+          : 'http://127.0.0.1:1/';
+      // A userconfig form takes the place of NPM_CONFIG_USERCONFIG, and the empty HOME has no ~/.npmrc.
+      const user = setting === 'userconfig' ? {} : { NPM_CONFIG_USERCONFIG: '/dev/null' };
+      const env = { ...scriptEnv(process.env), HOME: join(root, 'home'), ...user, [name]: value };
+      const read = npmrc ? 'strict-ssl' : setting;
+      const got = execFileSync('npm', ['config', 'get', read], { cwd: root, env, encoding: 'utf8' }).trim();
+      assert.equal(got, npmrc ? 'false' : value, name);
     }
   });
+});
+
+test('kit-identity passes the npm proxy settings and the plain proxy variables of the environment', () => {
+  for (const name of PROXY_FORMS) {
+    const result = runLock(lockfile('1.2.3'), { [name]: 'http://127.0.0.1:8765/' });
+    assert.equal(result.status, 0, `${name}: ${result.stdout}`);
+    assert.equal(result.stdout, `${KIT} 1.2.3 and every other package from the npm registry\n`, name);
+  }
+  // With every proxy form at once, and a refused setting beside them: only the refused one is named.
+  const all = Object.fromEntries(PROXY_FORMS.map((name) => [name, 'http://127.0.0.1:8765/']));
+  const both = runLock(lockfile('1.2.3'), { ...all, NPM_CONFIG_USERCONFIG: '/tmp/other.npmrc' });
+  assert.equal(both.status, 1);
+  assert.equal(both.stdout, errorLine('unset the npm_config_ variables of the environment that set userconfig'));
+});
+
+test('kit-identity fails a BASE_REF that is not a plain branch name with a fixed line, and keeps its text out', () => {
+  const files = { '.npmrc': NPMRC, 'package-lock.json': lockfile('1.2.3') };
+  const message = errorLine(
+    'BASE_REF must be a plain branch name: letters, digits and . _ / -, without .. and not starting with -',
+  );
+  for (const ref of [
+    'main..evil',
+    '..',
+    '-main',
+    '--output=x',
+    'main\n::error file=a.ts::forged',
+    'main::warning::x',
+    'a b',
+    '$(id)',
+    'main@{1}',
+    'main^',
+    'main\r',
+  ]) {
+    for (const ci of [{}, { GITHUB_ACTIONS: 'true' }]) {
+      const result = runScript({ files, env: { ...ci, BASE_REF: ref } });
+      assert.equal(result.status, 1, JSON.stringify(ref));
+      assert.equal(result.stdout, message, JSON.stringify(ref));
+      assert.equal(result.stderr, '', JSON.stringify(ref));
+    }
+  }
+  // A plain name passes the check: main, a name with a folder, and an empty BASE_REF, which means main.
+  for (const ref of ['main', '', 'release/1.x', 'feature_a-b.c']) {
+    const result = runScript({ files, env: { BASE_REF: ref } });
+    assert.equal(result.status, 0, `${JSON.stringify(ref)}: ${result.stdout}`);
+  }
+});
+
+test('kit-identity fails a kit version on the base that is not plain: the comparison fails closed', () => {
+  for (const version of ['1.2.3-rc.1', '1.2.3+b', 'x']) {
+    const result = runScript({
+      bases: [['main', lockfile(version)]],
+      files: { '.npmrc': NPMRC, 'package-lock.json': lockfile('9.9.9') },
+    });
+    assert.equal(result.status, 1, version);
+    assert.equal(result.stdout, errorLine('the kit version on the base is not a plain version X.Y.Z'), version);
+  }
 });
 
 test('kit-identity fails in GitHub Actions when the base ref is not in the clone, and reads on outside CI', () => {
