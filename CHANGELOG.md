@@ -560,5 +560,10 @@
     JSON, or one without a version id, stops the deploy before it uploads anything.
   - A deploy run that waited behind a newer merge ends green without deploying (`deployed=false`, with a notice):
     the newer run deploys the head of `main`.
-  - The kit install of the protected task carries the one zizmor waiver of the site workflows,
-    `# zizmor: ignore[adhoc-packages]`, on its `run` line.
+  - The protected task runs the kit from the lockfile of the site: `kit-identity.sh`, the `npm ci` install step,
+    `npm ls --all` and the checkout check, then `npx --no astro-kit init --protected`. The kit, its dependencies and
+    its peer `astro` are all pinned with a hash; no package is installed by name, and the site workflows carry no
+    zizmor waiver.
+  - The deploy key reaches only the push step. The checkout holds no key and keeps no credentials; the push step
+    writes the key to a private file for `GIT_SSH_COMMAND`, pins the host key of github.com, pushes to
+    `git@github.com:<repo>.git` and removes the key.

@@ -522,10 +522,8 @@ test('the install steps of 10.1, the protected task of 10.6 and the rehearsal of
     true,
   );
   assert.equal(SPEC.includes(`names the registry on its command line: \`npm ci ${FLAGS}\`.`), true);
-  assert.equal(
-    SPEC.includes(`\`npm install --prefix "$RUNNER_TEMP/kit" ${FLAGS} --save-exact "@raess/astro-kit@$version"\``),
-    true,
-  );
+  // The protected task runs the install steps too: it installs no package by name (10.6).
+  assert.equal(SPEC.includes('npm install --prefix'), false);
   assert.equal(SPEC.includes(`\`npm install --no-save ${FLAGS} @raess/astro-kit@<the released version>\``), true);
   assert.equal(SPEC.includes(`and then \`npm install ${FLAGS}\`, with the flags of the install steps (10.3).`), true);
   // No install of a site in the spec names the registry without the other flags.

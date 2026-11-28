@@ -161,7 +161,7 @@ Version 1 does not do these things. Each line says what a site does instead. A s
 | 1 | An agent cannot change what CI checks. | The push ruleset on the protected files (10.2); the kit from the registry with integrity, never older than on `main` (10.3). |
 | 2 | An agent cannot act as the owner. | Two accounts; the code-owner review that GitHub enforces on the owner files (4.2, 10.2). |
 | 3 | No unknown code is installed. | `ignore-scripts`; the allowlist of direct dependencies (`config-dep-allowlist`); every lockfile entry from the registry under its own name, and `npm ls` (10.3). |
-| 4 | Project code never runs next to a secret. | `ci` and `build` hold no secret and no token that can write. `deploy`, `preview`, `smoke`, `rollback` and `feedback` run the kit and wrangler only: each checks its checkout first, and `preview` and `deploy` check the built config before wrangler reads it (10.1). The protected task runs no project code (10.6). The release job that holds `id-token` runs no site code (11.2). |
+| 4 | Project code never runs next to a secret. | `ci` and `build` hold no secret and no token that can write. `deploy`, `preview`, `smoke`, `rollback` and `feedback` run the kit and wrangler only: each checks its checkout first, and `preview` and `deploy` check the built config before wrangler reads it (10.1). The protected task runs no project code: it installs the lockfile of the site without scripts and runs only the kit, and its deploy key reaches only its push step (10.6). The release job that holds `id-token` runs no site code (11.2). |
 | 5 | The site has no server code but the kit's. | `routes-on-demand`, `config-server` (8). |
 | 6 | A visitor's browser talks only to the site, and to the origins that the owner declared. | The CSP and `origins-third-party`; `origins-gesture` (6.2, 9.4). |
 | 7 | The form cannot be turned against the client. | Body cap, strict fields, rate limits for each address and each form, fixed recipients (9.1). |
@@ -2314,12 +2314,12 @@ Images, fonts, media and style sheets of another origin stay forbidden. Download
 - Env `ASTRO_TELEMETRY_DISABLED: "1"`, `SHA: ${{ github.sha }}`, `REPO: ${{ github.repository }}` and `RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`. A shell step reads them as `$SHA`, `$REPO` and `$RUN`. A value in a YAML `env` or `with` block uses the expression, because YAML does not expand `$SHA`.
 - The file has no template variable. Every site gets the same text, and a step that differs for a forms site reads `astro-kit.json` or `dist` at run time. The builder writes the YAML from this section; the M9 tests check its jobs, names, triggers and pins (14).
 - Every job has its own permissions and a timeout. A step that calls `gh` gets `GH_TOKEN: ${{ github.token }}` through its `env`.
-- Every checkout uses `persist-credentials: false`, except in the `protected` job, whose checkout has the line `persist-credentials: true` (10.6). setup-node uses `node-version-file: .node-version`.
-- **zizmor.** The two workflow files and `dependabot.yml` pass zizmor 1.32.0 with no finding. The one waiver is the `adhoc-packages` finding on the kit install of the protected task (10.6). `kit / scan` does not audit their renderings in `test/site/.github/` yet: a follow-up adds them to its inputs (11.1). Until then the builder runs `zizmor --offline test/site/.github` before each push.
+- Every checkout uses `persist-credentials: false`, the one of the `protected` job too: that job gets its deploy key only in its push step (10.6). setup-node uses `node-version-file: .node-version`.
+- **zizmor.** The two workflow files and `dependabot.yml` pass zizmor 1.32.0 with no finding and no waiver. `kit / scan` does not audit their renderings in `test/site/.github/` yet: a follow-up adds them to its inputs (11.1). Until then the builder runs `zizmor --offline test/site/.github` before each push.
 - **Shell.** `defaults.run.shell: bash` in both files, so every step runs under `bash -eo pipefail`.
 - **Checkouts before an install.** Every checkout that the install steps follow has `fetch-depth: 0`. That fetches every branch, so `origin/main` is in the clone, which `kit-identity.sh` needs in CI (10.3). A later `git fetch` cannot do it: the checkout keeps no credentials.
 - **Install steps.** Where a job installs, it runs these three steps in this order: `bash .github/kit-identity.sh`; `npm ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --replace-registry-host=never --strict-ssl=true --cache "$c"`; `npm ls --all > /dev/null` (10.3). In the second step `c` is a fresh, empty folder from `mktemp -d`, made just before the install and removed just after it, whatever its result, so npm reads no cache but its own empty one (10.3).
-- **The checkout check.** `ci` and `build` run project code, which can change the files on disk before the rules of `astro-kit ci` read them. So each job that holds a secret (`preview`, `deploy`, `rollback`, `smoke` and `feedback`) checks its own fresh checkout again, with bash and jq only, in the step `Check the checkout` right after the install steps and before any step with a secret. No code of the checkout runs before it: `npm ci` runs no script. The step is the exact block below in each of the five jobs.
+- **The checkout check.** `ci` and `build` run project code, which can change the files on disk before the rules of `astro-kit ci` read them. So each job that holds a secret (`preview`, `deploy`, `rollback`, `smoke`, `feedback` and `protected`) checks its own fresh checkout again, with bash and jq only, in the step `Check the checkout` right after the install steps and before any step with a secret. No code of the checkout runs before it: `npm ci` runs no script. The step is the exact block below in each of the six jobs.
   - The direct dependencies of `package.json` are on the list of `config-dep-allowlist` (8). The list is written into the step: the kit's names, and the `features` and `dependencies` of the `astro-kit.json` of `main` (`git show origin/main:astro-kit.json`), an owner file. So a branch cannot widen the list for its own `feedback` job.
   - The checkout holds no `.env*`, `.dev.vars*` or `.wrangler` file or folder, at any depth outside `.git` and `node_modules`.
   - `node_modules/.bin/wrangler` and `node_modules/.bin/astro-kit` resolve to the bins of their own packages, so another package cannot stand in for the command that holds the token.
@@ -2363,7 +2363,7 @@ done
 | `smoke` | | needs deploy; `always() && (github.event_name == 'schedule' \|\| (needs.deploy.result == 'success' && needs.deploy.outputs.deployed == 'true'))` | contents read, issues write; concurrency `deploy-production` after a deploy and `smoke-schedule` in a scheduled run, no cancel (a scheduled run must never wait in the deploy group, where it would replace a waiting deploy run); 10 min | Checkout; the install steps; the checkout check; `npx --no astro-kit smoke "$(jq -r .site astro-kit.json)" $PROBE` with `PROBE` = `--probe` on `47 3 * * 1`, `KIT_PROBE_SECRET` and `KIT_WORKERS_DEV: ${{ vars.KIT_WORKERS_DEV }}`. After a deploy it also gets `KIT_RELEASE_SHA: ${{ github.sha }}`; a scheduled run gets none, so `smoke-release` only checks the shape (8). An empty `KIT_RELEASE_SHA` counts as none. On failure in a scheduled run: the alert step with the title `smoke: production`. On success in a scheduled run: the close step with that title and a `COMMENT` that holds `Passed:` and the run URL, written with expressions. |
 | `rollback` | `deploy / rollback` | needs deploy and smoke; `always() && needs.deploy.outputs.deployed == 'true' && needs.smoke.result == 'failure'` | contents read, issues write; environment `production`; concurrency `deploy-production`, no cancel; 10 min | Checkout; the install steps; the checkout check; the rollback step below (13.3, R7). Then the alert step with the title `rollback: production` and `BODY: Smoke failed after the deploy of ${{ github.sha }}. Production runs the version before it again.` When a step of the job failed (`if: failure()`): the alert step with the title `rollback failed: production` and `BODY: Smoke failed after the deploy of ${{ github.sha }}, and the rollback failed too. Production may run that version.` |
 | `feedback` | | needs ci, so a push to a branch other than `main`; the actor is not `dependabot[bot]` | contents read; 5 min | Without the `KIT_FEEDBACK_TOKEN` secret, print `No KIT_FEEDBACK_TOKEN: feedback stays in KIT-FEEDBACK.md.` and skip. Otherwise: checkout, the install steps, the checkout check, `npx --no astro-kit feedback send` with `KIT_FEEDBACK_TOKEN` and `KIT_FEEDBACK_AUTO_KEY`. An entry leaves the site with the first push that holds it, and `feedback send` skips an id that is sent already (12.6). The checkout check reads the allowlist from the `astro-kit.json` of `main`, because the job holds a secret and runs on the code of the branch: a branch that adds a dependency fails its own `feedback` until the owner merges the setting, and the next push after that sends its entries. |
-| `protected` | `site / protected` | a dispatch on `main` with `protected` true, when `github.actor == vars.KIT_OWNER` | contents read, pull-requests write; environment `owner`; 10 min | The steps of 10.6 |
+| `protected` | `site / protected` | a dispatch on `main` with `protected` true, when `github.actor == vars.KIT_OWNER` | contents read, pull-requests write; environment `owner`; 10 min | Checkout of the branch without a key; the install steps; the checkout check; `npx --no astro-kit init --protected`; the push step, the only step with the deploy key (10.6) |
 
 **Preview steps.** One preview for each branch.
 
@@ -2848,16 +2848,53 @@ The protected files are renderings of the kit: `.github/workflows/site.yml`, `.g
 **Steps of the job `protected`.**
 
 1. Job env `BRANCH: ${{ inputs.branch }}`, which steps 1, 2 and 7 use. Check the input: `$BRANCH` matches `^[A-Za-z0-9._/-]*$`.
-2. `actions/checkout` of that branch (or `main`), with `ssh-key: ${{ secrets.KIT_PROTECTED_KEY }}`, `fetch-depth: 0` and `persist-credentials: true`. This checkout keeps its credentials: the job pushes with them. The line is written out, although `true` is the default of the action: without it zizmor reports `artipacked` (11.1).
-3. setup-node with `node-version-file: .node-version`, then `bash .github/kit-identity.sh`.
-4. Read the kit version from the lockfile. Install only the kit, outside the checkout: `npm install --prefix "$RUNNER_TEMP/kit" --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --replace-registry-host=never --strict-ssl=true --cache "$c" --save-exact "@raess/astro-kit@$version"`, with the flags of the install steps and their fresh, empty cache `c` (10.3).
-   - **The one zizmor waiver.** zizmor reports this install as `adhoc-packages`, a package installed outside a lockfile. The step waives it with a YAML comment on its `run` line: `run: | # zizmor: ignore[adhoc-packages] only the kit, at the lockfile version whose hash kit-identity.sh checked`. zizmor 1.32 reads an ignore comment only as a YAML comment in the span of the finding; a shell comment on the `npm install` line is text of the script, and it does not waive the finding. It is the only waiver of the site workflows, and it holds for these reasons. The task runs the kit only, never project code. The version is the one of the lockfile of the checkout (`main`, or the branch that the owner names), which `kit-identity.sh` checked in step 3: a plain version, never older than on `main`, whose sha512 hash is the hash of the npm registry, read with `npm view` and an empty cache. npm installs it from the pinned registry with strict SSL and an empty private cache, and checks the tarball against that hash. The dependencies of the kit resolve at install time: that is what the waiver accepts.
-5. In the checkout: `node "$RUNNER_TEMP/kit/node_modules/@raess/astro-kit/dist/cli.js" init --protected`. This command reads `astro-kit.json` as data and writes the seven files. No project code runs in this job, and the job never runs `npm ci` in the checkout.
-6. When `git status --porcelain` is empty: print `The protected files are up to date.` and end.
-7. Otherwise run `git config user.name 'github-actions[bot]'` and `git config user.email '41898282+github-actions[bot]@users.noreply.github.com'`, then `git add -A` and `git commit -m 'chore: render the protected files'`.
-   - With a branch: `git push origin "HEAD:$BRANCH"`. The push starts `site / ci` on that branch.
-   - Without a branch: `git push --force origin HEAD:refs/heads/kit/protected`. Then, when `gh pr list --repo "$REPO" --head kit/protected --state open --json number --jq length` prints `0`: `gh pr create --repo "$REPO" --base main --head kit/protected --title 'Render the protected files' --body 'Rendered by the protected task.'` (env `GH_TOKEN`). The push starts `site / ci`.
+2. `actions/checkout` of that branch (or `main`), with `fetch-depth: 0` and `persist-credentials: false`, and no `ssh-key`. This checkout holds no key and keeps no credentials, so no later step but the push step can reach the deploy key. `fetch-depth: 0` brings `origin/main`, which `kit-identity.sh` and the checkout check read.
+3. setup-node with `node-version-file: .node-version`. Then the install steps of 10.1, in their order: `bash .github/kit-identity.sh`, `npm ci` with the flags of the install steps and their fresh, empty cache (10.3), and `npm ls --all > /dev/null`.
+4. The checkout check of 10.1: the direct dependencies against the allowlist read from the `astro-kit.json` of `origin/main`, no `.env*`, `.dev.vars*` or `.wrangler`, and `node_modules/.bin/astro-kit` and `node_modules/.bin/wrangler` resolve to the bins of their own packages.
+5. `npx --no astro-kit init --protected`: the kit of the lockfile, from `node_modules`. This command reads `astro-kit.json` as data and the templates of the kit, and writes the seven files. It loads the kit and its own dependencies (`astro/zod` among them), never a file of the project: no `astro.config.mjs`, no file of `src/`.
+6. The push step (`Push the protected files`), with `GH_TOKEN: ${{ github.token }}` and `KIT_PROTECTED_KEY: ${{ secrets.KIT_PROTECTED_KEY }}` in its `env`. It is the only step of the job that names a secret, and it runs git and gh only. When `git status --porcelain` is empty, it prints `The protected files are up to date.` and ends before it writes the key.
+7. Otherwise it commits as `github-actions[bot]` and pushes over SSH with the deploy key. The key goes into a file in a fresh folder of `mktemp -d`, written with `umask 077`, and the folder is removed when the step ends, whatever its result. `GIT_SSH_COMMAND` names that file and a known hosts file that holds only the SSH host key of github.com, and reads no SSH config and no agent. The push goes to `git@github.com:$REPO.git`, never to `origin`, so the checkout never holds the key or the URL.
+   - With a branch: `git push "$url" "HEAD:$BRANCH"`. The push starts `site / ci` on that branch.
+   - Without a branch: `git push --force "$url" HEAD:refs/heads/kit/protected`. Then, when `gh pr list --repo "$REPO" --head kit/protected --state open --json number --jq length` prints `0`: `gh pr create --repo "$REPO" --base main --head kit/protected --title 'Render the protected files' --body 'Rendered by the protected task.'`. The push starts `site / ci`.
+
+   **The push step.**
+
+   ```sh
+   set -euo pipefail
+   if [ -z "$(git status --porcelain)" ]; then
+     echo 'The protected files are up to date.'
+     exit 0
+   fi
+   git config user.name 'github-actions[bot]'
+   git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+   git add -A
+   git commit -m 'chore: render the protected files'
+   k=$(mktemp -d)
+   trap 'rm -rf "$k"' EXIT
+   umask 077
+   printf '%s\n' "$KIT_PROTECTED_KEY" | sed '/^[[:space:]]*$/d' > "$k/key"
+   echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > "$k/known_hosts"
+   export GIT_SSH_COMMAND="ssh -F /dev/null -i '$k/key' -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o UserKnownHostsFile='$k/known_hosts'"
+   url="git@github.com:$REPO.git"
+   if [ -n "$BRANCH" ]; then
+     git push "$url" "HEAD:$BRANCH"
+   else
+     git push --force "$url" HEAD:refs/heads/kit/protected
+     if [ "$(gh pr list --repo "$REPO" --head kit/protected --state open --json number --jq length)" = 0 ]; then
+       gh pr create --repo "$REPO" --base main --head kit/protected --title 'Render the protected files' --body 'Rendered by the protected task.'
+     fi
+   fi
+   ```
+
 8. The pull request holds protected files. The owner approves it and merges it by hand (10.1).
+
+**Why the lockfile of the branch is safe here.**
+
+- **Every package is pinned.** `npm ci` installs exactly the lockfile, and `kit-identity.sh` has checked each entry first: a registry tarball under its own name and version, with an integrity hash; the kit hash equals the hash of the registry; the kit is not older than on `main` (10.3). npm checks each tarball against its hash. So the kit, its dependencies and its peer `astro` are the ones that the lockfile pins, and no package resolves at run time.
+- **The branch picks only published versions.** An entry from another host, a linked or aliased entry, or a tarball under another name fails `kit-identity.sh` before npm runs. What a branch can choose is a published registry version of a package that the allowlist of `main` admits.
+- **No project code runs.** `npm ci` runs no script (`--ignore-scripts`, and `.npmrc`). The checkout check ties `.bin/astro-kit` to the kit before `npx` runs it. `init --protected` reads `astro-kit.json` and the templates of the kit as data.
+- **Only the owner starts it.** The job runs on a dispatch on `main` by `vars.KIT_OWNER` only, and waits for the owner's approval of the `owner` environment, whose secret is the key.
+- **The key reaches only the push step.** The checkout has no key and keeps no credentials, so the install, the checks and the kit run in steps that never hold it. The push step runs git and gh, writes the key to a private file for the push alone and removes it.
 
 **How an agent asks for it.** A branch with stale protected files fails `config-shim` or `config-wrangler`. The hint says: `The protected files do not match the settings. Say so in the pull request: the owner starts the protected task for this branch.`
 

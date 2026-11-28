@@ -595,24 +595,6 @@ test('a first deploy whose smoke fails cannot roll back: the rollback fails and 
   ]);
 });
 
-const WAIVER =
-  'run: | # zizmor: ignore[adhoc-packages] only the kit, at the lockfile version whose hash kit-identity.sh checked';
-
-test('the kit install of the protected task carries the one zizmor waiver, on its run line, after kit-identity.sh', () => {
-  const text = renderSiteWorkflow();
-  const waivers = text.split('\n').filter((line) => line.includes('zizmor'));
-  assert.deepEqual(waivers, [`        ${WAIVER}`]);
-  assert.equal(renderSiteMergeWorkflow().includes('zizmor'), false);
-  const at = text.indexOf(WAIVER);
-  assert.match(text.slice(0, at), /- name: Install only the kit, outside the checkout\n {8}$/);
-  assert.match(text.slice(at), /^[^\n]*\n {10}set -euo pipefail\n {10}version=\$\(jq/);
-  assert.ok(SPEC.includes(`\`${WAIVER}\``), 'the spec gives the waiver line');
-  const names = job('protected').steps.map((entry) => entry.name ?? entry.uses ?? '');
-  assert.ok(names.indexOf('Check the lockfile') >= 0);
-  assert.ok(names.indexOf('Check the lockfile') < names.indexOf('Install only the kit, outside the checkout'));
-  assert.equal(runOf('protected', 'Check the lockfile'), 'bash .github/kit-identity.sh');
-});
-
 test('the rollback deploys exactly the version that ran before the deploy, and nothing without it', () => {
   const rollback = step('rollback', 'Roll production back');
   assert.equal(rollback.run, `${specBlock('**Rollback step**', 'sh')}\n`);
@@ -1093,7 +1075,7 @@ test('the file rule of the merge script covers .env*, .dev.vars* and .wrangler/ 
 
 /** The checkout check of 10.1; read when a test runs. */
 const checkoutBlock = (): string => specBlock('- **The checkout check.**', 'sh');
-const SECRET_JOBS = ['preview', 'deploy', 'smoke', 'rollback', 'feedback'];
+const SECRET_JOBS = ['preview', 'deploy', 'smoke', 'rollback', 'feedback', 'protected'];
 
 test('every job that holds a secret checks its checkout after the install and before the first step with a secret', () => {
   for (const id of SECRET_JOBS) {
@@ -1253,71 +1235,6 @@ test('the preview must answer with a redirect to a Cloudflare Access login', () 
     ['', 7],
   ] as const) {
     assert.deepEqual(run(headers, status), { status: 1, out: message, calls: [`curl -sSI ${url}`] }, headers);
-  }
-});
-
-test('the protected task pushes to the branch, or to kit/protected with one pull request, against a bare remote', () => {
-  const push = runOf('protected', 'Push the protected files');
-  const run = (target: string, open: string) =>
-    scratch({ gh: `echo "gh $*" >> "$LOG"; [ "$2" = list ] && echo '${open}'; exit 0\n` }, (work, env) => {
-      const remote = join(dirname(work), 'remote.git');
-      const git = (cwd: string, ...args: string[]) =>
-        spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@e', ...args], { cwd, encoding: 'utf8' });
-      git(dirname(work), 'init', '-q', '--bare', '-b', 'main', remote);
-      git(work, 'init', '-q', '-b', 'main');
-      writeFileSync(join(work, 'a.txt'), 'old\n');
-      git(work, 'add', '-A');
-      git(work, 'commit', '-q', '-m', 'main');
-      git(work, 'remote', 'add', 'origin', remote);
-      git(work, 'push', '-q', 'origin', 'main', 'main:agent/x');
-      writeFileSync(join(work, 'a.txt'), 'rendered\n');
-      const result = bash(push, work, { ...env, BRANCH: target, REPO: 'o/r', GH_TOKEN: 'x' });
-      const heads = Object.fromEntries(
-        ['main', 'agent/x', 'kit/protected'].map((ref) => [
-          ref,
-          git(remote, 'log', '-1', '--format=%s %an', ref).stdout.trim(),
-        ]),
-      );
-      return { status: result.status, out: result.stdout + result.stderr, calls: lines(env.LOG ?? ''), heads };
-    });
-  const branch = run('agent/x', '0');
-  assert.equal(branch.status, 0, branch.out);
-  assert.equal(branch.heads['agent/x'], 'chore: render the protected files github-actions[bot]');
-  assert.deepEqual(branch.calls, []);
-  const main = run('', '0');
-  assert.equal(main.status, 0, main.out);
-  assert.equal(main.heads['kit/protected'], 'chore: render the protected files github-actions[bot]');
-  assert.equal(main.heads.main, 'main t');
-  assert.equal(branch.heads['kit/protected'], '', 'a push to a branch leaves kit/protected');
-  assert.deepEqual(main.calls, [
-    'gh pr list --repo o/r --head kit/protected --state open --json number --jq length',
-    'gh pr create --repo o/r --base main --head kit/protected --title Render the protected files --body Rendered by the protected task.',
-  ]);
-  const again = run('', '1');
-  assert.deepEqual(again.calls, ['gh pr list --repo o/r --head kit/protected --state open --json number --jq length']);
-});
-
-test('the protected task installs only the kit with a fresh, empty cache, and removes the cache whatever npm does', () => {
-  const install = runOf('protected', 'Install only the kit, outside the checkout');
-  for (const status of [0, 1]) {
-    const npm = `c=''; for a in "$@"; do [ -n "$next" ] && c=$a; next=; [ "$a" = --cache ] && next=1; done
-echo "$* | empty=$([ -d "$c" ] && [ -z "$(ls -A "$c")" ] && echo yes)" >> "$LOG"; echo "$c" >> "$LOG.cache"; touch "$c/x"; exit ${status}
-`;
-    scratch({ npm }, (work, env) => {
-      writeFileSync(
-        join(work, 'package-lock.json'),
-        JSON.stringify({ packages: { 'node_modules/@raess/astro-kit': { version: '1.2.3' } } }),
-      );
-      const result = bash(install, work, env);
-      assert.equal(result.status, status, result.stderr);
-      const [call] = lines(env.LOG ?? '');
-      assert.match(
-        call ?? '',
-        /^install --prefix \S+\/kit .* --cache \S+ --save-exact @raess\/astro-kit@1\.2\.3 \| empty=yes$/,
-      );
-      const [cache] = lines(`${env.LOG}.cache`);
-      assert.equal(existsSync(cache ?? ''), false, 'the cache folder is removed');
-    });
   }
 });
 

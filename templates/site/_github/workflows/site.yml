@@ -767,8 +767,9 @@ jobs:
         run: npx --no astro-kit feedback send
 
   # The owner's task (10.6): it renders the protected files with the kit of the lockfile and pushes them with the
-  # deploy key, which passes the push ruleset. No project code runs here: npm installs only the kit, outside the
-  # checkout, and init reads astro-kit.json as data.
+  # deploy key, which passes the push ruleset. It installs the lockfile of the checkout like every other job, and no
+  # project code runs here: npm ci runs no script, and init reads astro-kit.json as data. Only the push step gets the
+  # deploy key; the checkout keeps no credentials, so npm and the kit never see it.
   protected:
     name: site / protected
     if: >-
@@ -790,28 +791,46 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.branch || 'main' }}
-          ssh-key: ${{ secrets.KIT_PROTECTED_KEY }}
           fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
       - name: Check the lockfile
         run: bash .github/kit-identity.sh
-      - name: Install only the kit, outside the checkout
-        run: | # zizmor: ignore[adhoc-packages] only the kit, at the lockfile version whose hash kit-identity.sh checked
-          set -euo pipefail
-          version=$(jq -r '.packages["node_modules/@raess/astro-kit"].version' package-lock.json)
+      - name: Install with an empty private cache
+        run: |
           c=$(mktemp -d)
           st=0
-          npm install --prefix "$RUNNER_TEMP/kit" --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --replace-registry-host=never --strict-ssl=true --cache "$c" --save-exact "@raess/astro-kit@$version" || st=$?
+          npm ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --replace-registry-host=never --strict-ssl=true --cache "$c" || st=$?
           rm -rf "$c"
           exit "$st"
+      - name: Check the installed tree
+        run: npm ls --all > /dev/null
+      - name: Check the checkout
+        run: |
+          set -euo pipefail
+          s=$(git show origin/main:astro-kit.json)
+          jq -e --argjson s "$s" '
+            (["astro", "@raess/astro-kit", "wrangler"]
+              + (if $s.features.forms == true then ["@astrojs/cloudflare"] else [] end)
+              + (if $s.features.islands == true then ["@astrojs/solid-js", "solid-js", "eslint", "eslint-plugin-solid", "typescript-eslint"] else [] end)
+              + ($s.dependencies // [])) as $ok
+            | [.dependencies, .devDependencies, .optionalDependencies, .peerDependencies | (. // {}) | keys[]]
+            | all(. as $n | $ok | index($n) != null)' package.json >/dev/null 2>&1 ||
+            { echo '::error::package.json has a direct dependency that is not on the allowlist of the kit'; exit 1; }
+          found=$(find . \( -path ./.git -o -path ./node_modules \) -prune -o \( -name '.env*' -o -name '.dev.vars*' -o -name .wrangler \) -print)
+          [ -z "$found" ] || { echo '::error::the checkout holds a .env, .dev.vars or .wrangler file, which wrangler would read'; exit 1; }
+          for bin in wrangler:wrangler/bin/wrangler.js astro-kit:@raess/astro-kit/dist/cli.js; do
+            [ "$(readlink -f "node_modules/.bin/${bin%%:*}")" = "$(readlink -f "node_modules/${bin#*:}")" ] ||
+              { echo "::error::node_modules/.bin/${bin%%:*} is not the bin of its own package"; exit 1; }
+          done
       - name: Render the protected files
-        run: node "$RUNNER_TEMP/kit/node_modules/@raess/astro-kit/dist/cli.js" init --protected
+        run: npx --no astro-kit init --protected
       - name: Push the protected files
         env:
           GH_TOKEN: ${{ github.token }}
+          KIT_PROTECTED_KEY: ${{ secrets.KIT_PROTECTED_KEY }}
         run: |
           set -euo pipefail
           if [ -z "$(git status --porcelain)" ]; then
@@ -822,10 +841,17 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git commit -m 'chore: render the protected files'
+          k=$(mktemp -d)
+          trap 'rm -rf "$k"' EXIT
+          umask 077
+          printf '%s\n' "$KIT_PROTECTED_KEY" | sed '/^[[:space:]]*$/d' > "$k/key"
+          echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > "$k/known_hosts"
+          export GIT_SSH_COMMAND="ssh -F /dev/null -i '$k/key' -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o UserKnownHostsFile='$k/known_hosts'"
+          url="git@github.com:$REPO.git"
           if [ -n "$BRANCH" ]; then
-            git push origin "HEAD:$BRANCH"
+            git push "$url" "HEAD:$BRANCH"
           else
-            git push --force origin HEAD:refs/heads/kit/protected
+            git push --force "$url" HEAD:refs/heads/kit/protected
             if [ "$(gh pr list --repo "$REPO" --head kit/protected --state open --json number --jq length)" = 0 ]; then
               gh pr create --repo "$REPO" --base main --head kit/protected --title 'Render the protected files' --body 'Rendered by the protected task.'
             fi

@@ -356,21 +356,20 @@ const allSteps = (): { id: string; step: Step }[] =>
     found.steps.map((entry) => ({ id, step: entry })),
   );
 
-test('every checkout drops its credentials but the one of the protected task, and setup-node reads .node-version', () => {
+test('every checkout drops its credentials, the one of the protected task too, and setup-node reads .node-version', () => {
   const checkouts = allSteps().filter(({ step: entry }) => entry.uses?.startsWith('actions/checkout@'));
   assert.equal(checkouts.length, 8);
   for (const { id, step: entry } of checkouts) {
-    assert.equal(entry.with?.['persist-credentials'], id === 'protected', id);
+    assert.equal(entry.with?.['persist-credentials'], false, id);
     // fetch-depth 0 brings origin/main, which kit-identity.sh needs in CI (10.3).
     assert.equal(entry.with?.['fetch-depth'], 0, id);
   }
-  assert.equal(SITE_TEXT.split('\n').filter((line) => line.trim() === 'persist-credentials: true').length, 1);
+  assert.equal(SITE_TEXT.split('\n').filter((line) => line.trim() === 'persist-credentials: true').length, 0);
   assert.deepEqual(job('preview').steps[0]?.with, { ref: 'main', 'fetch-depth': 0, 'persist-credentials': false });
   assert.deepEqual(job('protected').steps[1]?.with, {
     ref: expression("inputs.branch || 'main'"),
-    'ssh-key': expression('secrets.KIT_PROTECTED_KEY'),
     'fetch-depth': 0,
-    'persist-credentials': true,
+    'persist-credentials': false,
   });
   const nodes = allSteps().filter(({ step: entry }) => entry.uses?.startsWith('actions/setup-node@'));
   assert.equal(nodes.length, 8);
@@ -396,14 +395,15 @@ test('no run script holds an expression, and a secret is only in the env of the 
     'feedback/The feedback token/HAS_TOKEN',
     'feedback/Send the feedback/KIT_FEEDBACK_TOKEN',
     'feedback/Send the feedback/KIT_FEEDBACK_AUTO_KEY',
+    'protected/Push the protected files/KIT_PROTECTED_KEY',
   ]);
-  // The only other secret is the deploy key of the protected checkout; no job env and no workflow env holds one.
+  // No other line names a secret; no job env and no workflow env holds one.
   const others = [SITE_TEXT, MERGE_TEXT]
     .flatMap((text) => text.split('\n'))
     .filter((line) => line.includes('secrets.') && !/^\s+[A-Z_]+: \$\{\{ secrets\.[A-Z_]+( != '')? \}\}$/.test(line));
   assert.deepEqual(
     others.map((line) => line.trim()),
-    [`ssh-key: ${expression('secrets.KIT_PROTECTED_KEY')}`],
+    [],
   );
   for (const found of Object.values({ ...SITE.jobs, ...MERGE.jobs })) {
     assert.doesNotMatch(JSON.stringify(found.env ?? {}), /secrets\.|github\.token/);
@@ -443,7 +443,6 @@ test('every job that installs runs the three install steps of 10.1 in order, aft
     const at = found.steps.findIndex((entry) => entry.run === IDENTITY);
     assert.equal(found.steps[at - 2]?.uses?.startsWith('actions/checkout@'), true, id);
     assert.equal(found.steps[at - 1]?.uses?.startsWith('actions/setup-node@'), true, id);
-    if (id === 'protected') continue;
     assert.equal(found.steps[at + 1]?.run, INSTALL, id);
     assert.equal(found.steps[at + 2]?.run, TREE, id);
     assert.equal(found.steps.filter((entry) => entry.run?.includes('npm ci')).length, 1, id);
@@ -455,13 +454,8 @@ test('every job that installs runs the three install steps of 10.1 in order, aft
     ),
     true,
   );
-  // The protected task installs only the kit, outside the checkout, with the same flags and a fresh cache (10.6).
-  const kit = runOf('protected', 'Install only the kit, outside the checkout');
-  assert.match(
-    kit,
-    /npm install --prefix "\$RUNNER_TEMP\/kit" --ignore-scripts --no-audit --no-fund --registry=https:\/\/registry\.npmjs\.org\/ --replace-registry-host=never --strict-ssl=true --cache "\$c" --save-exact "@raess\/astro-kit@\$version"/,
-  );
-  assert.doesNotMatch(JSON.stringify(job('protected')), /npm ci/);
+  // The protected task installs the lockfile like every other job, and no package by name (10.6).
+  assert.doesNotMatch(JSON.stringify(job('protected')), /npm install/);
 });
 
 /** A folder with fake bins first on the path. Each bin is a bash script. */
@@ -1012,7 +1006,7 @@ test('the preview alias is b- and 10 hex characters of the branch, the same for 
 
 // The protected task (10.6)
 
-test('the protected job runs the steps of 10.6 in order, and pushes with the deploy key', () => {
+test('the protected job runs the steps of 10.6 in order, and pushes with the deploy key of its push step', () => {
   const found = job('protected');
   assert.deepEqual(found.env, { BRANCH: expression('inputs.branch') });
   assert.deepEqual(
@@ -1022,22 +1016,21 @@ test('the protected job runs the steps of 10.6 in order, and pushes with the dep
       'actions/checkout',
       'actions/setup-node',
       'Check the lockfile',
-      'Install only the kit, outside the checkout',
+      'Install with an empty private cache',
+      'Check the installed tree',
+      'Check the checkout',
       'Render the protected files',
       'Push the protected files',
     ],
   );
-  assert.equal(
-    runOf('protected', 'Render the protected files'),
-    'node "$RUNNER_TEMP/kit/node_modules/@raess/astro-kit/dist/cli.js" init --protected',
-  );
+  assert.equal(runOf('protected', 'Render the protected files'), 'npx --no astro-kit init --protected');
   const push = runOf('protected', 'Push the protected files');
   for (const line of [
     "git config user.name 'github-actions[bot]'",
     "git config user.email '41898282+github-actions[bot]@users.noreply.github.com'",
     "git commit -m 'chore: render the protected files'",
-    'git push origin "HEAD:$BRANCH"',
-    'git push --force origin HEAD:refs/heads/kit/protected',
+    'git push "$url" "HEAD:$BRANCH"',
+    'git push --force "$url" HEAD:refs/heads/kit/protected',
   ]) {
     assert.equal(push.includes(line), true, line);
   }
