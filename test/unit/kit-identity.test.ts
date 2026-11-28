@@ -19,7 +19,15 @@ import {
   renderKitIdentity,
   renderNpmrc,
 } from '../../src/shims.ts';
-import { type Files, inTemp, json, REFUSED_NPM_SETTINGS, scriptEnv } from './fixtures.ts';
+import {
+  type Files,
+  inTemp,
+  json,
+  MACHINE_NPM_SETTINGS,
+  REFUSED_NPM_SETTINGS,
+  scriptEnv,
+  withoutNpmConfig,
+} from './fixtures.ts';
 import { SPEC, specBlock } from './spec.ts';
 
 const TEMPLATE = fileURLToPath(new URL('../../templates/site/_github/kit-identity.sh', import.meta.url));
@@ -53,6 +61,20 @@ test('config-kit-identity is a ci rule of the config group, and the script links
   assert.equal(rule.level, 'error');
   assert.equal(rule.waivable, false);
   assert.equal(renderKitIdentity().includes(`(rule: ${RULE_URL})`), true);
+});
+
+test('the standard of config-kit-identity names the refused settings, the trusted machine and the flags of npm ci', () => {
+  const { standard } = getRule(RULE);
+  const refused =
+    'sets the registry, `strict-ssl`, `ignore-scripts` or `replace-registry-host` (a proxy and the `npmrc` files of the machine are allowed)';
+  assert.equal(standard.includes(refused), true);
+  assert.equal(standard.includes('userconfig'), false);
+  assert.equal(
+    standard.includes(
+      '`npm ci --registry=https://registry.npmjs.org/ --replace-registry-host=never --strict-ssl=true`',
+    ),
+    true,
+  );
 });
 
 // The protected files part of `config-shim`
@@ -474,6 +496,13 @@ const ENV_FORMS: readonly (readonly [string, string])[] = [
   ['npm_config_replace_registry_host', 'replace-registry-host'],
   ['npm_config_replace-registry-host', 'replace-registry-host'],
   ['NPM_CONFIG_REPLACE_REGISTRY_HOST', 'replace-registry-host'],
+];
+
+/**
+ * Every form of the npmrc settings of the machine that npm 10 reads. The script allows them: the machine belongs to
+ * whoever runs it, and the flags of the install win over every npmrc (10.3).
+ */
+const MACHINE_FORMS: readonly (readonly [string, string])[] = [
   ['npm_config_userconfig', 'userconfig'],
   ['NPM_CONFIG_USERCONFIG', 'userconfig'],
   ['Npm_Config_UserConfig', 'userconfig'],
@@ -521,22 +550,47 @@ test('kit-identity fails each refused npm setting of the environment, in every f
 });
 
 test('npm 10 reads each form of ENV_FORMS as the setting that kit-identity refuses', () => {
-  // npm keeps `userconfig` and `globalconfig` from `npm config get`, so for them the test reads a setting of the
-  // npmrc that the variable names: `strict-ssl=false`, which the default `true` of npm is not.
-  inTemp({ 'home/.keep': '', 'other.npmrc': 'strict-ssl=false\n' }, (root) => {
+  inTemp({ 'home/.keep': '' }, (root) => {
     for (const [name, setting] of ENV_FORMS) {
-      const npmrc = setting === 'userconfig' || setting === 'globalconfig';
-      const value = npmrc
-        ? join(root, 'other.npmrc')
-        : setting === 'strict-ssl' || setting === 'ignore-scripts'
-          ? 'false'
-          : 'http://127.0.0.1:1/';
+      const value = setting === 'strict-ssl' || setting === 'ignore-scripts' ? 'false' : 'http://127.0.0.1:1/';
+      // No npm_config_ variable of the caller, and no npmrc of the machine: the empty HOME has no ~/.npmrc.
+      const env = { ...withoutNpmConfig(process.env), HOME: join(root, 'home'), NPM_CONFIG_USERCONFIG: '/dev/null' };
+      const got = execFileSync('npm', ['config', 'get', setting], {
+        cwd: root,
+        env: { ...env, [name]: value },
+        encoding: 'utf8',
+      }).trim();
+      assert.equal(got, value, name);
+    }
+  });
+});
+
+test('kit-identity passes the npmrc settings of the machine, in every form that npm reads', () => {
+  assert.deepEqual([...new Set(MACHINE_FORMS.map(([, setting]) => setting))], MACHINE_NPM_SETTINGS);
+  for (const [name] of MACHINE_FORMS) {
+    const result = runLock(lockfile('1.2.3'), { [name]: '/root/.npmrc' });
+    assert.equal(result.status, 0, `${name}: ${result.stdout}`);
+    assert.equal(result.stdout, `${KIT} 1.2.3 and every other package from the npm registry\n`, name);
+  }
+  // A cloud machine sets NPM_CONFIG_USERCONFIG to a file that need not exist, and npm run sets both: all pass.
+  const all = Object.fromEntries(MACHINE_FORMS.map(([name]) => [name, '/root/.npmrc']));
+  assert.equal(runLock(lockfile('1.2.3'), all).status, 0);
+});
+
+test('npm 10 reads each form of MACHINE_FORMS as an npmrc of the machine', () => {
+  // npm keeps `userconfig` and `globalconfig` from `npm config get`, so the test reads a setting of the npmrc that
+  // the variable names: `strict-ssl=false`, which the default `true` of npm is not.
+  inTemp({ 'home/.keep': '', 'other.npmrc': 'strict-ssl=false\n' }, (root) => {
+    for (const [name, setting] of MACHINE_FORMS) {
       // A userconfig form takes the place of NPM_CONFIG_USERCONFIG, and the empty HOME has no ~/.npmrc.
       const user = setting === 'userconfig' ? {} : { NPM_CONFIG_USERCONFIG: '/dev/null' };
-      const env = { ...scriptEnv(process.env), HOME: join(root, 'home'), ...user, [name]: value };
-      const read = npmrc ? 'strict-ssl' : setting;
-      const got = execFileSync('npm', ['config', 'get', read], { cwd: root, env, encoding: 'utf8' }).trim();
-      assert.equal(got, npmrc ? 'false' : value, name);
+      const env = { ...withoutNpmConfig(process.env), HOME: join(root, 'home'), ...user };
+      const got = execFileSync('npm', ['config', 'get', 'strict-ssl'], {
+        cwd: root,
+        env: { ...env, [name]: join(root, 'other.npmrc') },
+        encoding: 'utf8',
+      }).trim();
+      assert.equal(got, 'false', name);
     }
   });
 });
@@ -549,9 +603,9 @@ test('kit-identity passes the npm proxy settings and the plain proxy variables o
   }
   // With every proxy form at once, and a refused setting beside them: only the refused one is named.
   const all = Object.fromEntries(PROXY_FORMS.map((name) => [name, 'http://127.0.0.1:8765/']));
-  const both = runLock(lockfile('1.2.3'), { ...all, NPM_CONFIG_USERCONFIG: '/tmp/other.npmrc' });
+  const both = runLock(lockfile('1.2.3'), { ...all, NPM_CONFIG_REGISTRY: 'http://127.0.0.1:8765/' });
   assert.equal(both.status, 1);
-  assert.equal(both.stdout, errorLine('unset the npm_config_ variables of the environment that set userconfig'));
+  assert.equal(both.stdout, errorLine('unset the npm_config_ variables of the environment that set registry'));
 });
 
 test('kit-identity fails a BASE_REF that is not a plain branch name with a fixed line, and keeps its text out', () => {

@@ -19,7 +19,7 @@ import {
   renderKitIdentity,
   renderNpmrc,
 } from '../../src/shims.ts';
-import { type Files, inTemp, json, scriptEnv } from './fixtures.ts';
+import { type Files, inTemp, json, scriptEnv, withoutNpmConfig } from './fixtures.ts';
 import { SPEC, specBlock } from './spec.ts';
 
 const SETTINGS = readFileSync(
@@ -135,11 +135,14 @@ printf '{"name":"@raess/astro-kit"}\\n' > ${KIT_PACKAGE}
 `;
 
 /**
- * The arguments of the one npm call of the hook (step 5 of 12.3): the registry on the command line, so that no npmrc
- * moves the download host.
+ * The flags of every install of a site (10.1, 10.3): on the command line, so that no npmrc of the machine moves the
+ * download host, runs a script or turns the TLS check off.
  */
-const NPM_CI =
-  'ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --replace-registry-host=never';
+const FLAGS =
+  '--ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --replace-registry-host=never --strict-ssl=true';
+
+/** The arguments of the one npm call of the hook (step 5 of 12.3). */
+const NPM_CI = `ci ${FLAGS}`;
 
 const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
 
@@ -384,15 +387,17 @@ for (const shell of SHELLS) {
     assert.equal(result.stdout, 'The installed INDEX.md\n');
   });
 
-  test(`${shell}: with NPM_CONFIG_USERCONFIG set, kit-identity fails and nothing is installed`, () => {
+  test(`${shell}: with NPM_CONFIG_USERCONFIG and NPM_CONFIG_GLOBALCONFIG set, the hook installs (10.3)`, () => {
+    // A cloud machine sets NPM_CONFIG_USERCONFIG to a file that does not exist: the npmrc files of the machine are
+    // trusted, and the flags of npm ci win over them.
     const result = runHook(
       shell,
       { 'package-lock.json': lockfile(true) },
-      { NPM_CONFIG_USERCONFIG: '/tmp/other.npmrc' },
+      { NPM_CONFIG_USERCONFIG: '/root/.npmrc', NPM_CONFIG_GLOBALCONFIG: '/tmp/other.npmrc' },
     );
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.stdout, `${IDENTITY_FAILED}\n`);
-    assert.deepEqual(result.npm, []);
+    assert.deepEqual(result.npm, [NPM_CI]);
+    assert.equal(result.stdout, 'The installed INDEX.md\n');
   });
 
   // A link at a parent folder of the kit: the check fails closed (step 6 of 12.3).
@@ -438,7 +443,7 @@ for (const shell of SHELLS) {
 
 // The registry on the command line of npm ci
 
-test('the npm ci of the hook is the command of step 5 of 12.3, with the registry and replace-registry-host flags', () => {
+test('the npm ci of the hook is the command of step 5 of 12.3, with the registry, host and strict-ssl flags', () => {
   assert.equal(COMMAND.includes(`then npm ${NPM_CI} >&2 || exit 1;`), true);
   assert.equal(COMMAND.split('npm ci --').length, 2);
   assert.equal(
@@ -447,27 +452,64 @@ test('the npm ci of the hook is the command of step 5 of 12.3, with the registry
   );
 });
 
-test('npm 10 takes the registry flags of the hook over a registry= line of the user npmrc', () => {
-  inTemp(
-    { 'home/.npmrc': 'registry=http://127.0.0.1:1/\nreplace-registry-host=always\nignore-scripts=false\n' },
-    (root) => {
-      const env = { ...scriptEnv(process.env), HOME: join(root, 'home') };
+test('the install steps of 10.1, the protected task of 10.6 and the rehearsal of 13.3 use the flags of the hook', () => {
+  assert.equal(
+    SPEC.includes(`\`bash .github/kit-identity.sh\`; \`npm ci ${FLAGS}\`; \`npm ls --all > /dev/null\``),
+    true,
+  );
+  assert.equal(SPEC.includes(`names the registry on its command line: \`npm ci ${FLAGS}\`.`), true);
+  assert.equal(
+    SPEC.includes(`\`npm install --prefix "$RUNNER_TEMP/kit" ${FLAGS} --save-exact "@raess/astro-kit@$version"\``),
+    true,
+  );
+  assert.equal(SPEC.includes(`\`npm install --no-save ${FLAGS} @raess/astro-kit@<the released version>\``), true);
+  assert.equal(SPEC.includes(`and then \`npm install ${FLAGS}\`, with the flags of the install steps (10.3).`), true);
+  // No install of a site in the spec names the registry without the other flags.
+  const pinned = '--registry=https://registry.npmjs.org/ --replace-registry-host=never';
+  assert.equal(
+    SPEC.split(`${pinned} --strict-ssl=true`).length,
+    SPEC.split('--registry=https://registry.npmjs.org/').length,
+  );
+});
+
+test('10.3 says that ca, cafile, prefix and the npmrc files of the machine are not checked', () => {
+  assert.equal(
+    SPEC.includes(
+      '`ca`, `cafile` and `prefix`, `userconfig` and `globalconfig`, and the user and global `npmrc` are not checked: they belong to the machine.',
+    ),
+    true,
+  );
+});
+
+/** The npmrc of a machine that tries every setting the flags of the hook pin. */
+const HOSTILE_NPMRC =
+  'registry=http://127.0.0.1:1/\nreplace-registry-host=always\nignore-scripts=false\nstrict-ssl=false\n';
+
+test('npm 10 takes the flags of the hook over the user npmrc, a userconfig and a globalconfig of the machine', () => {
+  inTemp({ 'home/.npmrc': HOSTILE_NPMRC, 'user.npmrc': HOSTILE_NPMRC, 'global.npmrc': HOSTILE_NPMRC }, (root) => {
+    const keys = ['registry', 'replace-registry-host', 'ignore-scripts', 'strict-ssl'];
+    // No npm_config_ variable of the caller: `npm test` sets npm_config_userconfig, and a cloud machine sets
+    // NPM_CONFIG_USERCONFIG. npm reads nothing from the network for `npm config get`.
+    const base = { ...withoutNpmConfig(process.env), HOME: join(root, 'home') };
+    const machines: readonly NodeJS.ProcessEnv[] = [
+      base,
+      { ...base, HOME: join(root, 'elsewhere'), NPM_CONFIG_USERCONFIG: join(root, 'user.npmrc') },
+      { ...base, HOME: join(root, 'elsewhere'), NPM_CONFIG_GLOBALCONFIG: join(root, 'global.npmrc') },
+    ];
+    // The flags of the command itself, after `npm ci`.
+    const flags = (/ npm ci ([^>]*) >&2/.exec(COMMAND)?.[1] ?? '').split(' ');
+    assert.deepEqual(flags, FLAGS.split(' '));
+    for (const env of machines) {
       const read = (args: readonly string[]): string =>
-        execFileSync('npm', ['config', 'get', 'registry', 'replace-registry-host', 'ignore-scripts', ...args], {
-          cwd: root,
-          env,
-          encoding: 'utf8',
-        });
-      // Without the flags the user npmrc wins, so the test proves that npm reads it.
-      assert.equal(read([]), 'registry=http://127.0.0.1:1/\nreplace-registry-host=always\nignore-scripts=false\n');
-      // The flags of the command itself, after `npm ci`.
-      const flags = (/ npm ci ([^>]*) >&2/.exec(COMMAND)?.[1] ?? '').split(' ');
+        execFileSync('npm', ['config', 'get', ...keys, ...args], { cwd: root, env, encoding: 'utf8' });
+      // Without the flags the npmrc of the machine wins, so the test proves that npm reads it.
+      assert.equal(read([]), HOSTILE_NPMRC);
       assert.equal(
         read(flags),
-        'registry=https://registry.npmjs.org/\nreplace-registry-host=never\nignore-scripts=true\n',
+        'registry=https://registry.npmjs.org/\nreplace-registry-host=never\nignore-scripts=true\nstrict-ssl=true\n',
       );
-    },
-  );
+    }
+  });
 });
 
 // The Claude Code settings part of `config-shim`

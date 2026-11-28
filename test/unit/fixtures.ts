@@ -165,15 +165,19 @@ export const REFUSED_NPM_SETTINGS: readonly string[] = [
   'strict-ssl',
   'ignore-scripts',
   'replace-registry-host',
-  'userconfig',
-  'globalconfig',
 ];
+
+/**
+ * The npm settings of the machine that `kit-identity.sh` does not check (10.3): they point npm at the npmrc files of
+ * the machine, which the flags of the install win over.
+ */
+export const MACHINE_NPM_SETTINGS: readonly string[] = ['userconfig', 'globalconfig'];
 
 /**
  * The environment without the variables that `kit-identity.sh` refuses: `npm_config_<name>` in any letter case and
  * with `_` or `-` between the words, as npm reads it. `npm test` and `npm run` set some of them (such as
- * `npm_config_ignore_scripts`), and a cloud machine sets `NPM_CONFIG_USERCONFIG`. A proxy setting stays: the script
- * allows it. `GITHUB_ACTIONS` goes too, so the script runs as outside CI unless a test sets it.
+ * `npm_config_ignore_scripts`). A proxy setting and the npmrc settings of the machine (`NPM_CONFIG_USERCONFIG`) stay:
+ * the script allows them. `GITHUB_ACTIONS` goes too, so the script runs as outside CI unless a test sets it.
  */
 export function scriptEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const kept: NodeJS.ProcessEnv = {};
@@ -184,4 +188,13 @@ export function scriptEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     kept[name] = value;
   }
   return kept;
+}
+
+/**
+ * The environment without any `npm_config_` variable, in any letter case: `npm run` sets `npm_config_userconfig` and
+ * `npm_config_globalconfig`, and a cloud machine sets `NPM_CONFIG_USERCONFIG`, so a test that reads the npm config
+ * of a fake HOME starts from none of them.
+ */
+export function withoutNpmConfig(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([name]) => !/^npm_config_/i.test(name)));
 }

@@ -495,9 +495,10 @@
     `.claude/settings.json` with the text of 12.3 like a shim, and a missing file fails; the test site gets the file.
     A symbolic link at one of these paths fails with `is a link, not a file`.
   - Hardening after the reviews of part 9d. `kit-identity.sh` fails an `.npmrc` that is not the text of 12.2 byte for
-    byte, and an `npm_config_` variable of the environment that sets the registry, `strict-ssl`, `ignore-scripts`,
-    `replace-registry-host`, `userconfig` or `globalconfig` (the last two point npm at another npmrc). A proxy is
-    allowed: `proxy`, `https-proxy`, `HTTPS_PROXY` and `HTTP_PROXY` only tunnel TLS, and `strict-ssl` stays on. It
+    byte, and an `npm_config_` variable of the environment that sets the registry, `strict-ssl`, `ignore-scripts` or
+    `replace-registry-host`. A proxy is allowed: `proxy`, `https-proxy`, `HTTPS_PROXY` and `HTTP_PROXY` only tunnel
+    TLS, and `strict-ssl` stays on. The machine's npm config is trusted: `userconfig`, `globalconfig`, `ca`, `cafile`,
+    `prefix` and the user and global npmrc are not checked, because a pull request changes only the repository. It
     fails a `BASE_REF` that is not a plain branch name and a kit version on the base that is not plain. It skips only
     a nested entry with `inBundle: true` and no `resolved` and no `integrity`. It fails a lockfile that is not JSON
     with an object `.packages` with a fixed line, a kit version that is not plain `X.Y.Z`, and, in GitHub Actions, a
@@ -507,10 +508,11 @@
     stamp, so an edited `INDEX.md` runs `npm ci` again. It prints a fixed line instead of `INDEX.md` when the kit
     folder or a file of it is a link, and asks for `npm install --package-lock-only --ignore-scripts` when there is
     no lockfile.
-  - The SessionStart hook runs `npm ci` with `--registry=https://registry.npmjs.org/` and
-    `--replace-registry-host=never` after `--ignore-scripts --no-audit --no-fund`, so no npmrc moves the download
-    host; the install steps of `site.yml` (part 9e) use the same flags. Its link check also covers `node_modules` and
-    `node_modules/@raess`.
+  - The SessionStart hook runs `npm ci` with `--registry=https://registry.npmjs.org/`,
+    `--replace-registry-host=never` and `--strict-ssl=true` after `--ignore-scripts --no-audit --no-fund`, so no npmrc
+    of the machine moves the download host, runs a script or turns TLS checks off; the install steps of `site.yml`
+    (part 9e), the protected task and the rehearsal of M13 use the same flags. Its link check also covers
+    `node_modules` and `node_modules/@raess`.
   - `init --protected` still fails and writes nothing: it renders all seven protected files from part 9e.
   - The acceptance suite gets the `identity` case (`identity.test.ts`, in `kit / acceptance`): the script passes the
     complete lockfile of the test site with the packed kit, and fails without the kit entry and on a local tarball.

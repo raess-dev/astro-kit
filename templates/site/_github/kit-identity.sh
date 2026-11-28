@@ -7,7 +7,7 @@ jq -Rse '. == "ignore-scripts=true\nsave-exact=true\n"' .npmrc >/dev/null 2>&1 |
   fail '.npmrc must be exactly the two lines ignore-scripts=true and save-exact=true'
 settings=$(jq -nr '[$ENV | to_entries[] | select(.value != "" and (.key | test("\\Anpm_config_"; "i")))
   | .key[11:] | gsub("_"; "-") | ascii_downcase
-  | select(IN("registry", "strict-ssl", "ignore-scripts", "replace-registry-host", "userconfig", "globalconfig"))] | unique | join(", ")')
+  | select(IN("registry", "strict-ssl", "ignore-scripts", "replace-registry-host"))] | unique | join(", ")')
 [ -z "$settings" ] || fail "unset the npm_config_ variables of the environment that set $settings"
 [ ! -e npm-shrinkwrap.json ] || fail 'remove npm-shrinkwrap.json; package-lock.json is the only lockfile'
 lockfile='length == 1 and (.[0].packages | type == "object" and all(.[]; type == "object"))'
