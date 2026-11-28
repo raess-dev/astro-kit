@@ -659,7 +659,7 @@ test('each file of the smallest project is needed: without it, preflight has a f
     { file: 'AGENTS.md', ids: ['config-shim'] },
     { file: 'CLAUDE.md', ids: ['config-shim'] },
     { file: '.claude/settings.json', ids: ['config-shim'] },
-    // From part 9e of M9 every rendered protected file is required (10.6).
+    // Every rendered protected file is required (10.6).
     { file: '.github/workflows/site.yml', ids: ['config-shim'] },
     { file: '.github/workflows/site-merge.yml', ids: ['config-shim'] },
     { file: '.github/dependabot.yml', ids: ['config-shim'] },

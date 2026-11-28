@@ -238,3 +238,9 @@ npx --no astro-kit build
   post then sends no mail: `send_email` writes the text under `dist/server/.wrangler/tmp/email/`.
 - Git ignores `node_modules/`, `dist/`, `.astro/` and `.wrangler/` of the site. The base copy of the suite does not
   take them.
+- `test/unit/built-worker-config.json` holds the `dist/server/wrangler.json` of such a build, once as above and once
+  with `CLOUDFLARE_ENV=preview npx --no astro-kit build`, with `configPath` and `userConfigPath` shortened to
+  `/site/wrangler.jsonc`. The Worker config check of the site workflow (specification, 10.1) allows exactly the
+  top-level keys of these files, and `site-hardening.test.ts` fails when one is not in its lists. Build both again
+  after a change of the `@astrojs/cloudflare` or `wrangler` pin, and add a new key to the check after a look at
+  what it does.

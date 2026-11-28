@@ -43,7 +43,7 @@ function recorder(env: Io['env'] = {}): { io: Io; out: () => string; err: () => 
 // The usage
 
 /**
- * The commands of 6.4 that a later part of M9 adds. `legal` without its flag is a usage error, so it stays in the
+ * The commands of 6.4 that the later parts of M9 add. `legal` without its flag is a usage error, so it stays in the
  * list; `check` and `legal --write | --check` exist from part 9b, and `init` from part 9c.
  */
 const LATER = ['ci', 'smoke', 'routes', 'provision', 'feedback', 'settings', 'legal'] as const;

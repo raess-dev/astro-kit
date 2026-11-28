@@ -538,3 +538,20 @@
   - `templates/github-org-rulesets.json` holds the two rulesets of 10.2.
   - The test site holds the rendered protected files in `test/site/.github/`. GitHub runs no workflow from there;
     zizmor in `kit / scan` audits them.
+- Milestone M9, part 9e, after review: the site workflows are hardened. The kit still has 124 rules.
+  - wrangler reads no `.env` of the checkout: every wrangler command passes an empty `--env-file`, and every wrangler
+    step sets `CLOUDFLARE_API_BASE_URL` to `api.cloudflare.com`. `.env*`, `.dev.vars*` and `.wrangler/` are protected
+    paths at any depth (push ruleset, `CODEOWNERS`, the file rule of the merge script), and `config-wrangler` fails
+    one that git tracks.
+  - The rollback gate, the alert and the close steps count only issues that `github-actions[bot]` opened, not pull
+    requests, on every page. Only the owner lifts a hold: the gate reopens a rollback issue that someone else closed
+    and deploys nothing. A failed rollback opens `rollback failed: production`, which holds the deploy too.
+  - Every push run and deploy dispatch on `main` waits in one queue; deploy, smoke and rollback share
+    `deploy-production`. Only the run of the head of `main` deploys, and the rollback deploys the version that ran
+    before the deploy (`wrangler rollback <id>`).
+  - The built Worker config passes an allowlist of its keys: the bindings of `wrangler.jsonc` and no other, the
+    adapter's `main`, `no_bundle` and `rules`, and the whole `assets` object; a preview has no binding but `ASSETS`.
+  - The merge script also requires an agent pusher and agent commit authors. A Dependabot pull request merges after
+    the owner approves it.
+  - Every job that holds a secret checks its checkout first: the direct dependencies against the allowlist, no
+    `.env`, `.dev.vars` or `.wrangler`, and the bins of wrangler and the kit. `feedback` needs `ci`.

@@ -161,7 +161,7 @@ Version 1 does not do these things. Each line says what a site does instead. A s
 | 1 | An agent cannot change what CI checks. | The push ruleset on the protected files (10.2); the kit from the registry with integrity, never older than on `main` (10.3). |
 | 2 | An agent cannot act as the owner. | Two accounts; the code-owner review that GitHub enforces on the owner files (4.2, 10.2). |
 | 3 | No unknown code is installed. | `ignore-scripts`; the allowlist of direct dependencies (`config-dep-allowlist`); every lockfile entry from the registry under its own name, and `npm ls` (10.3). |
-| 4 | Project code never runs next to a secret. | `ci` and `build` hold no secret and no token that can write. `deploy`, `preview`, `smoke`, `rollback` and `feedback` run the kit and wrangler only, and `preview` checks the built config before wrangler reads it (10.1). The protected task runs no project code (10.6). The release job that holds `id-token` runs no site code (11.2). |
+| 4 | Project code never runs next to a secret. | `ci` and `build` hold no secret and no token that can write. `deploy`, `preview`, `smoke`, `rollback` and `feedback` run the kit and wrangler only: each checks its checkout first, and `preview` and `deploy` check the built config before wrangler reads it (10.1). The protected task runs no project code (10.6). The release job that holds `id-token` runs no site code (11.2). |
 | 5 | The site has no server code but the kit's. | `routes-on-demand`, `config-server` (8). |
 | 6 | A visitor's browser talks only to the site, and to the origins that the owner declared. | The CSP and `origins-third-party`; `origins-gesture` (6.2, 9.4). |
 | 7 | The form cannot be turned against the client. | Body cap, strict fields, rate limits for each address and each form, fixed recipients (9.1). |
@@ -469,6 +469,7 @@ site/
 |---|---|---|---|
 | Protected and rendered | `.github/**`, `wrangler.*`, `**/wrangler.*`, `.npmrc` | The org push ruleset blocks every push that touches them. Only an organization admin and the site's deploy key pass it (10.2). The kit renders these files from the settings, and the protected task writes them (10.6). The owner merges a pull request that changes one of them by hand (10.1). | The CI trust chain runs from these files. A workflow run uses the `site.yml` and `kit-identity.sh` of its own branch. `.npmrc` keeps install scripts off. `wrangler.jsonc` decides mail destinations. |
 | Owner files | `astro-kit.json`, `site.json`, `docs/design.md`, `legal.lock.json`, `.claude/**`, `.mcp.json`, and the protected files above | `.github/CODEOWNERS` names the owner for them, and the `main` ruleset requires a code-owner review (10.2). GitHub refuses to merge a pull request that changes one of them until the owner approves it. | The owner decides the settings, the facts, the design, the legal texts, and what an agent session may run. |
+| Forbidden | `.env*`, `.dev.vars*` and `.wrangler/**`, at any depth | The push ruleset blocks them like the protected files, `CODEOWNERS` names the owner for them, and the merge script never merges them (10.1, 10.2). `config-wrangler` fails a committed one (8), and every job of the site workflow that holds a secret fails on one in its checkout (10.1). | wrangler reads them: a `.env` could send the Cloudflare token to another host, and a `.wrangler/deploy/config.json` could give wrangler another config. |
 | Rendered, agent-run | `src/styles/tokens.css`, the shims, the kit block of `AGENTS.md` | The kit renders or holds the text, and a check compares it (`design-tokens`, `config-shim`). An agent runs the command that writes it. | One source for each of them. |
 | Agent-editable | everything else, the rest of `AGENTS.md` included | | |
 
@@ -1617,7 +1618,7 @@ Each declared theme needs an enabled option that reaches it: `light` through `au
 | `config-dep-spec` | config | Every dependency other than the kit has a spec of the npm registry: a version, a range or a tag. The trimmed spec matches `^(?!\.)(?!.*\.(tgz\|tar\|tar\.gz)$)[\w.*~^<>=\|+ -]*$` in any letter case, in dependencies, devDependencies or optionalDependencies. So a git or URL spec, a file, a link, a GitHub shorthand and an `npm:` alias fail. | package.json |
 | `config-dep-allowlist` | config | Dependencies are only: `astro`, `@raess/astro-kit`, `wrangler`; with forms `@astrojs/cloudflare`; with islands `@astrojs/solid-js`, `solid-js`, `eslint`, `eslint-plugin-solid`, `typescript-eslint`; plus `dependencies`. The rule reads dependencies, devDependencies, optionalDependencies and peerDependencies. A `package.json` that is not a JSON object fails, and so does a section that is not an object. A project without `package.json` has no finding. | package.json |
 | `config-public-shadow` | config | `public/` holds none of `robots.txt`, `_headers`, `_redirects`, `.well-known/security.txt`, `_kit`, `sitemap*.xml`. It holds no folder or file `_astro` either, in any letter case. Astro writes its bundled files to `/_astro/`, and `js-script` allows a module script there, so no file of `public/` may stand at such a URL. It holds no `.js`, `.mjs` or `.cjs` file at any depth, in any letter case: every script comes from the bundler into `/_astro/`, so `js-script` and `js-budget` see all of it, and an `import()` or a worker cannot load a file of `public/` that no budget counts. | public |
-| `config-wrangler` | config | Only `wrangler.jsonc` exists (no `.json` or `.toml`). It equals the kit's rendering for the settings (`renderWrangler`, 10.4), after CRLF→LF and trimEnd + newline. The rendering has full-line `//` comments only and no trailing commas, because the deploy job reads it with `jq`. A file that does not match gets the hint of 10.6. | wrangler.jsonc, options |
+| `config-wrangler` | config | Only `wrangler.jsonc` exists (no `.json` or `.toml`). It equals the kit's rendering for the settings (`renderWrangler`, 10.4), after CRLF→LF and trimEnd + newline. The rendering has full-line `//` comments only and no trailing commas, because the deploy job reads it with `jq`. A file that does not match gets the hint of 10.6. Git tracks no other file that wrangler reads: no `.env*` or `.dev.vars*` file and no file under a `.wrangler` folder, at any depth (4.2). The rule reads `git ls-files` in the project root, so a forms build's own `.wrangler/`, which `.gitignore` keeps out, passes; outside a git work tree this part has nothing to read, and the site workflow checks each checkout itself (10.1). A tracked file fails with `git tracks this file, and wrangler reads it: remove it with git rm --cached`. | wrangler.jsonc, options, git index |
 | `config-kit-identity` | ci | `.github/kit-identity.sh` (10.3) checks that `.npmrc` is the text of 12.2 byte for byte, that no `npm_config_` variable of the environment sets the registry, `strict-ssl`, `ignore-scripts` or `replace-registry-host` (a proxy and the `npmrc` files of the machine are allowed), that there is no `npm-shrinkwrap.json`, that the lockfile is JSON with an object `.packages`, that every lockfile entry but a nested bundled one is an npm registry tarball under its own name and version with an integrity hash, and that the kit entry is the kit itself, with a `sha512` hash and a plain version `X.Y.Z` not lower than on the base (`sort -V`), whose hash is the one that the npm registry gives for that version (`npm view` with a fresh, empty cache). A `BASE_REF` that is not a plain branch name and a base kit version that is not plain fail; in GitHub Actions a base ref that is not in the clone fails. Names in upper case are refused, and entries other than the kit may have a `sha1` hash: the exact `resolved` URL is the guard, and a site that needs a legacy package with an upper-case name needs a kit release. Every install step runs it before `npm ci --registry=https://registry.npmjs.org/ --replace-registry-host=never --strict-ssl=true` with a fresh, empty `--cache` (10.1), and so does the SessionStart hook of `.claude/settings.json` (12.3). | .npmrc, environment, lockfile, git base |
 
 ### routes (6)
@@ -2306,7 +2307,10 @@ Images, fonts, media and style sheets of another origin stay forbidden. Download
   - `workflow_dispatch` with the inputs `protected` (boolean, default `false`) and `branch` (string, default empty). A merge by the workflow token starts no push run, so the merge script dispatches the deploy;
   - `schedule` `"23 4 * * *"` (smoke) and `"47 3 * * 1"` (smoke `--probe`, Mondays).
 - `permissions: {}`.
-- Concurrency `site-${{ github.event_name }}-${{ inputs.protected && 'protected' || 'run' }}-${{ github.event.pull_request.number || github.ref }}`. So the protected task never waits in one queue with a deploy. It cancels a running job only for a push to a branch other than `main`.
+- Concurrency `site-${{ github.event_name == 'schedule' && 'schedule' || inputs.protected && 'protected' || 'run' }}-${{ github.ref }}`, with `cancel-in-progress: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}`.
+  - On `main`, every push run and every deploy dispatch is in the one group `site-run-refs/heads/main`, whatever the event, and none cancels another. So two runs never deploy, smoke or roll back at the same time. GitHub keeps one waiting run in a group: a newer one replaces it, and that newer run deploys the newer head.
+  - The protected task (`site-protected-…`) never waits in one queue with a deploy. A scheduled run (`site-schedule-…`) has a group of its own, because it neither deploys nor rolls back, and in the deploy group it would replace a waiting deploy run.
+  - On another branch the group is the branch: a new push cancels the running jobs of the push before it, so only the newest head is tested and previewed.
 - Env `ASTRO_TELEMETRY_DISABLED: "1"`, `SHA: ${{ github.sha }}`, `REPO: ${{ github.repository }}` and `RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`. A shell step reads them as `$SHA`, `$REPO` and `$RUN`. A value in a YAML `env` or `with` block uses the expression, because YAML does not expand `$SHA`.
 - The file has no template variable. Every site gets the same text, and a step that differs for a forms site reads `astro-kit.json` or `dist` at run time. The builder writes the YAML from this section; the M9 tests check its jobs, names, triggers and pins (14).
 - Every job has its own permissions and a timeout. A step that calls `gh` gets `GH_TOKEN: ${{ github.token }}` through its `env`.
@@ -2315,6 +2319,31 @@ Images, fonts, media and style sheets of another origin stay forbidden. Download
 - **Shell.** `defaults.run.shell: bash` in both files, so every step runs under `bash -eo pipefail`.
 - **Checkouts before an install.** Every checkout that the install steps follow has `fetch-depth: 0`. That fetches every branch, so `origin/main` is in the clone, which `kit-identity.sh` needs in CI (10.3). A later `git fetch` cannot do it: the checkout keeps no credentials.
 - **Install steps.** Where a job installs, it runs these three steps in this order: `bash .github/kit-identity.sh`; `npm ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --replace-registry-host=never --strict-ssl=true --cache "$c"`; `npm ls --all > /dev/null` (10.3). In the second step `c` is a fresh, empty folder from `mktemp -d`, made just before the install and removed just after it, whatever its result, so npm reads no cache but its own empty one (10.3).
+- **The checkout check.** `ci` and `build` run project code, which can change the files on disk before the rules of `astro-kit ci` read them. So each job that holds a secret (`preview`, `deploy`, `rollback`, `smoke` and `feedback`) checks its own fresh checkout again, with bash and jq only, in the step `Check the checkout` right after the install steps and before any step with a secret. No code of the checkout runs before it: `npm ci` runs no script. The step is the exact block below in each of the five jobs.
+  - The direct dependencies of `package.json` are on the list of `config-dep-allowlist` (8). The list is written into the step: the kit's names, and the `features` and `dependencies` of the `astro-kit.json` of `main` (`git show origin/main:astro-kit.json`), an owner file. So a branch cannot widen the list for its own `feedback` job.
+  - The checkout holds no `.env*`, `.dev.vars*` or `.wrangler` file or folder, at any depth outside `.git` and `node_modules`.
+  - `node_modules/.bin/wrangler` and `node_modules/.bin/astro-kit` resolve to the bins of their own packages, so another package cannot stand in for the command that holds the token.
+
+```sh
+set -euo pipefail
+s=$(git show origin/main:astro-kit.json)
+jq -e --argjson s "$s" '
+  (["astro", "@raess/astro-kit", "wrangler"]
+    + (if $s.features.forms == true then ["@astrojs/cloudflare"] else [] end)
+    + (if $s.features.islands == true then ["@astrojs/solid-js", "solid-js", "eslint", "eslint-plugin-solid", "typescript-eslint"] else [] end)
+    + ($s.dependencies // [])) as $ok
+  | [.dependencies, .devDependencies, .optionalDependencies, .peerDependencies | (. // {}) | keys[]]
+  | all(. as $n | $ok | index($n) != null)' package.json >/dev/null 2>&1 ||
+  { echo '::error::package.json has a direct dependency that is not on the allowlist of the kit'; exit 1; }
+found=$(find . \( -path ./.git -o -path ./node_modules \) -prune -o \( -name '.env*' -o -name '.dev.vars*' -o -name .wrangler \) -print)
+[ -z "$found" ] || { echo '::error::the checkout holds a .env, .dev.vars or .wrangler file, which wrangler would read'; exit 1; }
+for bin in wrangler:wrangler/bin/wrangler.js astro-kit:@raess/astro-kit/dist/cli.js; do
+  [ "$(readlink -f "node_modules/.bin/${bin%%:*}")" = "$(readlink -f "node_modules/${bin#*:}")" ] ||
+    { echo "::error::node_modules/.bin/${bin%%:*} is not the bin of its own package"; exit 1; }
+done
+```
+
+- **wrangler reads no file of the checkout but its config.** wrangler loads `.env`, `.env.local` and `.env.<env>` from its working folder, and a value there that the environment does not set wins, `CLOUDFLARE_API_BASE_URL` included: a committed `.env` could send the token to another host. So every wrangler command of the workflow (the preview upload, `deployments status`, the deploy upload and deploy, and the rollback) passes `--env-file "$RUNNER_TEMP/empty.env"`, an empty file that the step writes first (`: > "$RUNNER_TEMP/empty.env"`); with `--env-file`, wrangler reads that file and none of the defaults. `--env-file` is a global flag of wrangler 4, so every one of these commands takes it. Each of these steps also sets `CLOUDFLARE_API_BASE_URL: https://api.cloudflare.com/client/v4` in its `env`. The upload and deploy commands name their config with `--config`, so no `.wrangler/deploy/config.json` redirects them. The checkout check, the push ruleset, `CODEOWNERS`, the file rule of the merge script and `config-wrangler` (8) keep these files out of the repository too (4.2).
 - Job order: `ci, preview, merge, build, build-alert, deploy, smoke, rollback, feedback, protected`.
 - **A second file, `.github/workflows/site-merge.yml`,** holds the one job `merge-event`. Its triggers are `pull_request` types `[opened, reopened, ready_for_review]` and `pull_request_review` types `[submitted]`. It has `permissions: {}`, the env `REPO`, and the concurrency group `site-merge-${{ github.event.pull_request.number }}`. Its workflow name is `site-merge`, and `merge-event` also needs `github.event.pull_request.head.repo.full_name == github.repository`, as the merge jobs of `kit.yml` do: a pull request from a fork has a token that cannot merge. It is a file of its own for one reason: GitHub counts a skipped job as a passed check. If `site.yml` ran on these events, its `ci` job would be skipped, and that skipped run would satisfy the required check `site / ci` on a head whose real run failed. So no workflow that runs on a pull-request event holds a job with the name of a required check.
 
@@ -2326,31 +2355,70 @@ Images, fonts, media and style sheets of another origin stay forbidden. Download
 |---|---|---|---|---|
 | `ci` | `site / ci` (the required check) | a push to a branch other than `main` | contents read; 20 min | Job env `BASE_REF: main`. Checkout with `fetch-depth: 0`; the install steps; `npx --no playwright-core install --with-deps chromium`; `npx --no astro-kit ci`. Then, on a forms site, rebuild with `CLOUDFLARE_ENV=preview npx --no astro-kit build` (S14). Upload `dist` as `preview-dist` (include hidden files, error if empty, 7 days). |
 | `preview` | `site / preview` | needs ci; the actor is not `dependabot[bot]` | contents read; environment `preview`, with the preview URL as its `url`; 10 min | The preview steps below |
-| `merge` | | needs ci | contents write, pull-requests write, actions write; 5 min | The merge script below, with `BRANCH: ${{ github.ref_name }}` and `TESTED_SHA: ${{ github.sha }}` |
+| `merge` | | needs ci | contents write, pull-requests write, actions write; 5 min | The merge script below, with `BRANCH: ${{ github.ref_name }}`, `TESTED_SHA: ${{ github.sha }}` and `ACTOR: ${{ github.actor }}` |
 | `merge-event` (in `site-merge.yml`) | | `pull_request`, or `pull_request_review` with `review.state == 'approved'` | contents write, pull-requests write, actions write; 5 min | The merge script, with `PR: ${{ github.event.pull_request.number }}` and `TESTED_SHA: ${{ github.event.pull_request.head.sha }}` |
 | `build` | `deploy / build` | `main`: a push, or a dispatch with `protected` false | contents read; 20 min | Job env `BASE_REF: main`. Checkout `fetch-depth: 0`; the install steps; chromium; `astro-kit ci`; upload `site-dist` (include hidden files, error if empty, 7 days). Project code runs in this job, so it holds no token that can write. |
 | `build-alert` | | needs build; `always() && needs.build.result != 'skipped'` | issues write; 5 min | No checkout. When `build` failed: the alert step with the title `main: build failed`. When it passed: the close step with that title and `COMMENT: Fixed by ${{ github.sha }}`. |
-| `deploy` | `deploy / production` | needs build | contents read, issues read; environment `production`; concurrency `deploy-production`, no cancel; 10 min; job output `deployed` | Checkout; the install steps; download `site-dist`; the deploy steps below |
-| `smoke` | | needs deploy; `always() && (github.event_name == 'schedule' \|\| (needs.deploy.result == 'success' && needs.deploy.outputs.deployed == 'true'))` | contents read, issues write; 10 min | Checkout; the install steps; `npx --no astro-kit smoke "$(jq -r .site astro-kit.json)" $PROBE` with `PROBE` = `--probe` on `47 3 * * 1`, `KIT_PROBE_SECRET` and `KIT_WORKERS_DEV: ${{ vars.KIT_WORKERS_DEV }}`. After a deploy it also gets `KIT_RELEASE_SHA: ${{ github.sha }}`; a scheduled run gets none, so `smoke-release` only checks the shape (8). An empty `KIT_RELEASE_SHA` counts as none. On failure in a scheduled run: the alert step with the title `smoke: production`. On success in a scheduled run: the close step with that title and a `COMMENT` that holds `Passed:` and the run URL, written with expressions. |
-| `rollback` | `deploy / rollback` | needs deploy and smoke; `always() && needs.deploy.outputs.deployed == 'true' && needs.smoke.result == 'failure'` | contents read, issues write; environment `production`; 10 min | Checkout; the install steps; `npx --no wrangler rollback --name "$WORKER" --message "smoke failed: $RUN" -y`, with `WORKER` read from `wrangler.jsonc`, and with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the env of that step only (13.3, R7). Then the alert step with the title `rollback: production` and `BODY: Smoke failed after the deploy of ${{ github.sha }}. Production runs the version before it again.` |
-| `feedback` | | every push; the actor is not `dependabot[bot]` | contents read; 5 min | Without the `KIT_FEEDBACK_TOKEN` secret, print `No KIT_FEEDBACK_TOKEN: feedback stays in KIT-FEEDBACK.md.` and skip. Otherwise: checkout, the install steps, `npx --no astro-kit feedback send` with `KIT_FEEDBACK_TOKEN` and `KIT_FEEDBACK_AUTO_KEY`. An entry leaves the site with the first push that holds it, and `feedback send` skips an id that is sent already (12.6). |
+| `deploy` | `deploy / production` | needs build | contents read, issues write; environment `production`; concurrency `deploy-production`, no cancel; 10 min; job outputs `deployed` and `live` | The rollback gate; checkout; the install steps; the checkout check; download `site-dist`; the deploy steps below |
+| `smoke` | | needs deploy; `always() && (github.event_name == 'schedule' \|\| (needs.deploy.result == 'success' && needs.deploy.outputs.deployed == 'true'))` | contents read, issues write; concurrency `deploy-production` after a deploy and `smoke-schedule` in a scheduled run, no cancel; 10 min | Checkout; the install steps; the checkout check; `npx --no astro-kit smoke "$(jq -r .site astro-kit.json)" $PROBE` with `PROBE` = `--probe` on `47 3 * * 1`, `KIT_PROBE_SECRET` and `KIT_WORKERS_DEV: ${{ vars.KIT_WORKERS_DEV }}`. After a deploy it also gets `KIT_RELEASE_SHA: ${{ github.sha }}`; a scheduled run gets none, so `smoke-release` only checks the shape (8). An empty `KIT_RELEASE_SHA` counts as none. On failure in a scheduled run: the alert step with the title `smoke: production`. On success in a scheduled run: the close step with that title and a `COMMENT` that holds `Passed:` and the run URL, written with expressions. |
+| `rollback` | `deploy / rollback` | needs deploy and smoke; `always() && needs.deploy.outputs.deployed == 'true' && needs.smoke.result == 'failure'` | contents read, issues write; environment `production`; concurrency `deploy-production`, no cancel; 10 min | Checkout; the install steps; the checkout check; the rollback step below (13.3, R7). Then the alert step with the title `rollback: production` and `BODY: Smoke failed after the deploy of ${{ github.sha }}. Production runs the version before it again.` When a step of the job failed (`if: failure()`): the alert step with the title `rollback failed: production` and `BODY: Smoke failed after the deploy of ${{ github.sha }}, and the rollback failed too. Production may run that version.` |
+| `feedback` | | needs ci, so a push to a branch other than `main`; the actor is not `dependabot[bot]` | contents read; 5 min | Without the `KIT_FEEDBACK_TOKEN` secret, print `No KIT_FEEDBACK_TOKEN: feedback stays in KIT-FEEDBACK.md.` and skip. Otherwise: checkout, the install steps, the checkout check, `npx --no astro-kit feedback send` with `KIT_FEEDBACK_TOKEN` and `KIT_FEEDBACK_AUTO_KEY`. An entry leaves the site with the first push that holds it, and `feedback send` skips an id that is sent already (12.6). |
 | `protected` | `site / protected` | a dispatch on `main` with `protected` true, when `github.actor == vars.KIT_OWNER` | contents read, pull-requests write; environment `owner`; 10 min | The steps of 10.6 |
 
 **Preview steps.** One preview for each branch.
 
-1. Checkout `ref: main`: the `wrangler.jsonc` and the lockfile of `main`, never those of the branch. Then the install steps.
-2. Download `preview-dist`. When it holds `dist/server/wrangler.json`, that built config is checked before any wrangler command reads it. The job fails when `send_email`, `ratelimits` or `kv_namespaces` of the file is not an empty list (the built file always holds these keys; the test is `jq -e '[.send_email, .ratelimits, .kv_namespaces] | all(. == null or . == [])'`), when it has a `build` key (`::error::the built Worker config holds a build command`), or when its `name` is not the `env.preview` name in the `wrangler.jsonc` of `main`.
+1. Checkout `ref: main`: the `wrangler.jsonc` and the lockfile of `main`, never those of the branch. Then the install steps and the checkout check.
+2. Download `preview-dist`. When it holds `dist/server/wrangler.json`, that built config passes the Worker config check below, with `--arg target preview`, before any wrangler command reads it.
 3. The alias, with `BRANCH: ${{ github.ref_name }}` in `env`: `ALIAS="b-$(printf '%s' "$BRANCH" | sha256sum | cut -c1-10)"`. It is the same for every push to the branch, so the branch keeps one URL. It has 12 characters, so it fits the 63-character limit with a Worker name of 10.4 (13.1 item 47).
-4. When `dist/server/wrangler.json` exists: `npx --no wrangler versions upload --config dist/server/wrangler.json --preview-alias "$ALIAS" --message "$BRANCH $SHA"`. The build chose the preview environment already (S14), so the command has no `--env`. Otherwise: `npx --no wrangler versions upload --env preview --preview-alias "$ALIAS" --message "$BRANCH $SHA"`. Env on this step only: `CLOUDFLARE_API_TOKEN` (the secret of the `preview` environment) and `CLOUDFLARE_ACCOUNT_ID`. Parse `https://$ALIAS-[a-z0-9.-]+\.workers\.dev` from the output.
+4. When `dist/server/wrangler.json` exists: `npx --no wrangler versions upload --config dist/server/wrangler.json --preview-alias "$ALIAS" --message "$BRANCH $SHA" --env-file "$RUNNER_TEMP/empty.env"`. The build chose the preview environment already (S14), so the command has no `--env`. Otherwise: `npx --no wrangler versions upload --config wrangler.jsonc --env preview --preview-alias "$ALIAS" --message "$BRANCH $SHA" --env-file "$RUNNER_TEMP/empty.env"`. Env on this step only: `CLOUDFLARE_API_BASE_URL`, `CLOUDFLARE_API_TOKEN` (the secret of the `preview` environment) and `CLOUDFLARE_ACCOUNT_ID`. Parse `https://$ALIAS-[a-z0-9.-]+\.workers\.dev` from the output.
 5. `curl -sSI` must show `location: https://[a-z0-9-]+\.cloudflareaccess\.com/`, else `::error::$URL answers without an Access login; protect the preview Worker with Cloudflare Access`.
 6. Summary: `Preview of $BRANCH: $URL (behind Cloudflare Access)`. The URL is also the `url` of the `preview` environment, so GitHub shows it on the pull request of the branch.
 
-A preview has no binding but the assets binding `ASSETS`, so a preview never sends mail (9.1).
+A preview has no binding but the assets binding `ASSETS`, so a preview never sends mail (9.1). The Worker config check enforces it.
 
-- **The messages of the preview check.** A binding: `::error::the built preview config holds a binding: a preview has no binding but ASSETS`. Another name: `::error::the built Worker config does not name the preview Worker of wrangler.jsonc`; the line names neither value, because the built file comes from the branch. A file that is not a JSON object: `::error::the built Worker config is not a JSON object`. No URL in the upload output: `::error::the upload printed no preview URL`.
+- No URL in the upload output: `::error::the upload printed no preview URL`.
 - The alias is a step of its own (output `alias`), and the upload step gives the URL as its output `url`.
 
-**Merge script** (env: `GH_TOKEN: ${{ github.token }}`, `KIT_AGENTS: ${{ vars.KIT_AGENTS }}` and `REPO: ${{ github.repository }}`; every workflow that runs this script sets these three):
+**Worker config check.** The adapter writes `dist/server/wrangler.json` in the build, where project code runs, so the file is not trusted. The preview check and the deploy config check read it with one jq program, held in the `env` of each of the two steps as `CHECK` (exact below). The program gets the `wrangler.jsonc` of the checkout as `$w` (full-line `//` comments dropped) and the target as `$target` (`preview` or `production`), and prints nothing, or the end of one error line `::error::the built Worker config <problem>`. It is an allowlist:
+
+- **The known keys.** Every top-level key of the built file is one that the adapter writes (measured on a forms build of the test site with `@astrojs/cloudflare` 14.4.9 and wrangler 4.165.0, for both targets): a key that the kit compares, a free key, or a binding key. Any other key fails, `account_id`, `tail_consumers`, `vars` with a value, `build` or `site` among them, and the line does not print the key, because the name comes from the build.
+- **The compared keys** equal what the kit expects from `wrangler.jsonc`: `name`, `compatibility_date`, `compatibility_flags` (`[]` when `wrangler.jsonc` has none), `routes`, `workers_dev`, `preview_urls`, `observability`, `send_email` and `ratelimits` (`[]` when absent), and the adapter's own `main: "entry.mjs"`, `no_bundle: true`, `rules: [{"type": "ESModule", "globs": ["**/*.js", "**/*.mjs"]}]`, and the whole `assets` object: the `assets` of `wrangler.jsonc` with `directory: "../client"` (beside `dist/server`) and `binding: "ASSETS"`. For the preview target, `$w` is `wrangler.jsonc` with its `env.preview` laid over it and with `send_email` and `ratelimits` empty, since bindings are not inherited.
+- **The free keys** are read by wrangler's own tooling or by `wrangler dev` only: `configPath`, `userConfigPath`, `topLevelName`, `definedEnvironments`, `targetEnvironment`, `jsx_factory`, `jsx_fragment`, `upload_source_maps`, `python_modules` and `dev`.
+- **The binding keys** must be absent or blank (`null`, `[]`, `{}`, or an object whose values are all blank, such as `{"bindings": []}`): every binding-type key that the adapter writes and `wrangler.jsonc` does not name.
+- So a preview holds no binding but `ASSETS`, and the deploy holds exactly the bindings of `wrangler.jsonc`.
+- **The messages:** `is not a JSON object` (also for a file that is not JSON), `holds a build command`, `holds a key that the kit does not know`, `holds a binding that wrangler.jsonc does not name: <keys>`, `differs from wrangler.jsonc in <keys>`. `<keys>` are names of the kit's lists, sorted, joined with `, `, so the line prints no value from the file.
+
+```jq
+def blank: . == null or . == [] or (type == "object" and all(.[]; blank));
+. as $b
+| ($w + if $target == "preview" then $w.env.preview + {send_email: [], ratelimits: []} else {} end) as $w
+| {name: $w.name, compatibility_date: $w.compatibility_date, compatibility_flags: ($w.compatibility_flags // []),
+   routes: $w.routes, workers_dev: $w.workers_dev, preview_urls: $w.preview_urls, observability: $w.observability,
+   send_email: ($w.send_email // []), ratelimits: ($w.ratelimits // []), main: "entry.mjs", no_bundle: true,
+   rules: [{type: "ESModule", globs: ["**/*.js", "**/*.mjs"]}],
+   assets: ($w.assets + {directory: "../client", binding: "ASSETS"})} as $kit
+| ["configPath", "userConfigPath", "topLevelName", "definedEnvironments", "targetEnvironment", "jsx_factory",
+   "jsx_fragment", "upload_source_maps", "python_modules", "dev"] as $free
+| ["agent_memory", "ai_search", "ai_search_namespaces", "analytics_engine_datasets", "artifacts", "cloudchamber",
+   "connect", "d1_databases", "dispatch_namespaces", "durable_objects", "exports", "flagship", "hyperdrive", "k2",
+   "kv_namespaces", "logfwdr", "migrations", "mtls_certificates", "pipelines", "previews", "queues", "r2_buckets",
+   "secrets_store_secrets", "services", "triggers", "unsafe_hello_world", "vars", "vectorize", "vpc_networks",
+   "vpc_services", "worker_loaders", "workflows"] as $bindings
+| if type != "object" then "is not a JSON object"
+  elif has("build") then "holds a build command"
+  elif (keys - ($kit | keys) - $free - $bindings) != [] then "holds a key that the kit does not know"
+  else [$bindings[] | select($b[.] | blank | not)] as $named
+    | [$kit | keys[] | select($kit[.] != $b[.])] as $differ
+    | if $named != [] then "holds a binding that wrangler.jsonc does not name: \($named | join(", "))"
+      elif $differ != [] then "differs from wrangler.jsonc in \($differ | join(", "))"
+      else empty end
+  end
+```
+
+- The step runs it as `problem=$(jq -r --argjson w "$want" --arg target <target> "$CHECK" "$built" 2>/dev/null) || problem='is not a JSON object'`, with `want=$(sed -E '/^[[:space:]]*\/\/.*$/d' wrangler.jsonc | jq -c .)`, and fails with `::error::the built Worker config $problem` when `problem` is not empty.
+- A kit release that moves to an adapter or a wrangler that writes another key adds the key to one of the three lists, after a measurement like the one above.
+
+**Merge script** (env: `GH_TOKEN: ${{ github.token }}`, `KIT_AGENTS: ${{ vars.KIT_AGENTS }}` and `REPO: ${{ github.repository }}`; every workflow that runs this script sets these three. `merge` also sets `ACTOR: ${{ github.actor }}`):
 
 ```sh
 set -euo pipefail
@@ -2366,8 +2434,14 @@ IFS=$'\t' read -r state draft head base author <<<"$live"
 [ "$head" = "$TESTED_SHA" ] || { echo 'the head moved since this run started; the run of the new head merges it'; exit 0; }
 jq -e --arg a "$author" '(. + ["dependabot[bot]"]) | index($a) != null' <<<"${KIT_AGENTS:-[]}" >/dev/null ||
   { echo "$author is not an agent account: CI does not merge this pull request"; exit 0; }
+agents=$(jq -c --arg a "$author" 'if $a == "dependabot[bot]" then . + [$a] else . end' <<<"${KIT_AGENTS:-[]}")
+only() { jq -e -n -R --argjson ok "$agents" '[inputs] | length > 0 and all(. as $x | $ok | index($x) != null)' >/dev/null; }
+pushers=${ACTOR:-$(gh api "repos/$REPO/actions/workflows/site.yml/runs?event=push&head_sha=$TESTED_SHA" --jq '.workflow_runs[].actor.login')}
+only <<<"$pushers" || { echo 'the tested head was not pushed by an agent account: CI does not merge this pull request'; exit 0; }
+authors=$(gh api --paginate "repos/$REPO/pulls/$PR/commits" --jq '.[] | .author.login // "-"')
+only <<<"$authors" || { echo 'a commit has an author that is not an agent account: CI does not merge this pull request'; exit 0; }
 files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)')
-if grep -qE '^\.github/|^\.npmrc$|(^|/)wrangler\.[^/]+$' <<<"$files"; then
+if grep -qE '^\.github/|^\.npmrc$|(^|/)wrangler\.[^/]+$|(^|/)(\.env|\.dev\.vars)[^/]*$|(^|/)\.wrangler/' <<<"$files"; then
   echo 'it changes a protected file: the owner approves it and merges it by hand'; exit 0
 fi
 if ! out=$(gh pr merge "$PR" --repo "$REPO" --squash --delete-branch --match-head-commit "$TESTED_SHA" 2>&1); then
@@ -2378,15 +2452,18 @@ fi
 gh workflow run site.yml --repo "$REPO" --ref main
 ```
 
-- **GitHub decides what needs an approval.** GitHub refuses the merge when `site / ci` is not green on the head, and when a file with a code owner has no approval of that owner (10.2). The script adds: no drafts, only `main`, only the tested head, only an agent author.
-- **One file rule.** The script never merges a pull request that changes a protected file. It reads the old name of a renamed file too, so a pull request that moves a protected file away is not merged either. The workflow token cannot change workflow files, and it does not pass the push ruleset. The owner approves such a pull request and presses "Squash and merge". That push to `main` starts the deploy.
+- **GitHub decides what needs an approval.** GitHub refuses the merge when `site / ci` is not green on the head, and when a file with a code owner has no approval of that owner (10.2). The script adds: no drafts, only `main`, only the tested head, only an agent author, only an agent pusher, and only agent commits.
+- **Who pushed the head.** A person with write access who is not an agent could push onto the branch of an agent pull request, and the pull request would still have an agent author. So the script also requires that the run that tested the head was started by an account of `KIT_AGENTS` (on a Dependabot pull request, also `dependabot[bot]`). In `merge` that is `github.actor` of the push run itself (`ACTOR`), which stays the pusher in a re-run. `merge-event` runs on a pull-request event, whose actor is the person who opened the pull request, marked it ready or approved it, not the pusher: with no `ACTOR`, the script reads the actors of the `site.yml` push runs of the tested head from the API, and every one must be an agent account. With none, it does not merge; the `merge` job of the push run merges later.
+- **Who wrote the commits.** Every commit of the pull request (`pulls/$PR/commits`) must have a GitHub author login of the same list. A commit whose author is no GitHub account fails it. Commit author data is set by whoever makes the commit, so it can be forged: the pusher check is the guard, and the author check is a backstop that catches a commit of another person that an agent pushes on.
+- **Dependabot.** GitHub gives the runs that Dependabot starts a read-only token, whatever `permissions:` says. So `merge` and `merge-event` on Dependabot's own pushes and events only print the refusal of GitHub, and a Dependabot pull request merges after the owner approves it: the approval starts `merge-event` with the owner as the actor, and the script merges it with the token of that run. Its pusher and its commits are `dependabot[bot]`, which the script accepts only on a pull request that Dependabot opened.
+- **One file rule.** The script never merges a pull request that changes a protected file (4.2): a file under `.github/`, `.npmrc`, a `wrangler.*` file, or a `.env*`, `.dev.vars*` or `.wrangler/` file at any depth. It reads the old name of a renamed file too, so a pull request that moves a protected file away is not merged either. The workflow token cannot change workflow files, and it does not pass the push ruleset. The owner approves such a pull request and presses "Squash and merge". That push to `main` starts the deploy.
 - **Two ways in.** `merge` runs after `ci` on each push. `merge-event` runs when the pull request opens, becomes ready, or gets an approval. Whichever comes last merges.
 
 **Alert step** (env: `GH_TOKEN`, `TITLE`, `BODY` with the default `Failed:`, `KIT_OWNER: ${{ vars.KIT_OWNER }}`). It keeps one open issue for each title, assigned to the owner:
 
 ```sh
 set -euo pipefail
-n=$(gh api "repos/$REPO/issues?state=open&per_page=100" --jq "[.[] | select(.title == \"$TITLE\")][0].number // empty")
+n=$(gh api --paginate "repos/$REPO/issues?state=open&per_page=100" --jq ".[] | select(.pull_request == null and .user.login == \"github-actions[bot]\" and .title == \"$TITLE\") | .number" | sort -n | tail -n 1)
 if [ -n "$n" ]; then gh issue comment "$n" --repo "$REPO" --body "Failed again: $RUN"
 else gh issue create --repo "$REPO" --title "$TITLE" --assignee "$KIT_OWNER" --body "$BODY $RUN"; fi
 ```
@@ -2395,25 +2472,87 @@ else gh issue create --repo "$REPO" --title "$TITLE" --assignee "$KIT_OWNER" --b
 
 ```sh
 set -euo pipefail
-n=$(gh api "repos/$REPO/issues?state=open&per_page=100" --jq "[.[] | select(.title == \"$TITLE\")][0].number // empty")
+n=$(gh api --paginate "repos/$REPO/issues?state=open&per_page=100" --jq ".[] | select(.pull_request == null and .user.login == \"github-actions[bot]\" and .title == \"$TITLE\") | .number" | sort -n | tail -n 1)
 [ -z "$n" ] || gh issue close "$n" --repo "$REPO" --comment "$COMMENT"
 ```
 
-The three titles are `main: build failed`, `smoke: production` and `rollback: production`.
+- **Only the issues of the workflow count.** The issues API lists pull requests too, and anyone who can open an issue or a pull request can give it any title. So the alert step, the close step and the rollback gate count only an item that is no pull request (`.pull_request == null`) and that `github-actions[bot]` opened, the author of every issue that these steps open. They read every page (`--paginate`: `--jq` runs on each page and prints one number a line, and `sort -n | tail -n 1` takes the newest).
+
+The four titles are `main: build failed`, `smoke: production`, `rollback: production` and `rollback failed: production`.
 
 **Deploy steps.**
 
-- **Rollback gate** (the first step; env `GH_TOKEN`). It counts the open issues with the title `rollback: production`: `gh api "repos/$REPO/issues?state=open&per_page=100" --jq '[.[] | select(.title == "rollback: production")] | length'`. When the count is not 0, it waits 30 seconds and counts once more, because GitHub closes a linked issue a moment after a merge. When the count is still not 0, it prints `production is rolled back: nothing deploys until the issue "rollback: production" is closed`, sets the job output `deployed=false` and ends the job with success. The later steps do not run. In every other case the job output is `deployed=true` after the deploy step. The gate is the first step of the job, before the checkout, and every later step has `if: steps.gate.outputs.deployed != 'false'`; the job output is `deployed` of the gate, else of the deploy step, else `false`.
+- **Rollback gate** (the first step; env `GH_TOKEN` and `KIT_OWNER: ${{ vars.KIT_OWNER }}`):
+
+```sh
+set -euo pipefail
+main=$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)
+[ "$main" = "$SHA" ] || { echo '::error::main has moved on since this run started: only the run of its head deploys'; exit 1; }
+hold() {
+  held=
+  for title in 'rollback: production' 'rollback failed: production'; do
+    n=$(gh api --paginate "repos/$REPO/issues?state=all&per_page=100" --jq ".[] | select(.pull_request == null and .user.login == \"github-actions[bot]\" and .title == \"$title\") | .number" | sort -n | tail -n 1)
+    [ -n "$n" ] || continue
+    s=$(gh api "repos/$REPO/issues/$n" --jq "if .state == \"open\" then \"open\" elif .closed_by.login == \"$KIT_OWNER\" then \"\" else \"closed\" end")
+    [ -z "$s" ] || held+="$n $s"$'\n'
+  done
+}
+hold
+if [ -n "$held" ]; then
+  sleep 30
+  hold
+fi
+if [ -n "$held" ]; then
+  while read -r n s; do
+    [ "$s" != closed ] || gh issue reopen "$n" --repo "$REPO" --comment "Reopened by $RUN: only the owner lifts the hold, by closing this issue."
+  done <<<"${held%$'\n'}"
+  echo 'production is rolled back: nothing deploys until the owner closes the issue "rollback: production" or "rollback failed: production"'
+  echo 'deployed=false' >> "$GITHUB_OUTPUT"
+fi
+```
+
+  - **Only the head of `main` deploys.** The gate first reads the head of `main` from the API. When it is not `$SHA`, the job fails with `::error::main has moved on since this run started: only the run of its head deploys`. So neither a run that waited behind a newer merge nor a re-run of an old run deploys an older `main`.
+  - **The hold.** For each of the titles `rollback: production` and `rollback failed: production`, the gate takes the newest issue of the workflow, open or closed. It holds the deploy while that issue is open, and while it is closed by anyone but the owner (`closed_by.login` is not `KIT_OWNER`). Only the newest issue counts: a rollback runs only after a deploy, and a deploy runs only when the newest issue of each title was closed by the owner, so the owner released every older one before a newer one opened.
+  - When the gate finds a hold, it waits 30 seconds and looks once more, because GitHub closes a linked issue a moment after the owner merges a pull request with `Fixes #<issue>`. When the hold is still there, the gate reopens each held issue that someone other than the owner closed, with the comment `Reopened by $RUN: only the owner lifts the hold, by closing this issue.`. It prints `production is rolled back: nothing deploys until the owner closes the issue "rollback: production" or "rollback failed: production"`, sets the job output `deployed=false` and ends the job with success. The later steps do not run. To reopen, the deploy job has `issues: write`.
+  - In every other case the job output is `deployed=true` after the deploy step. The gate is the first step of the job, before the checkout, and every later step has `if: steps.gate.outputs.deployed != 'false'`; the job output is `deployed` of the gate, else of the deploy step, else `false`.
   - So in a push or dispatch run, `smoke` and `rollback` run only after a real deploy (their conditions above). A gated run never rolls production back a second time. The scheduled smoke runs either way.
-  - The pull request that fixes the cause holds `Fixes #<issue>` in its body, so its merge closes the issue. The owner can also close the issue by hand.
+  - An agent fixes the cause in a pull request. Only the owner lifts the hold: by closing the issue by hand, or by merging by hand a pull request that holds `Fixes #<issue>`. When an agent closes the issue, or CI merges a pull request that closes it, the next deploy run reopens it and deploys nothing.
 - **Config check.**
   - On a static site (`features.forms` false in `astro-kit.json`): `dist/server/wrangler.json` must not exist, else `::error::a static site built a Worker config`. The deploy config is `wrangler.jsonc`.
-  - On a forms site: the deploy config is `dist/server/wrangler.json`. Compare it with `wrangler.jsonc` (with `^\s*\/\/.*$` stripped) through `jq -S '{name, routes, workers_dev, preview_urls, compatibility_date, send_email, ratelimits, run_worker_first: .assets.run_worker_first, not_found_handling: .assets.not_found_handling}'`. The two `assets` keys are in the comparison because the asset routing closes the server surface (10.4, S19). On a difference: `::error::the built Worker config differs from wrangler.jsonc in <keys>`. The built file must have no `build` key, else `::error::the built Worker config holds a build command` (13.3, R7). Its `kv_namespaces` must be an empty list, else `::error::the built Worker config holds a KV binding`. That key is not in the comparison: `wrangler.jsonc` has no such key, and the built file holds `[]` (S14); a built file without the key passes too, because it then has no KV binding. A forms site whose build wrote no `dist/server/wrangler.json` fails with `::error::a forms site built no Worker config`, and a built file that is not a JSON object with `::error::the built Worker config is not a JSON object`. `<keys>` lists the compared keys that differ, in sorted order, joined with `, `.
+  - On a forms site: the deploy config is `dist/server/wrangler.json`, and it passes the Worker config check above, with `--arg target production`. So every binding equals `wrangler.jsonc`, and so do the names, the routes and the whole `assets` object; `assets` matters because the asset routing closes the server surface (10.4, S19). A forms site whose build wrote no `dist/server/wrangler.json` fails with `::error::a forms site built no Worker config` (13.3, R7).
+  - The step gives the config as its output `config`, and the later steps read it as `$CONFIG`.
+- **The live version** (step `live`, before the upload). It records the version that production runs as the job output `live`, so a rollback deploys exactly that version:
+
+```sh
+set -euo pipefail
+: > "$RUNNER_TEMP/empty.env"
+WORKER=$(sed -E '/^[[:space:]]*\/\/.*$/d' wrangler.jsonc | jq -er '.name')
+if out=$(npx --no wrangler deployments status --name "$WORKER" --json --env-file "$RUNNER_TEMP/empty.env"); then
+  id=$(jq -er '.versions | select(length == 1 and .[0].percentage == 100) | .[0].version_id | select(test("^[0-9a-f-]{36}$"))' <<<"$out") ||
+    { echo '::error::production does not run one version at 100%: the owner settles it in the Cloudflare dashboard'; exit 1; }
+  echo "id=$id" >> "$GITHUB_OUTPUT"
+else
+  echo 'No live version: a smoke failure after this deploy has nothing to roll back to.'
+fi
+```
+
+  - With no deployment yet (the first deploy), or when the status call fails, the output is empty. A rollback after such a deploy fails, and that opens `rollback failed: production`.
+  - A production that runs more than one version, or one at less than 100 %, is not the kit's: the deploy stops.
 - **Upload and deploy.**
-  - Env on these two steps only: `CLOUDFLARE_API_TOKEN` (the secret of the `production` environment) and `CLOUDFLARE_ACCOUNT_ID` (repository variable).
-  - `npx --no wrangler versions upload --config "$config" --message "main $SHA" | tee upload.log`.
+  - Env on the three Cloudflare steps (the live version, the upload and the deploy) only: `CLOUDFLARE_API_BASE_URL`, `CLOUDFLARE_API_TOKEN` (the secret of the `production` environment) and `CLOUDFLARE_ACCOUNT_ID` (repository variable).
+  - `npx --no wrangler versions upload --config "$CONFIG" --message "main $SHA" --env-file "$RUNNER_TEMP/empty.env" | tee upload.log`.
   - Read the id with `grep -oiE 'version id: *[0-9a-f-]{36}'`. With none: `::error::the upload printed no version id`.
-  - `npx --no wrangler versions deploy "$id@100%" --config "$config" --message "main $SHA" -y`.
+  - `npx --no wrangler versions deploy "$ID@100%" --config "$CONFIG" --message "main $SHA" -y --env-file "$RUNNER_TEMP/empty.env"`, with `ID` the output `id` of the upload step.
+
+**Rollback step** (job `rollback`; env `LIVE: ${{ needs.deploy.outputs.live }}`, `CLOUDFLARE_API_BASE_URL`, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`). `wrangler rollback <version-id>` deploys that version at 100 %. Without an id it takes "the version before the current one", which is the wrong one when another deploy came in between:
+
+```sh
+set -euo pipefail
+[[ "$LIVE" =~ ^[0-9a-f-]{36}$ ]] || { echo '::error::the deploy recorded no live version: there is nothing to roll back to'; exit 1; }
+WORKER=$(sed -E '/^[[:space:]]*\/\/.*$/d' wrangler.jsonc | jq -er '.name')
+: > "$RUNNER_TEMP/empty.env"
+npx --no wrangler rollback "$LIVE" --name "$WORKER" --message "smoke failed: $RUN" -y --env-file "$RUNNER_TEMP/empty.env"
+```
 
 **What happens when `main` is red.** Two green branches can break `main` together, because the required check is not strict (10.2). Then `build` fails, nothing deploys, and production keeps its last good version. The owner gets the issue `main: build failed`. An agent fixes the cause in a normal pull request. Its merge makes `main` green, which closes the issue and deploys.
 
@@ -2437,7 +2576,7 @@ The three titles are `main: build failed`, `smoke: production` and `rollback: pr
 
 - Push ruleset.
 - `bypass_actors: [{ "actor_id": 1, "actor_type": "OrganizationAdmin", "bypass_mode": "always" }, { "actor_type": "DeployKey", "bypass_mode": "always" }]`. The deploy key is the one that the protected task uses (10.6). The agent account is neither.
-- `file_path_restriction`: `.github/**`, `wrangler.*`, `**/wrangler.*`, `.npmrc`.
+- `file_path_restriction`: `.github/**`, `wrangler.*`, `**/wrangler.*`, `.npmrc`, `.env*`, `**/.env*`, `.dev.vars*`, `**/.dev.vars*`, `.wrangler/**`, `**/.wrangler/**`. A pattern `**/x` matches below the root only, so each name stands twice. wrangler reads `.env*` and `.dev.vars*` from its working folder and `.wrangler/` as its state and redirect folder, and a site needs none of them in git at any depth; the `*` takes in `.env.local`, `.env.<env>` and `.dev.vars.<env>` (10.1).
 
 **`.github/CODEOWNERS`** (rendered; `{{OWNER}}` is the setting `codeOwner`):
 
@@ -2452,7 +2591,12 @@ The three titles are `main: build failed`, `smoke: production` and `rollback: pr
 /.github/ {{OWNER}}
 wrangler.* {{OWNER}}
 /.npmrc {{OWNER}}
+.env* {{OWNER}}
+.dev.vars* {{OWNER}}
+.wrangler/ {{OWNER}}
 ```
+
+- A pattern without a leading `/` matches at any depth, and `.wrangler/` matches the folder and everything in it.
 
 ### 10.3 kit-identity.sh (exact)
 
@@ -3029,7 +3173,7 @@ Each recipe is at most 40 lines and is routed from INDEX (tests). This table say
 | `upgrade.md` | Read the changelog; `npm install --save-exact --ignore-scripts`; `init --shims` when a shim changed; `tokens`; `ci`; fix pages, never checks. When `config-shim` or `config-wrangler` reports a stale protected file, say so in the PR: the owner starts the protected task for the branch (10.6). |
 | `settings.md` | The flow of 5.5. |
 | `origins.md` | When a page needs a third party (9.4): the owner declares the origin through the settings page; the pattern for a frame, a script and a `fetch` call after a click; the notice next to the control; the processor name in the privacy pages, then `legal --write`. |
-| `rollback.md` | What CI does when smoke fails after a deploy (10.1). How to roll back by hand: an agent reverts the commit in a PR, or the owner rolls the Worker back on its Deployments page in the Cloudflare dashboard. Then close `rollback: production`. |
+| `rollback.md` | What CI does when smoke fails after a deploy (10.1). How to roll back by hand: an agent reverts the commit in a PR, or the owner rolls the Worker back on its Deployments page in the Cloudflare dashboard. Then the owner closes `rollback: production` (or `rollback failed: production`): only the owner's close lifts the hold. |
 
 Feature docs: `docs/forms.md` (9.1), `docs/islands.md` (9.2), `docs/modes.md` (9.3) and `docs/origins.md` (9.4). `docs/standards.md` is generated.
 
@@ -3225,7 +3369,7 @@ No test can prove these facts, because they need GitHub, Cloudflare, npm and a m
 | R11 | **Fleet.** `release / fleet` lists the repositories with `kit-site=true` and builds each of them with the packed kit (11.2). | The job reads the list of site repositories from the repository variable `KIT_SITES`. |
 | R12 | **Feedback.** A KIT-FEEDBACK entry pushed on a branch reaches the feedback repository and gets the `auto` label. | |
 | R13 | **Dependabot.** A Dependabot npm pull request passes `site / ci` with no secret, gets no preview, and the `merge` job merges it. | The owner merges Dependabot pull requests. |
-| R14 | **Rollback gate.** While `rollback: production` is open, a merge deploys nothing, and that run starts neither smoke nor rollback. A pull request with `Fixes #<issue>` closes the issue, and its merge deploys. | |
+| R14 | **Rollback gate.** While `rollback: production` is open, a merge deploys nothing, and that run starts neither smoke nor rollback. An issue with that title that another account opens, and a pull request with that title, hold nothing. When the agent account closes the issue, the next deploy run reopens it and deploys nothing. When the owner closes it, the next merge deploys. | |
 
 **After the rehearsal.** `test/site/` stays the test site of the kit and keeps its provisional host. The rehearsal repository is a site like every client site: it has `kit-site=true`, the fleet job builds it (11.2), and it gets kit upgrades through the upgrade task (16).
 
@@ -3712,7 +3856,7 @@ Most steps here are account actions in a web page, decisions or approvals. No st
 
 **Waivers.** When a check is wrong for one page and the client cannot wait for a kit release, add a waiver through the settings page (5.2). It ends on its date.
 
-**Alerts.** Each of these issues is assigned to you: `main: build failed`, `smoke: production`, `rollback: production`. Ask an agent to fix the cause. While `rollback: production` is open, nothing deploys; the pull request that fixes the cause closes it (10.1).
+**Alerts.** Each of these issues is assigned to you: `main: build failed`, `smoke: production`, `rollback: production`. Ask an agent to fix the cause. While `rollback: production` or `rollback failed: production` is open, nothing deploys. When the fix is merged and the site is good, close the issue yourself: only your close lifts the hold, and an issue that someone else closes is reopened (10.1). `rollback failed: production` means that the automatic rollback failed: roll the Worker back on its Deployments page in the Cloudflare dashboard first.
 
 **Feedback.**
 

@@ -8,3 +8,6 @@
 /.github/ @raess
 wrangler.* @raess
 /.npmrc @raess
+.env* @raess
+.dev.vars* @raess
+.wrangler/ @raess

@@ -3,7 +3,7 @@
  *
  * 1. `init --site https://example.ch --locales de,fr --owner @example-owner` writes the templates and prints no passed
  *    line. It writes `.claude/settings.json` and the seven protected files of 10.6, each the rendering of the packed
- *    kit for the written settings (part 9e of M9). Then `check` fails with exactly `design-format`: the skeleton of
+ *    kit for the written settings (10.6). Then `check` fails with exactly `design-format`: the skeleton of
  *    `docs/design.md` has empty tables.
  * 2. With the smallest valid `docs/design.md` and `elements.css` of `fresh-init.ts`, `tokens` writes `tokens.css`, and
  *    `check` passes: Biome and `astro check` accept every file that init wrote. Then `build` fails with exactly
@@ -42,7 +42,7 @@ test('M9 fresh init: init writes the templates; check gives design-format, and w
   assert.ok(init.stdout.includes('\nNext:\n'), tail(init));
   assert.equal(read(dir, 'CLAUDE.md'), '@AGENTS.md\n');
   // The SessionStart hook (12.3) as the packed kit holds it, and the seven protected files of 10.6 as the packed kit
-  // renders them for the written settings (part 9e of M9).
+  // renders them for the written settings.
   const templates = join(base(), 'node_modules/@raess/astro-kit/templates/site');
   assert.ok(init.stdout.includes('wrote .claude/settings.json\n'), 'init wrote .claude/settings.json');
   assert.equal(read(dir, '.claude/settings.json'), read(templates, '_claude/settings.json'));

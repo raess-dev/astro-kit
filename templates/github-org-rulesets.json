@@ -53,7 +53,20 @@
       "rules": [
         {
           "type": "file_path_restriction",
-          "parameters": { "restricted_file_paths": [".github/**", "wrangler.*", "**/wrangler.*", ".npmrc"] }
+          "parameters": {
+            "restricted_file_paths": [
+              ".github/**",
+              "wrangler.*",
+              "**/wrangler.*",
+              ".npmrc",
+              ".env*",
+              "**/.env*",
+              ".dev.vars*",
+              "**/.dev.vars*",
+              ".wrangler/**",
+              "**/.wrangler/**"
+            ]
+          }
         }
       ]
     }

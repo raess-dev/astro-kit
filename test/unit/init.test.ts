@@ -206,7 +206,7 @@ test('the template tree holds the files of 3.3 that this part writes, and only t
       'src/styles/tokens.css',
     ],
   );
-  // From part 9e of M9 the kit renders all seven protected files (10.6): six from these templates, and wrangler.jsonc
+  // The kit renders all seven protected files (10.6): six from these templates, and wrangler.jsonc
   // with renderWrangler (10.4).
   const rendered = Object.keys(renderProtected({ codeOwner: '@o' }));
   assert.deepEqual([...rendered, 'wrangler.jsonc'].sort(), [...PROTECTED_FILES].sort());
@@ -647,7 +647,7 @@ test('preflight on a fresh init: design-format only, with the seven protected fi
       preflight(root, report);
       return [...new Set(report.findings.map((finding) => finding.rule))].sort();
     };
-    // From part 9e of M9 init writes wrangler.jsonc and the other protected files, so config-wrangler and
+    // init writes wrangler.jsonc and the other protected files, so config-wrangler and
     // config-shim pass.
     assert.deepEqual(ids(), ['design-format']);
     // The agent files that init writes pass `config-shim`.
@@ -997,17 +997,39 @@ test('the Next: block ends with the check, now that init writes every protected 
   assert.equal(nextSteps(false).includes('config-wrangler'), false);
 });
 
+/** The texts of the spec, the sources, the tests and test/README.md that the stale-text test reads. */
+function kitTexts(): [path: string, text: string][] {
+  const kit = fileURLToPath(new URL('../..', import.meta.url));
+  const self = fileURLToPath(import.meta.url);
+  const walk = (folder: string): string[] =>
+    readdirSync(join(kit, folder), { withFileTypes: true }).flatMap((entry) => {
+      const path = `${folder}/${entry.name}`;
+      if (entry.isDirectory()) return path === 'test/site' ? [] : walk(path);
+      return /\.(ts|md)$/.test(entry.name) ? [path] : [];
+    });
+  return ['docs/spec.md', ...walk('src'), ...walk('test')]
+    .filter((path) => join(kit, path) !== self)
+    .map((path) => [path, readFileSync(join(kit, path), 'utf8')]);
+}
+
 test('no temporary sentence of parts 9d and 9e is left, now that part 9e is done', () => {
+  const texts = kitTexts();
+  assert.ok(texts.some(([path]) => path === 'test/README.md'));
   for (const stale of [
     'a later part of M9',
     'part 9e of M9 renders',
     'parts 9d and 9e',
     'Parts 9d and 9e',
     'part 9e of M9',
+    '(part 9e)',
     'Part 9e adds',
     'until a later kit version writes them',
   ]) {
-    assert.equal(SPEC.includes(stale), false, stale);
+    assert.deepEqual(
+      texts.filter(([, text]) => text.includes(stale)).map(([path]) => path),
+      [],
+      stale,
+    );
   }
 });
 

@@ -60,7 +60,7 @@ test('templates/site/_npmrc is the .npmrc of 12.2, and renderNpmrc gives it', ()
   const npmrc = 'ignore-scripts=true\nsave-exact=true\n';
   assert.equal(renderNpmrc(), npmrc);
   assert.equal(readFileSync(fileURLToPath(new URL('../../templates/site/_npmrc', import.meta.url)), 'utf8'), npmrc);
-  // From part 9e of M9 the five protected files that depend on no setting (10.6); CODEOWNERS names the owner.
+  // The five protected files that depend on no setting (10.6); CODEOWNERS names the owner.
   assert.deepEqual(Object.keys(RENDERED_PROTECTED), [
     SITE_WORKFLOW_FILE,
     SITE_MERGE_FILE,
@@ -99,8 +99,8 @@ test('the standard of config-kit-identity names the refused settings, the truste
 const OWNER = { codeOwner: '@example-owner' };
 
 /**
- * The six rendered protected files for `OWNER`, without a file whose path is also a folder of one of `files`. From
- * part 9e of M9 every one is required, so each case starts from all of them.
+ * The six rendered protected files for `OWNER`, without a file whose path is also a folder of one of `files`. Every
+ * one is required, so each case starts from all of them.
  */
 const renderedBut = (files: Files): Files =>
   Object.fromEntries(
@@ -120,7 +120,7 @@ function protectedFindings(files: Files, options: { codeOwner: string } | undefi
 
 test('config-shim passes the rendered protected files, and fails each one that is missing', () => {
   assert.deepEqual(protectedFindings({ [KIT_IDENTITY_FILE]: renderKitIdentity(), [NPMRC_FILE]: renderNpmrc() }), []);
-  // From part 9e of M9 every rendered protected file is required (10.6).
+  // Every rendered protected file is required (10.6).
   const missing = inTemp({}, (root) => {
     const report = new Report();
     checkProtectedFiles(root, OWNER, report);

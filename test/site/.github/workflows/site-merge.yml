@@ -49,8 +49,14 @@ jobs:
           [ "$head" = "$TESTED_SHA" ] || { echo 'the head moved since this run started; the run of the new head merges it'; exit 0; }
           jq -e --arg a "$author" '(. + ["dependabot[bot]"]) | index($a) != null' <<<"${KIT_AGENTS:-[]}" >/dev/null ||
             { echo "$author is not an agent account: CI does not merge this pull request"; exit 0; }
+          agents=$(jq -c --arg a "$author" 'if $a == "dependabot[bot]" then . + [$a] else . end' <<<"${KIT_AGENTS:-[]}")
+          only() { jq -e -n -R --argjson ok "$agents" '[inputs] | length > 0 and all(. as $x | $ok | index($x) != null)' >/dev/null; }
+          pushers=${ACTOR:-$(gh api "repos/$REPO/actions/workflows/site.yml/runs?event=push&head_sha=$TESTED_SHA" --jq '.workflow_runs[].actor.login')}
+          only <<<"$pushers" || { echo 'the tested head was not pushed by an agent account: CI does not merge this pull request'; exit 0; }
+          authors=$(gh api --paginate "repos/$REPO/pulls/$PR/commits" --jq '.[] | .author.login // "-"')
+          only <<<"$authors" || { echo 'a commit has an author that is not an agent account: CI does not merge this pull request'; exit 0; }
           files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)')
-          if grep -qE '^\.github/|^\.npmrc$|(^|/)wrangler\.[^/]+$' <<<"$files"; then
+          if grep -qE '^\.github/|^\.npmrc$|(^|/)wrangler\.[^/]+$|(^|/)(\.env|\.dev\.vars)[^/]*$|(^|/)\.wrangler/' <<<"$files"; then
             echo 'it changes a protected file: the owner approves it and merges it by hand'; exit 0
           fi
           if ! out=$(gh pr merge "$PR" --repo "$REPO" --squash --delete-branch --match-head-commit "$TESTED_SHA" 2>&1); then

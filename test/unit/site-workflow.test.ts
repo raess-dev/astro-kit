@@ -1,6 +1,6 @@
 /**
  * The site workflows of 10.1, the Dependabot file of 10.5, the code owners and the rulesets of 10.2, and the protected
- * task of 10.6 (part 9e of M9). The YAML parses; every `uses` is pinned; the jobs, their names, order, permissions
+ * task of 10.6. The YAML parses; every `uses` is pinned; the jobs, their names, order, permissions
  * and timeouts are those of the job table; the only required context is `site / ci`. The scripts that the
  * specification gives exactly equal its blocks, and the scripts of the workflow run under bash with a fake `gh`,
  * `npx`, `npm` and `sleep` first on the path (14.1). No test reaches GitHub, npm or Cloudflare.
@@ -26,6 +26,7 @@ import {
 } from '../../src/shims.ts';
 import { SETTINGS as FORMS } from './forms-fixtures.ts';
 import { optionsOf } from './project-fixtures.ts';
+import { github, issueOf } from './site-scripts.ts';
 import { SPEC, specBlock } from './spec.ts';
 
 interface Step {
@@ -124,9 +125,9 @@ test('site.yml has the triggers, the empty permissions, the concurrency and the 
   assert.deepEqual(SITE.permissions, {});
   assert.equal(
     SITE.concurrency.group,
-    `site-${expression('github.event_name')}-${expression("inputs.protected && 'protected' || 'run'")}-${expression('github.event.pull_request.number || github.ref')}`,
+    `site-${expression("github.event_name == 'schedule' && 'schedule' || inputs.protected && 'protected' || 'run'")}-${expression('github.ref')}`,
   );
-  assert.equal(SPEC.includes(`- Concurrency \`${SITE.concurrency.group}\`.`), true);
+  assert.equal(SPEC.includes(`- Concurrency \`${SITE.concurrency.group}\`, with `), true);
   assert.equal(
     SITE.concurrency['cancel-in-progress'],
     expression("github.event_name == 'push' && github.ref != 'refs/heads/main'"),
@@ -155,33 +156,47 @@ test('site-merge.yml holds the one job merge-event, on the pull-request events o
 
 // The jobs
 
-const TABLE: readonly [id: string, name: string | undefined, permissions: Record<string, string>, minutes: number][] = [
-  ['ci', 'site / ci', { contents: 'read' }, 20],
-  ['preview', 'site / preview', { contents: 'read' }, 10],
-  ['merge', undefined, { contents: 'write', 'pull-requests': 'write', actions: 'write' }, 5],
-  ['build', 'deploy / build', { contents: 'read' }, 20],
-  ['build-alert', undefined, { issues: 'write' }, 5],
-  ['deploy', 'deploy / production', { contents: 'read', issues: 'read' }, 10],
-  ['smoke', undefined, { contents: 'read', issues: 'write' }, 10],
-  ['rollback', 'deploy / rollback', { contents: 'read', issues: 'write' }, 10],
-  ['feedback', undefined, { contents: 'read' }, 5],
-  ['protected', 'site / protected', { contents: 'read', 'pull-requests': 'write' }, 10],
-];
+/** The rows of the job table of 10.1, parsed from docs/spec.md: id, name, permissions and timeout. */
+function jobTable(): { id: string; name: string | undefined; permissions: Record<string, string>; minutes: number }[] {
+  const start = SPEC.indexOf('| Job | Name | When | Permissions | Steps |');
+  const rows = SPEC.slice(start).split('\n').slice(2);
+  return rows
+    .slice(
+      0,
+      rows.findIndex((row) => !row.startsWith('|')),
+    )
+    .map((row) => {
+      const cells = row
+        .split(/(?<!\\)\|/)
+        .slice(1, -1)
+        .map((cell) => cell.trim());
+      const parts = (cells[3] ?? '').split(';').map((part) => part.trim());
+      const permissions = Object.fromEntries(
+        (parts[0] ?? '').split(',').map((entry) => {
+          const [scope = '', level = ''] = entry.trim().split(' ');
+          return [scope, level];
+        }),
+      );
+      return {
+        id: /^`([\w-]+)`/.exec(cells[0] ?? '')?.[1] ?? '',
+        name: /^`([^`]+)`/.exec(cells[1] ?? '')?.[1],
+        permissions,
+        minutes: Number(/(\d+) min/.exec(cells[3] ?? '')?.[1]),
+      };
+    });
+}
 
-test('the jobs of site.yml come in the order of 10.1, with the names, permissions and timeouts of the job table', () => {
-  assert.deepEqual(
-    Object.keys(SITE.jobs),
-    TABLE.map(([id]) => id),
-  );
-  assert.equal(SPEC.includes(`- Job order: \`${TABLE.map(([id]) => id).join(', ')}\`.`), true);
-  for (const [id, name, permissions, minutes] of TABLE) {
-    assert.equal(job(id).name, name, id);
-    assert.deepEqual(job(id).permissions, permissions, id);
-    assert.equal(job(id)['timeout-minutes'], minutes, id);
+test('the jobs come in the order of 10.1, with the names, permissions and timeouts of its job table', () => {
+  const table = jobTable();
+  const ids = table.map((row) => row.id).filter((id) => id !== 'merge-event');
+  assert.deepEqual(Object.keys(SITE.jobs), ids);
+  assert.equal(SPEC.includes(`- Job order: \`${ids.join(', ')}\`.`), true);
+  assert.equal(table.length, 11, 'the ten jobs of site.yml and merge-event');
+  for (const row of table) {
+    assert.equal(job(row.id).name, row.name, row.id);
+    assert.deepEqual(job(row.id).permissions, row.permissions, row.id);
+    assert.equal(job(row.id)['timeout-minutes'], row.minutes, row.id);
   }
-  assert.equal(job('merge-event').name, undefined);
-  assert.deepEqual(job('merge-event').permissions, { contents: 'write', 'pull-requests': 'write', actions: 'write' });
-  assert.equal(job('merge-event')['timeout-minutes'], 5);
 });
 
 test('the conditions, needs and environments of the job table', () => {
@@ -198,7 +213,8 @@ test('the conditions, needs and environments of the job table', () => {
   assert.equal(job('deploy').needs, 'build');
   assert.equal(job('deploy').environment, 'production');
   assert.deepEqual(job('deploy').concurrency, { group: 'deploy-production', 'cancel-in-progress': false });
-  assert.deepEqual(Object.keys(job('deploy').outputs ?? {}), ['deployed']);
+  assert.deepEqual(Object.keys(job('deploy').outputs ?? {}), ['deployed', 'live']);
+  assert.equal(job('feedback').needs, 'ci');
   assert.equal(
     job('smoke').if,
     "always() && (github.event_name == 'schedule' || (needs.deploy.result == 'success' && needs.deploy.outputs.deployed == 'true'))",
@@ -284,7 +300,20 @@ test('the rulesets of 10.2: the main branch and the protected paths, for the sit
   assert.deepEqual(paths?.rules, [
     {
       type: 'file_path_restriction',
-      parameters: { restricted_file_paths: ['.github/**', 'wrangler.*', '**/wrangler.*', '.npmrc'] },
+      parameters: {
+        restricted_file_paths: [
+          '.github/**',
+          'wrangler.*',
+          '**/wrangler.*',
+          '.npmrc',
+          '.env*',
+          '**/.env*',
+          '.dev.vars*',
+          '**/.dev.vars*',
+          '.wrangler/**',
+          '**/.wrangler/**',
+        ],
+      },
     },
   ]);
   for (const ruleset of rulesets) {
@@ -359,6 +388,7 @@ test('no run script holds an expression, and a secret is only in the env of the 
   );
   assert.deepEqual(secretSteps, [
     'preview/Upload the preview version/CLOUDFLARE_API_TOKEN',
+    'deploy/The live version/CLOUDFLARE_API_TOKEN',
     'deploy/Upload the version/CLOUDFLARE_API_TOKEN',
     'deploy/Deploy the version/CLOUDFLARE_API_TOKEN',
     'smoke/Smoke/KIT_PROBE_SECRET',
@@ -452,6 +482,7 @@ function withBins<T>(bins: Record<string, string>, use: (dir: string, env: Recor
       LOG: join(dir, 'calls.log'),
       GITHUB_OUTPUT: join(dir, 'output'),
       TMPDIR: dir,
+      RUNNER_TEMP: dir,
     };
     return use(work, env);
   } finally {
@@ -495,6 +526,7 @@ test('both merge jobs run the exact merge script of 10.1 with the env of the job
     KIT_AGENTS: expression('vars.KIT_AGENTS'),
     BRANCH: expression('github.ref_name'),
     TESTED_SHA: expression('github.sha'),
+    ACTOR: expression('github.actor'),
   });
   assert.deepEqual(step('merge-event', 'Merge the tested head').env, {
     GH_TOKEN: expression('github.token'),
@@ -515,7 +547,13 @@ done
 case "$1 $2" in
   "api repos/o/r/pulls?state=open&head=o:"*) echo "lookup $2" >> "$LOG"; jq -r "$program" <<<"$FAKE_LIST" ;;
   "api repos/o/r/pulls/7") jq -r "$program" <<<"$FAKE_PULL" ;;
-  "api --paginate") [ "$3" = repos/o/r/pulls/7/files ] || exit 9; jq -r "$program" <<<"$FAKE_FILES" ;;
+  "api --paginate")
+    case "$3" in
+      repos/o/r/pulls/7/files) jq -r "$program" <<<"$FAKE_FILES" ;;
+      repos/o/r/pulls/7/commits) jq -r "$program" <<<"$FAKE_COMMITS" ;;
+      *) exit 9 ;;
+    esac ;;
+  "api repos/o/r/actions/workflows/site.yml/runs?event=push&head_sha=abc") jq -r "$program" <<<"$FAKE_RUNS" ;;
   "api repos/o/r/issues?state=open&per_page=100")
     n=$(($(cat "$LOG.count" 2>/dev/null || echo 0) + 1)); echo "$n" > "$LOG.count"
     issues=$(sed -n "\${n}p" <<<"$FAKE_ISSUES"); [ -n "$issues" ] || issues=$(tail -n 1 <<<"$FAKE_ISSUES")
@@ -561,6 +599,8 @@ function merge(c: Pull): { status: number | null; out: string; calls: string[] }
       FAKE_LIST: JSON.stringify(c.list ?? [{ number: 7 }]),
       FAKE_PULL: JSON.stringify(pull),
       FAKE_FILES: JSON.stringify(files),
+      FAKE_COMMITS: JSON.stringify([{ author: { login: pull.user.login } }]),
+      FAKE_RUNS: JSON.stringify({ workflow_runs: [{ actor: { login: pull.user.login } }] }),
       FAKE_REFUSE: c.refuse ? '1' : '0',
     });
     return { status: result.status, out: `${result.stdout}${result.stderr}`, calls: lines(env.LOG ?? '') };
@@ -663,41 +703,24 @@ test('the alert and close steps are the exact scripts of 10.1, with the three ti
   assert.equal(step('smoke', 'Close').if, "success() && github.event_name == 'schedule'");
 });
 
-function issues(script: string, env: Record<string, string>, open: unknown[][]) {
-  return withBins({ gh: FAKE_GH, sleep: 'echo "sleep $*" >> "$LOG"\n' }, (work, bins) => {
-    const result = bash(script, work, {
-      ...bins,
-      REPO: 'o/r',
-      RUN: 'https://github.com/o/r/actions/runs/1',
-      GH_TOKEN: 'x',
-      FAKE_ISSUES: open.map((list) => JSON.stringify(list)).join('\n'),
-      ...env,
-    });
-    return {
-      status: result.status,
-      out: `${result.stdout}${result.stderr}`,
-      calls: lines(bins.LOG ?? ''),
-      output: existsSync(bins.GITHUB_OUTPUT ?? '') ? readFileSync(bins.GITHUB_OUTPUT ?? '', 'utf8') : '',
-    };
-  });
-}
-
 test('the alert step opens one issue for its title, and comments on the open one', () => {
-  const env = { TITLE: 'smoke: production', BODY: 'Failed:', KIT_OWNER: 'owner' };
-  const fresh = issues(ALERT, env, [[{ number: 3, title: 'other' }]]);
+  const env = { TITLE: 'smoke: production', BODY: 'Failed:' };
+  const fresh = github(ALERT, { issues: [issueOf(3, 'other')] }, env);
   assert.equal(fresh.status, 0, fresh.out);
   assert.deepEqual(fresh.calls, [
     'issue create --repo o/r --title smoke: production --assignee owner --body Failed: https://github.com/o/r/actions/runs/1',
   ]);
-  const again = issues(ALERT, env, [[{ number: 4, title: 'smoke: production' }]]);
+  const again = github(ALERT, { issues: [issueOf(4, 'smoke: production')] }, env);
   assert.deepEqual(again.calls, [
     'issue comment 4 --repo o/r --body Failed again: https://github.com/o/r/actions/runs/1',
   ]);
-  const close = issues(CLOSE, { TITLE: 'smoke: production', COMMENT: 'Passed: x' }, [
-    [{ number: 4, title: 'smoke: production' }],
-  ]);
+  const close = github(
+    CLOSE,
+    { issues: [issueOf(4, 'smoke: production')] },
+    { TITLE: 'smoke: production', COMMENT: 'Passed: x' },
+  );
   assert.deepEqual(close.calls, ['issue close 4 --repo o/r --comment Passed: x']);
-  const none = issues(CLOSE, { TITLE: 'smoke: production', COMMENT: 'Passed: x' }, [[]]);
+  const none = github(CLOSE, { issues: [] }, { TITLE: 'smoke: production', COMMENT: 'Passed: x' });
   assert.equal(none.status, 0, none.out);
   assert.deepEqual(none.calls, []);
 });
@@ -705,50 +728,58 @@ test('the alert step opens one issue for its title, and comments on the open one
 // The deploy steps
 
 const GATE = runOf('deploy', 'Rollback gate');
-const ROLLBACK_ISSUE = { number: 9, title: 'rollback: production' };
+const ROLLBACK_ISSUE = issueOf(9, 'rollback: production');
 
 test('the rollback gate is the first step of deploy, and every later step runs only when it lets the deploy go', () => {
   assert.equal(job('deploy').steps[0]?.id, 'gate');
-  assert.deepEqual(job('deploy').steps[0]?.env, { GH_TOKEN: expression('github.token') });
+  assert.deepEqual(job('deploy').steps[0]?.env, {
+    GH_TOKEN: expression('github.token'),
+    KIT_OWNER: expression('vars.KIT_OWNER'),
+  });
   for (const entry of job('deploy').steps.slice(1)) assert.equal(entry.if, "steps.gate.outputs.deployed != 'false'");
   assert.equal(
     job('deploy').outputs?.deployed,
     expression("steps.gate.outputs.deployed || steps.deploy.outputs.deployed || 'false'"),
   );
-  assert.equal(
-    GATE.includes(
-      `gh api "repos/$REPO/issues?state=open&per_page=100" --jq '[.[] | select(.title == "rollback: production")] | length'`,
-    ),
-    true,
-  );
+  assert.equal(GATE, `${specBlock('- **Rollback gate**', 'sh')}\n`);
 });
 
 test('the rollback gate under bash: no open issue deploys; an issue that closes within 30 s deploys; else it stops', () => {
-  const none = issues(GATE, {}, [[{ number: 1, title: 'smoke: production' }]]);
+  const none = github(GATE, { issues: [issueOf(1, 'smoke: production')] });
   assert.equal(none.status, 0, none.out);
   assert.deepEqual(none.calls, []);
   assert.equal(none.output, '');
-  const closed = issues(GATE, {}, [[ROLLBACK_ISSUE], []]);
+  const closed = github(GATE, { issues: [ROLLBACK_ISSUE], closeOnSleep: [9] });
   assert.equal(closed.status, 0, closed.out);
   assert.deepEqual(closed.calls, ['sleep 30']);
   assert.equal(closed.output, '');
-  const open = issues(GATE, {}, [[ROLLBACK_ISSUE], [ROLLBACK_ISSUE]]);
+  const open = github(GATE, { issues: [ROLLBACK_ISSUE] });
   assert.equal(open.status, 0, open.out);
   assert.deepEqual(open.calls, ['sleep 30']);
   assert.equal(open.output, 'deployed=false\n');
   assert.equal(
     open.out,
-    'production is rolled back: nothing deploys until the issue "rollback: production" is closed\n',
+    'production is rolled back: nothing deploys until the owner closes the issue "rollback: production" or "rollback failed: production"\n',
   );
 });
 
 const CONFIG_CHECK = runOf('deploy', 'Config check');
+const CHECK = step('deploy', 'Config check').env?.CHECK ?? '';
+/** The built config of the forms test site, as the adapter writes it (S14). */
+const REAL = (
+  JSON.parse(readFileSync(new URL('./built-worker-config.json', import.meta.url), 'utf8')) as {
+    production: Record<string, unknown>;
+  }
+).production;
 
-/** The built Worker config of a forms site that matches its `wrangler.jsonc`, as the adapter writes it (S14). */
+/**
+ * The built Worker config of a forms site that matches its `wrangler.jsonc`, as the adapter writes it (S14): the
+ * built config of the test site with the settings of this `wrangler.jsonc`.
+ */
 function builtOf(wrangler: string): Record<string, unknown> {
   const value = JSON.parse(wrangler.replace(/^\s*\/\/.*$/gm, '')) as Record<string, unknown>;
   const { env: _env, $schema: _schema, ...rest } = value;
-  return { ...rest, kv_namespaces: [], main: 'index.js', assets: { ...(rest.assets as object), binding: 'ASSETS' } };
+  return { ...REAL, ...rest, assets: { ...(rest.assets as object), directory: '../client', binding: 'ASSETS' } };
 }
 
 function configCheck(files: Record<string, string>) {
@@ -757,7 +788,7 @@ function configCheck(files: Record<string, string>) {
       mkdirSync(join(work, path, '..'), { recursive: true });
       writeFileSync(join(work, path), text);
     }
-    const result = bash(CONFIG_CHECK, work, env);
+    const result = bash(CONFIG_CHECK, work, { ...env, CHECK });
     const output = existsSync(env.GITHUB_OUTPUT ?? '') ? readFileSync(env.GITHUB_OUTPUT ?? '', 'utf8') : '';
     return { status: result.status, out: `${result.stdout}${result.stderr}`, output };
   });
@@ -807,7 +838,7 @@ test('the deploy config check under bash: a forms site deploys the built config 
     [
       'run_worker_first true and another name',
       { ...built, name: 'other', assets: { ...(built.assets as object), run_worker_first: true } },
-      '::error::the built Worker config differs from wrangler.jsonc in name, run_worker_first\n',
+      '::error::the built Worker config differs from wrangler.jsonc in assets, name\n',
     ],
     [
       'a build command',
@@ -817,7 +848,7 @@ test('the deploy config check under bash: a forms site deploys the built config 
     [
       'a KV binding',
       { ...built, kv_namespaces: [{ binding: 'KV', id: 'x' }] },
-      '::error::the built Worker config holds a KV binding\n',
+      '::error::the built Worker config holds a binding that wrangler.jsonc does not name: kv_namespaces\n',
     ],
     ['no object', [], '::error::the built Worker config is not a JSON object\n'],
   ];
@@ -834,6 +865,7 @@ test('the deploy config check under bash: a forms site deploys the built config 
 
 test('upload and deploy hold the Cloudflare token in their env only, and read the version id', () => {
   const cloudflare = {
+    CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.com/client/v4',
     CLOUDFLARE_API_TOKEN: expression('secrets.CLOUDFLARE_API_TOKEN'),
     CLOUDFLARE_ACCOUNT_ID: expression('vars.CLOUDFLARE_ACCOUNT_ID'),
   };
@@ -861,7 +893,7 @@ test('upload and deploy hold the Cloudflare token in their env only, and read th
       });
       assert.equal(upload.status, status, upload.stderr);
       assert.deepEqual(lines(env.LOG ?? ''), [
-        'npx --no wrangler versions upload --config wrangler.jsonc --message main abc',
+        `npx --no wrangler versions upload --config wrangler.jsonc --message main abc --env-file ${env.RUNNER_TEMP}/empty.env`,
       ]);
       const written = existsSync(env.GITHUB_OUTPUT ?? '') ? readFileSync(env.GITHUB_OUTPUT ?? '', 'utf8') : '';
       assert.equal(written, output);
@@ -877,7 +909,7 @@ test('upload and deploy hold the Cloudflare token in their env only, and read th
     });
     assert.equal(deploy.status, 0, deploy.stderr);
     assert.deepEqual(lines(env.LOG ?? ''), [
-      `npx --no wrangler versions deploy ${id}@100% --config wrangler.jsonc --message main abc -y`,
+      `npx --no wrangler versions deploy ${id}@100% --config wrangler.jsonc --message main abc -y --env-file ${env.RUNNER_TEMP}/empty.env`,
     ]);
     assert.equal(readFileSync(env.GITHUB_OUTPUT ?? '', 'utf8'), 'deployed=true\n');
   });
@@ -885,28 +917,31 @@ test('upload and deploy hold the Cloudflare token in their env only, and read th
 
 // The rollback step
 
-test('the rollback step rolls back the Worker of wrangler.jsonc, with the token in its env only', () => {
+test('the rollback step rolls back the Worker of wrangler.jsonc to the live version, with the token in its env only', () => {
   const rollback = step('rollback', 'Roll production back');
   assert.deepEqual(rollback.env, {
+    LIVE: expression('needs.deploy.outputs.live'),
+    CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.com/client/v4',
     CLOUDFLARE_API_TOKEN: expression('secrets.CLOUDFLARE_API_TOKEN'),
     CLOUDFLARE_ACCOUNT_ID: expression('vars.CLOUDFLARE_ACCOUNT_ID'),
   });
+  const live = '0f2b1d3c-4a5e-4f60-8a7b-9c0d1e2f3a4b';
   withBins({ npx: 'echo "npx $*" >> "$LOG"\n' }, (work, env) => {
     writeFileSync(join(work, 'wrangler.jsonc'), renderWrangler(STATIC));
-    const result = bash(rollback.run ?? '', work, { ...env, RUN: 'https://github.com/o/r/actions/runs/1' });
+    const result = bash(rollback.run ?? '', work, { ...env, LIVE: live, RUN: 'https://github.com/o/r/actions/runs/1' });
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(lines(env.LOG ?? ''), [
-      'npx --no wrangler rollback --name example-ch --message smoke failed: https://github.com/o/r/actions/runs/1 -y',
+      `npx --no wrangler rollback ${live} --name example-ch --message smoke failed: https://github.com/o/r/actions/runs/1 -y --env-file ${env.RUNNER_TEMP}/empty.env`,
     ]);
   });
   withBins({ npx: 'echo "npx $*" >> "$LOG"\n' }, (work, env) => {
     writeFileSync(join(work, 'wrangler.jsonc'), '{}');
-    const result = bash(rollback.run ?? '', work, env);
+    const result = bash(rollback.run ?? '', work, { ...env, LIVE: live });
     assert.notEqual(result.status, 0, 'a wrangler.jsonc without a name rolls nothing back');
     assert.deepEqual(lines(env.LOG ?? ''), []);
   });
   const names = job('rollback').steps.map((entry) => entry.name ?? entry.uses?.replace(/@.*$/, ''));
-  assert.deepEqual(names.slice(-2), ['Roll production back', 'Alert']);
+  assert.deepEqual(names.slice(-3), ['Roll production back', 'Alert', 'Alert the failed rollback']);
 });
 
 // The preview
@@ -914,7 +949,12 @@ test('the rollback step rolls back the Worker of wrangler.jsonc, with the token 
 const PREVIEW_CHECK = runOf('preview', 'Check the built preview config');
 
 test('the preview checks the built config before wrangler reads it, under bash', () => {
-  const wrangler = renderWrangler(STATIC);
+  const preview = (
+    JSON.parse(readFileSync(new URL('./built-worker-config.json', import.meta.url), 'utf8')) as {
+      preview: Record<string, unknown>;
+    }
+  ).preview;
+  const wrangler = readFileSync(new URL('../site/wrangler.jsonc', import.meta.url), 'utf8');
   const check = (built: unknown) =>
     withBins({}, (work, env) => {
       writeFileSync(join(work, 'wrangler.jsonc'), wrangler);
@@ -922,29 +962,32 @@ test('the preview checks the built config before wrangler reads it, under bash',
         mkdirSync(join(work, 'dist/server'), { recursive: true });
         writeFileSync(join(work, 'dist/server/wrangler.json'), JSON.stringify(built));
       }
-      const result = bash(PREVIEW_CHECK, work, env);
+      const result = bash(PREVIEW_CHECK, work, {
+        ...env,
+        CHECK: step('preview', 'Check the built preview config').env?.CHECK ?? '',
+      });
       return { status: result.status, out: `${result.stdout}${result.stderr}` };
     });
-  const good = { name: 'example-ch-preview', send_email: [], ratelimits: [], kv_namespaces: [] };
   assert.equal(check(undefined).status, 0);
-  assert.equal(check(good).status, 0, check(good).out);
+  assert.equal(check(preview).status, 0, check(preview).out);
   const cases: [string, unknown, string][] = [
     [
       'a mail binding',
-      { ...good, send_email: [{ name: 'EMAIL' }] },
-      '::error::the built preview config holds a binding: a preview has no binding but ASSETS\n',
+      { ...preview, send_email: [{ name: 'EMAIL' }] },
+      '::error::the built Worker config differs from wrangler.jsonc in send_email\n',
     ],
     [
       'a KV binding',
-      { ...good, kv_namespaces: [{ binding: 'KV' }] },
-      '::error::the built preview config holds a binding: a preview has no binding but ASSETS\n',
+      { ...preview, kv_namespaces: [{ binding: 'KV' }] },
+      '::error::the built Worker config holds a binding that wrangler.jsonc does not name: kv_namespaces\n',
     ],
-    ['a build key', { ...good, build: {} }, '::error::the built Worker config holds a build command\n'],
+    ['a build key', { ...preview, build: {} }, '::error::the built Worker config holds a build command\n'],
     [
       'the production name',
-      { ...good, name: 'example-ch' },
-      '::error::the built Worker config does not name the preview Worker of wrangler.jsonc\n',
+      { ...preview, name: 'laerchenwald-example' },
+      '::error::the built Worker config differs from wrangler.jsonc in name\n',
     ],
+    ['no object', [], '::error::the built Worker config is not a JSON object\n'],
   ];
   for (const [name, built, message] of cases) {
     const result = check(built);

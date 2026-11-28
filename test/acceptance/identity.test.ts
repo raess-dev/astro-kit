@@ -2,8 +2,8 @@
  * The `identity` case of 14.2 (part 9d of M9): `kit-identity.sh` (10.3) on the complete lockfile of a kit project.
  *
  * 1. A copy of the test site becomes a git repository: one commit of every file, and `refs/remotes/origin/main` at
- *    it. The copy holds `.github/kit-identity.sh` as `init --protected` rendered it into `test/site/` (part 9e of
- *    M9); the case asserts that it equals the template of the packed kit.
+ *    it. The copy holds `.github/kit-identity.sh` as `init --protected` rendered it into `test/site/` (10.6); the
+ *    case asserts that it equals the template of the packed kit.
  * 2. On the lockfile of the commit, which has no kit, the script fails with `package-lock.json has no
  *    node_modules/@raess/astro-kit entry`.
  * 3. `npm install --package-lock-only` of the packed kit writes the kit entry and the kit's own package tree into the

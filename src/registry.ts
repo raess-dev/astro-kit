@@ -196,8 +196,8 @@ export const RULES: readonly Rule[] = [
     'config-wrangler',
     'config',
     'config',
-    "Only `wrangler.jsonc` exists (no `.json` or `.toml`). It equals the kit's rendering for the settings, after CRLF→LF and trimEnd + newline. The rendering has full-line `//` comments only and no trailing commas, because the deploy job reads it with `jq`. A file that does not match gets the hint of the protected task.",
-    '`wrangler.jsonc` is missing or differs from the text that the kit renders for the settings, or the project holds a second wrangler config.',
+    "Only `wrangler.jsonc` exists (no `.json` or `.toml`). It equals the kit's rendering for the settings, after CRLF→LF and trimEnd + newline. The rendering has full-line `//` comments only and no trailing commas, because the deploy job reads it with `jq`. A file that does not match gets the hint of the protected task. Git tracks no other file that wrangler reads: no `.env*` or `.dev.vars*` file and no file under a `.wrangler` folder, at any depth. The rule reads `git ls-files` in the project root, so a forms build's own `.wrangler/`, which `.gitignore` keeps out, passes; outside a git work tree this part has nothing to read, and the site workflow checks each checkout itself. A tracked file fails with `git tracks this file, and wrangler reads it: remove it with git rm --cached`.",
+    '`wrangler.jsonc` is missing or differs from the text that the kit renders for the settings, or the project holds a second wrangler config, or git tracks a `.env`, `.dev.vars` or `.wrangler` file.',
     'The protected files do not match the settings. Say so in the pull request: the owner starts the protected task for this branch.',
   ),
   r(

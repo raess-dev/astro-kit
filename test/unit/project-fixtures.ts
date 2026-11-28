@@ -141,7 +141,7 @@ export const AGENTS_MD = `# Example\n\n${KIT_BLOCK}\n`;
 /**
  * The smallest project that passes preflight with no finding: the settings, the two facts files that must exist,
  * the three source shims, the agent files `AGENTS.md` and `CLAUDE.md`, `.claude/settings.json` (part 9d), the six
- * rendered protected files of `config-shim` (part 9e), `wrangler.jsonc`, the design document, the `tokens.css` that the kit renders from it,
+ * rendered protected files of `config-shim` (10.6), `wrangler.jsonc`, the design document, the `tokens.css` that the kit renders from it,
  * `elements.css` and an empty `fonts.css`. A later milestone adds the files that its rules need.
  */
 export const SMALLEST: Files = {
