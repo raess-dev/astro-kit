@@ -22,7 +22,7 @@ import {
   type Page,
 } from 'playwright-core';
 import { descendantsOf, domOf, isTemplate, tagOf, tokensOf } from './audit/dom.ts';
-import { declaredLegalPaths } from './audit/site.ts';
+import { declaredLegalPaths, readLock } from './audit/site.ts';
 import {
   ACTION_LIMIT_MS,
   type BrowserRule,
@@ -255,6 +255,8 @@ export interface BrowserInput {
   components: readonly string[];
   /** Gets the findings. Its waivers apply. */
   report: Report;
+  /** The text of `legal.lock.json`, or `undefined` without one (the browser half of `legal-approved`). */
+  legalLock?: string | undefined;
   /** `--all`: every page, not only the sample. */
   all?: boolean;
   /** `--shots`: the folder for the images, as an absolute path. */
@@ -460,6 +462,7 @@ export async function runBrowser(input: BrowserInput): Promise<void> {
         sample,
         home: pages.find((page) => page.isDefaultHome),
         legal: pages.filter((page) => legalPaths.has(page.where)),
+        legalLock: input.legalLock,
         received: served.received,
         browser,
         proxy: proxyOption(proxy),
@@ -535,6 +538,7 @@ export async function test(root: string, flags: TestFlags, io: ToolIo): Promise<
     design,
     components: componentNames(root),
     report,
+    legalLock: readLock(root),
     all: flags.all,
     shots: flags.shots === undefined ? undefined : resolve(root, flags.shots),
     env: io.env,

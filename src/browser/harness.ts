@@ -92,6 +92,11 @@ export interface TestRun {
    * order, whatever the sample: the browser half of `legal-approved` checks each one in every run.
    */
   legal: readonly TestPage[];
+  /**
+   * The text of `legal.lock.json` of the project, or `undefined` without one: the browser half of `legal-approved`
+   * compares the hash of the live text of each legal page with its entry.
+   */
+  legalLock?: string | undefined;
   /** Every request that the server got, in order, with its headers (`perf-prerender` reads `sec-purpose`). */
   received: readonly Received[];
   browser: Browser;

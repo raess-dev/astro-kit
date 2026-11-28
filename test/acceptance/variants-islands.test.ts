@@ -23,6 +23,7 @@ import {
   run,
   siteCase,
   tree,
+  write,
 } from './harness.ts';
 import { ISLAND_CLASS, ISLAND_PAGE, toIslands } from './variants.ts';
 
@@ -101,4 +102,27 @@ test('M8 variant islands: a Solid island passes check with ESLint, builds and pa
   assert.deepEqual(passedLine(linted), { last: false, count: 0 }, tail(linted));
   assert.match(plain(linted.output), /solid\/no-destructure/, tail(linted));
   assert.doesNotMatch(plain(linted.output), /Getting diagnostics/, tail(linted));
+
+  // ESLint lints the `.ts` helpers of an island too (9.2): a signal read outside a tracking scope in a `.ts` file
+  // fails `check` with `solid/reactivity`, which a shim for `.tsx` alone missed.
+  edit(dir, 'src/components/MoreLinks.tsx', 'MoreLinks({ label, links }: Props)', 'MoreLinks(props: Props)');
+  edit(dir, 'src/components/MoreLinks.tsx', '{label}', '{props.label}');
+  edit(dir, 'src/components/MoreLinks.tsx', '{links}', '{props.links}');
+  write(dir, {
+    'src/lib/count.ts': [
+      "import { createSignal } from 'solid-js';",
+      '',
+      'export function createLabel(start: number) {',
+      '  const [count, setCount] = createSignal(start);',
+      '  const value = count();',
+      '  return { value: () => value, add: () => setCount(count() + 1) };',
+      '}',
+      '',
+    ].join('\n'),
+  });
+  const helper = run(dir, 'check');
+  assert.equal(helper.status, 1, tail(helper));
+  assert.deepEqual(helper.ids, []);
+  assert.match(plain(helper.output), /src\/lib\/count\.ts[\s\S]*solid\/reactivity/, tail(helper));
+  assert.doesNotMatch(plain(helper.output), /Getting diagnostics/, tail(helper));
 });

@@ -5,8 +5,11 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { LEGAL_RULES, LEGAL_VIEWPORTS, legalShown } from '../../src/browser/legal.ts';
+import { lockedText } from '../../src/audit/dom.ts';
+import { LEGAL_RULES, LEGAL_VIEWPORTS, legalShown, liveLockedText } from '../../src/browser/legal.ts';
 import { BROWSER_RULES } from '../../src/browser/rules.ts';
+import { parseHtml } from '../../src/build.ts';
+import { sha256 } from '../../src/csp.ts';
 import { getRule } from '../../src/registry.ts';
 import { CSS, findingsOf, html, SETTINGS, useBrowser } from './browser-fixtures.ts';
 import { SPEC } from './spec.ts';
@@ -172,4 +175,86 @@ test('legal-approved (browser): the settings of the run decide the legal pages',
   const settings = { ...SETTINGS, legal: { legalNote: { de: '/datenschutz/' }, privacy: { de: '/datenschutz/' } } };
   const found = await findingsOf(browser(), files, [legalShown], { settings, all: false });
   assert.deepEqual(found, []);
+});
+
+// The hash of the live text (second review of 9b)
+
+/** The hash of the locked text of a built page, as the build half reads it. */
+const builtHash = (markup: string): string =>
+  sha256(
+    lockedText({ file: NOTE, path: '/impressum/', locale: 'de', is404: false, html: markup, root: parseHtml(markup) }),
+  );
+
+test('the live locked text in Chromium equals lockedText of the build: hidden parts, template, br, NFD and the attributes', async () => {
+  const nfd = 'Ru\u0308ckfrage'; // "Rückfrage" in NFD
+  const main =
+    '<main id="main" title=" Haupt  teil "><h1 aria-label="Titel">Impressum</h1>' +
+    `<p hidden>Ein Entwurf.</p><p>${nfd} an <abbr title="Datenschutzgesetz">DSG</abbr>,<br>Zeile\n\t zwei.</p>` +
+    '<template><p title="T">Vorlage <b>fett</b></p></template><div aria-hidden="true"><img alt=" Bild " src="data:,"></div>' +
+    '<p><input value="1" placeholder="Nr." aria-label="Nummer"></p><dialog>Dialog</dialog></main>';
+  const markup = html(main);
+  const context = await browser().newContext();
+  try {
+    const tab = await context.newPage();
+    await tab.setContent(markup);
+    const live = await liveLockedText(tab);
+    const built = lockedText({
+      file: NOTE,
+      path: '/impressum/',
+      locale: 'de',
+      is404: false,
+      html: markup,
+      root: parseHtml(markup),
+    });
+    assert.equal(live, built);
+    assert.equal(
+      built,
+      [
+        'ImpressumEin Entwurf.Rückfrage an DSG, Zeile zwei.Vorlage fettDialog',
+        'title=Haupt teil',
+        'aria-label=Titel',
+        'title=Datenschutzgesetz',
+        'title=T',
+        'alt=Bild',
+        'aria-label=Nummer',
+        'value=1',
+        'placeholder=Nr.',
+      ].join('\n'),
+    );
+  } finally {
+    await context.close();
+  }
+});
+
+test('legal-approved (browser): a script that rewrites a word of main after load fails, with both hashes', async () => {
+  const script =
+    "<script>addEventListener('load', () => { const p = document.querySelector('main p:last-of-type');" +
+    " if (p) p.textContent = 'Wir antworten innert 90 Tagen.'; });</script>";
+  const files = site(MAIN, '', {});
+  files[NOTE] = html(
+    `<a href="#main">Zum Inhalt</a>${MAIN.replace('<ul>', '<p>Wir antworten innert 30 Tagen.</p><ul>')}${script}`,
+    {
+      css: CSS,
+    },
+  );
+  const built = builtHash(files[NOTE] ?? '');
+  const rewritten = (files[NOTE] ?? '').replace(
+    '<p>Wir antworten innert 30 Tagen.</p><ul>',
+    '<p>Wir antworten innert 90 Tagen.</p><ul>',
+  );
+  const live = builtHash(rewritten.replace(script, ''));
+  assert.deepEqual(await run(files), [
+    `/impressum/ 1280×800: the live text of main hashes to ${live}, and the built page hashes to ${built}`,
+  ]);
+  // With a lock, the live text is compared with its entry.
+  const lock = `{\n  "/impressum/": "sha256-AAAA"\n}\n`;
+  const found = await findingsOf(browser(), site(MAIN), [legalShown], { all: false, legalLock: lock });
+  assert.deepEqual(
+    found.map((finding) => `${finding.where} ${finding.detail ?? ''}`),
+    [
+      `/impressum/ 1280×800: the live text of main hashes to ${builtHash(site(MAIN)[NOTE] ?? '')}, and legal.lock.json holds sha256-AAAA`,
+    ],
+  );
+  const right = `{\n  "/datenschutz/": "${builtHash(site(MAIN)[PRIVACY] ?? '')}",\n  "/impressum/": "${builtHash(site(MAIN)[NOTE] ?? '')}"\n}\n`;
+  assert.deepEqual(await findingsOf(browser(), site(MAIN), [legalShown], { all: false, legalLock: right }), []);
 });

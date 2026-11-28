@@ -541,6 +541,8 @@ test('the islands shim is the file of templates/features/islands and the block o
   const template = new URL('../../templates/features/islands/eslint.config.mjs', import.meta.url);
   assert.equal(readFileSync(fileURLToPath(template), 'utf8'), ISLANDS_SHIM);
   assert.equal(ISLANDS_SHIM_FILE, 'eslint.config.mjs');
+  // ESLint lints the .ts helpers of an island too (second review of 9b).
+  assert.equal(ISLANDS_SHIM.includes("files: ['src/**/*.tsx', 'src/**/*.ts'],"), true);
   assert.equal(SPEC.includes(`\n  \`\`\`js\n${ISLANDS_SHIM.replace(/^(?=.)/gm, '  ')}  \`\`\`\n`), true);
 });
 

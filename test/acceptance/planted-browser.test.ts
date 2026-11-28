@@ -154,7 +154,8 @@ const PLANTS: readonly { id: string; plant: (dir: string) => void }[] = [
   },
   {
     // A script adds a link to the French privacy page, so the link exists with JavaScript on only. Its URL is on no
-    // other link of the page, and it stands in a sentence, so it is no target of `a11y-targets`.
+    // other link of the page, and it stands in a sentence, so it is no target of `a11y-targets`. It goes into the
+    // footer, not into `main`: a change of the live text of `main` would give `legal-approved` too.
     id: 'a11y-no-js',
     plant: (dir) =>
       script(
@@ -167,7 +168,7 @@ const PLANTS: readonly { id: string; plant: (dir: string) => void }[] = [
           "link.href = '/fr/chambres/#prix';",
           "link.textContent = 'les prix des chambres';",
           "paragraph.append('Voir aussi ', link, '.');",
-          "document.querySelector('main')?.append(paragraph);",
+          "document.querySelector('footer')?.append(paragraph);",
           '',
         ].join('\n'),
       ),
@@ -299,7 +300,8 @@ const PLANTS: readonly { id: string; plant: (dir: string) => void }[] = [
   },
   {
     // A noise PNG as the first element of `main` on the French legal note, the largest element of the first screen,
-    // with neither `fetchpriority="high"` nor `loading="eager"`.
+    // with neither `fetchpriority="high"` nor `loading="eager"`. It has `role="presentation"` and no `alt`, which axe
+    // accepts: an `alt` would be a line of the locked text, and the live hash would give `legal-approved` too.
     id: 'perf-lcp-priority',
     plant: (dir) => {
       write(dir, { [`${CLIENT}/plant-noise.png`]: png(480, 360, true) });
@@ -312,7 +314,7 @@ const PLANTS: readonly { id: string; plant: (dir: string) => void }[] = [
       intoMain(
         dir,
         '/fr/mentions-legales/',
-        '<img class="plant-lcp" src="/plant-noise.png" width="480" height="360" alt="Un bruit gris" loading="lazy">',
+        '<img class="plant-lcp" src="/plant-noise.png" width="480" height="360" role="presentation" loading="lazy">',
       );
     },
   },

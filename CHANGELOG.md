@@ -415,7 +415,8 @@
   - ESLint fails closed: it reads only the root shim and no inline config comment. `config-suppression` also fails
     `eslint-disable` in each form and an `eslint` config comment, a `.jsx` file under `src/` (an island is a `.tsx`
     file) and every symbolic link under `src/`; `config-shim` fails every `eslint.config.*` other than the root
-    `eslint.config.mjs`.
+    `eslint.config.mjs`. On an islands site ESLint lints `src/**/*.ts` with the Solid rules too, so a helper that reads a
+    signal outside a tracking scope fails `check`; `check` runs ESLint when `src/` holds a `.tsx` or a `.ts` file.
   - `astro-kit legal --write` writes `legal.lock.json` from the declared legal pages in `dist`: one hash of the
     locked text for each page that is built, with sorted keys. `legal --check` compares the file with the build and
     reports `legal-approved`, which the build runs too: a changed word of the legal text of a legal page fails the
@@ -426,7 +427,9 @@
     lock that is not the text of `legal --write` (a duplicate key, another order or format). A finding with no entry
     names both hashes. The browser half runs in every `astro-kit test`, on the legal pages only: at 1280 and 390 px
     the text that a visitor is shown in `main` must be its whole text, so CSS that hides a part fails, and so does a
-    pseudo-element that adds text. One finding for each page; the spec lists what it does not measure.
+    pseudo-element that adds text. It also hashes the live text of `main` in Chromium, read as the build reads it,
+    and compares it with the entry of the lock (without one, with the build): a script that changes a word after
+    the page loads fails, with both hashes. One finding for each page; the spec lists what it does not measure.
   - The rendering of `wrangler.jsonc` (10.4) is now in the format of the Biome preset for any settings, and the
     preset formats it like every other file: the objects that hold a setting are expanded, and the destination
     addresses stand one on each line after a comment line.
@@ -435,4 +438,6 @@
     `legal.lock.json` that `legal --write` wrote. The `site` case runs `check` and `legal --check`; the `static`,
     `islands` and `origins` variants run `check` (the `check` of the `site` case stands in for the `forms` variant);
     the `check-config` variant and the `config` set of the planted sets join; the `build` set gets its
-    `legal-approved` plant.
+    `legal-approved` plant. The `a11y-no-js` plant of the `browser` set adds its link to the footer, and the
+    `perf-lcp-priority` image has `role="presentation"` and no `alt`, so neither changes the locked text of a legal
+    page and gives `legal-approved` as well.

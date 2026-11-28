@@ -134,7 +134,7 @@ const ISLAND = { 'src/lib/island.tsx': 'export default function Island() {\n  re
 test('the row of check in 6.4 names its steps, and the usage names check', () => {
   assert.equal(
     SPEC.includes(
-      '| `check` | | Preflight (with the forms shim, `config-shim`); the comparison of the other feature shim (`eslint.config.mjs`); `biome ci --colors=off --error-on-warnings .`; with islands and any `src/**/*.tsx`, `eslint --config eslint.config.mjs --no-inline-config --max-warnings 0 src`; `astro check`',
+      '| `check` | | Preflight (with the forms shim, `config-shim`); the comparison of the other feature shim (`eslint.config.mjs`); `biome ci --colors=off --error-on-warnings .`; with islands and any `src/**/*.tsx` or `src/**/*.ts`, `eslint --config eslint.config.mjs --no-inline-config --max-warnings 0 src`; `astro check`',
     ),
     true,
   );
@@ -197,8 +197,17 @@ test('astro-kit check with islands and a .tsx source runs ESLint between biome c
   assert.equal(seen.out.endsWith(`eslint: done\nastro: done\n${PASSED}`), true);
 });
 
-test('astro-kit check runs no ESLint without a .tsx source, and none without islands', async () => {
-  const deep = { 'src/lib/a/b/island.ts': 'export default 1;\n' };
+test('astro-kit check runs ESLint on a .ts helper of an islands site (second review of 9b)', async () => {
+  const helper = { 'src/lib/a/b/signals.ts': 'export default 1;\n' };
+  const runs = await inTempAsync({ ...ISLANDS, ...helper, ...tools() }, async (root) => {
+    await cli(root, ['check']);
+    return runsOf(root);
+  });
+  assert.deepEqual(runs, [BIOME_RUN, ESLINT_RUN, ASTRO_RUN]);
+});
+
+test('astro-kit check runs no ESLint without a .tsx or .ts source, and none without islands', async () => {
+  const deep = { 'src/lib/a/b/island.js': 'export default 1;\n' };
   const islands = await inTempAsync({ ...ISLANDS, ...deep, ...tools() }, async (root) => {
     await cli(root, ['check']);
     return runsOf(root);

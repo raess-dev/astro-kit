@@ -82,6 +82,8 @@ export interface RunParts {
   all?: boolean;
   /** The navigation limit of `open()`. The default is the limit of the harness. */
   navigationLimitMs?: number;
+  /** The text of `legal.lock.json` (the browser half of `legal-approved`). The default is none. */
+  legalLock?: string;
 }
 
 /**
@@ -108,6 +110,7 @@ export function findingsOf(
       browser,
       env: process.env,
       ...(parts.navigationLimitMs === undefined ? {} : { navigationLimitMs: parts.navigationLimitMs }),
+      ...(parts.legalLock === undefined ? {} : { legalLock: parts.legalLock }),
     });
     return report.findings;
   });

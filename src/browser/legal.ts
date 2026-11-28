@@ -9,7 +9,10 @@
  * callback reads nothing outside itself: every value it needs comes in as its argument.
  */
 import type { Page } from 'playwright-core';
-import { type BrowserRule, DESKTOP, NARROW, sizeText, type Viewport } from './harness.ts';
+import { lockedText } from '../audit/dom.ts';
+import { LOCK_FILE } from '../context.ts';
+import { sha256 } from '../csp.ts';
+import { type BrowserRule, type Check, DESKTOP, NARROW, sizeText, type Viewport } from './harness.ts';
 
 /** The viewports of the check, in order: the first one with a finding ends the check of the page. */
 export const LEGAL_VIEWPORTS: readonly Viewport[] = [DESKTOP, NARROW];
@@ -209,9 +212,79 @@ export function firstDifference(page: Page, quoteMax: number): Promise<string | 
   }, quoteMax);
 }
 
+/** The attributes of the locked text, in its order: `LOCKED_ATTRIBUTES` of `src/audit/dom.ts`. */
+const LIVE_ATTRIBUTES: readonly string[] = ['title', 'alt', 'aria-label', 'value', 'placeholder'];
+
 /**
- * `legal-approved`, browser half: in each viewport of `LEGAL_VIEWPORTS`, with JavaScript on, the text that a visitor
- * is shown in `main` equals its whole text, and no pseudo-element in `main` adds text (`firstDifference`). One
+ * The locked text of the live `main` of a page, as Chromium holds it now: the same text as `lockedText` gives for the
+ * built page (Measurement details, "The locked text"). The data of each text node of the first `main` in document
+ * order, template content included (`template.content`), a line feed for each `br`, in NFC, each run of white space
+ * as one space, trimmed; then, for each element of `main` in document order (`main` first, template content
+ * included) and each attribute of the lock that it carries, in that order, one line feed and `<name>=<value>`, the
+ * value read in the same way. `''` without a `main`.
+ */
+export function liveLockedText(page: Page): Promise<string> {
+  return page.evaluate((names) => {
+    const main = document.querySelector('main');
+    if (main === null) return '';
+    const read = (text: string): string => text.normalize('NFC').replace(/\s+/g, ' ').trim();
+    const childrenOf = (node: Node): NodeListOf<ChildNode> =>
+      node instanceof HTMLTemplateElement ? node.content.childNodes : node.childNodes;
+    const parts: string[] = [];
+    const lines: string[] = [];
+    const stack: Node[] = [main];
+    for (let node = stack.pop(); node !== undefined; node = stack.pop()) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        parts.push((node as Text).data);
+        continue;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) continue;
+      const element = node as Element;
+      for (const name of names) {
+        const value = element.getAttribute(name);
+        if (value !== null) lines.push(`${name}=${read(value)}`);
+      }
+      if (element.localName === 'br') {
+        parts.push('\n');
+        continue;
+      }
+      const children = childrenOf(element);
+      for (let index = children.length - 1; index >= 0; index -= 1) {
+        const child = children[index];
+        if (child !== undefined) stack.push(child);
+      }
+    }
+    return [read(parts.join('')), ...lines].join('\n');
+  }, LIVE_ATTRIBUTES);
+}
+
+/**
+ * The hash that the live text of a legal page must have: its entry in `legal.lock.json` when the file is a JSON
+ * object with a text for the path, else the hash of the locked text of the built page. `source` names it for the
+ * finding.
+ */
+function expectedHash(check: Check): { hash: string; source: string } {
+  const built = sha256(lockedText(check.page.dom.page));
+  const fromBuild = { hash: built, source: `the built page hashes to ${built}` };
+  const lock = check.run.legalLock;
+  if (lock === undefined) return fromBuild;
+  try {
+    const value: unknown = JSON.parse(lock);
+    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      const entry = (value as Record<string, unknown>)[check.page.where];
+      if (typeof entry === 'string' && Object.hasOwn(value, check.page.where))
+        return { hash: entry, source: `${LOCK_FILE} holds ${entry}` };
+    }
+  } catch {
+    // The build half reports a broken file; the live text is compared with the build.
+  }
+  return fromBuild;
+}
+
+/**
+ * `legal-approved`, browser half: in each viewport of `LEGAL_VIEWPORTS`, with JavaScript on, the hash of the live
+ * locked text of `main` (`liveLockedText`) equals the entry of the page in `legal.lock.json` (or, without one, the
+ * hash of the built page), and the text that a visitor is shown in `main` equals its whole text, and no pseudo-element in `main` adds text (`firstDifference`). One
  * finding for each page at most: the first viewport with a difference, and its first place.
  */
 export const legalShown: BrowserRule = {
@@ -219,8 +292,14 @@ export const legalShown: BrowserRule = {
   pages: 'legal',
   concurrent: true,
   check: async (check) => {
+    const expected = expectedHash(check);
     for (const viewport of LEGAL_VIEWPORTS) {
       const page = await check.open({ viewport });
+      const live = sha256(await liveLockedText(page));
+      if (live !== expected.hash) {
+        check.report(`${sizeText(viewport)}: the live text of main hashes to ${live}, and ${expected.source}`);
+        return;
+      }
       const detail = await firstDifference(page, QUOTE_MAX);
       if (detail !== null) {
         check.report(`${sizeText(viewport)}: ${detail}`);

@@ -202,7 +202,7 @@ export const ASTRO_CHECK = ['astro', ['check']] as const;
 /** What the config part of `check` found. */
 export interface CheckConfig {
   findings: Finding[];
-  /** True when the settings are valid and turn islands on: then `check` runs ESLint on a `.tsx` source. */
+  /** True when the settings are valid and turn islands on: then `check` runs ESLint on a `.tsx` or `.ts` source. */
   islands: boolean;
 }
 
@@ -221,12 +221,18 @@ export async function checkConfig(root: string): Promise<CheckConfig> {
   return { findings: report.findings, islands };
 }
 
-/** Says whether `src/` holds a `.tsx` file at any depth. A symbolic link is not followed. */
-export function hasTsxSource(root: string): boolean {
+/**
+ * Says whether `src/` holds a file that ESLint lints with the Solid rules (9.2): a `.tsx` island, or a `.ts` file,
+ * where a helper of an island can read a signal. At any depth; a symbolic link is not followed (`config-suppression`
+ * fails one under `src/`).
+ */
+export function hasLintedSource(root: string): boolean {
   const visit = (folder: string): boolean => {
     if (!statSync(folder, { throwIfNoEntry: false })?.isDirectory()) return false;
     return readdirSync(folder, { withFileTypes: true }).some((entry) =>
-      entry.isDirectory() ? visit(join(folder, entry.name)) : entry.isFile() && entry.name.endsWith('.tsx'),
+      entry.isDirectory()
+        ? visit(join(folder, entry.name))
+        : entry.isFile() && (entry.name.endsWith('.tsx') || entry.name.endsWith('.ts')),
     );
   };
   return visit(join(root, 'src'));
@@ -234,12 +240,12 @@ export function hasTsxSource(root: string): boolean {
 
 /**
  * The tools of the command `check` (6.4), after its config part: `biome ci --colors=off --error-on-warnings .`;
- * with islands and a `.tsx` file under `src/`, `eslint --config eslint.config.mjs --no-inline-config --max-warnings 0
+ * with islands and a `.tsx` or `.ts` file under `src/`, `eslint --config eslint.config.mjs --no-inline-config --max-warnings 0
  * src`; then `astro check`. Each tool starts
  * only when every earlier one ended with 0, so the first failure ends the command. Returns 0, or 1 for a failure.
  */
 export async function checkTools(root: string, islands: boolean, io: ToolIo): Promise<number> {
-  const tools = [BIOME_CHECK, ...(islands && hasTsxSource(root) ? [ESLINT_CHECK] : []), ASTRO_CHECK];
+  const tools = [BIOME_CHECK, ...(islands && hasLintedSource(root) ? [ESLINT_CHECK] : []), ASTRO_CHECK];
   for (const [pkg, args] of tools) {
     if ((await runTool(root, pkg, args, io)) !== 0) return 1;
   }
